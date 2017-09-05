@@ -20,7 +20,7 @@ Ensure you set statistics collecting parameters:
 track_activities = on
 track_counts = on
 track_io_timing = on
-track_finctions = on
+track_functions = on
 ```
 And pg_stat_statements parameters (your values may differ):
 ```
@@ -29,7 +29,7 @@ pg_stat_statements.max = 1000
 pg_stat_statements.track = 'top'
 pg_stat_statements.save = off
 ```
-You must install and use _pg_profile_ extension as postgres superuser, because only superusers can see all statements in _pg_stat_statements_ view. And user, that will make snapshots must be able to login in any database of your cluster without providing a password. Dblink is used for collecting object statistics. Peer authentication preferred - make shure your pg_hba allows this.
+You must install and use _pg_profile_ extension as cluster superuser (for example, _postgres_), because only superusers can see all statements in _pg_stat_statements_ view. And user, that will make snapshots must be able to login in any database of your cluster without providing a password. Dblink is used for collecting object statistics. Peer authentication preferred - make shure your _pg_hba.conf_ allows this.
 ## Installation
 ### Step 1 Installation of extension files
 There is two ways for installing extension files:
@@ -49,7 +49,7 @@ postgres=# CREATE EXTENSION dblink;
 postgres=# CREATE EXTENSION pg_stat_statements;
 postgres=# CREATE EXTENSION pg_profile;
 ```
-If you want to install pg_profile in other schema, just create it, and install extension in thar schema (pg_stat_statements is recommended to be in public schema):
+If you want to install pg_profile in other schema, just create it, and install extension in that schema (pg_stat_statements is recommended to be in public schema):
 ```
 postgres=# CREATE EXTENSION dblink;
 postgres=# CREATE EXTENSION pg_stat_statements;
@@ -60,7 +60,7 @@ All objects will be created in schema, defined by SCHEMA clause.
 ## Using pg_profile
 ### Creating snapshots
 You must create at least 3 snapshots to be able to build a report between 2nd and 3rd snapshot.
-Snapshots are taken by calling snapshot function. I'm using cron for user postgresql like this:
+Snapshots are taken by calling snapshot function. I'm using cron of user _postgres_ like this:
 ```
 */30 * * * *   psql -c 'SELECT profile.snapshot()' > /dev/null 2>&1
 ```
@@ -77,7 +77,7 @@ $ psql -c 'SELECT profile.snapshot()'
 (1 row)
 ```
 ### Building a report
-You can query _snapshots_ table to define snapshots numbers:
+You can query _snapshots_ table to get snapshots numbers and times:
 ```
 postgres=# select * from profile.snapshots order by snap_time desc limit 10;
  snap_id |       snap_time
@@ -96,6 +96,8 @@ postgres=# select * from profile.snapshots order by snap_time desc limit 10;
 ```
 You build a report in HTML format using two snap_is's:
 ```
-psql -qt -c "SELECT profile.report(137,145)" -o report_194_198.html
+$ psql -qt -c "SELECT profile.report(194,198)" -o report_194_198.html
 ```
 Now you can view file _report_194_198.html_ in any web browser.
+
+This AWR-like report will contain several tables describing database cluster load profile. Here you will find queries, with most time elapsed, most gets, most reads, I/O waits, and so on. You will see per database statistics, such as hit ratio, calls, reads, and so on. There will be statistics for database objects - most DML-intensive tables, most scanned tables, most growth tables, and so on. Finally, you will be reported on most readed tables and indexes.
