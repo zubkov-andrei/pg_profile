@@ -203,13 +203,28 @@ COMMENT ON TABLE snap_stat_database IS 'Snapshot database statistics table (fiel
 CREATE TABLE last_stat_database () INHERITS (snap_stat_database);
 COMMENT ON TABLE last_stat_database IS 'Last snapshot data for calculating diffs in next snapshot';
 
-CREATE OR REPLACE FUNCTION snapshot(IN topn integer = 20) RETURNS integer SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION snapshot() RETURNS integer SET search_path=@extschema@,public AS $$
 DECLARE
 	id    integer;
+   topn  integer;
+   ret   integer;
    b_local_db boolean;
 BEGIN
+   -- Getting TopN setting
+   BEGIN
+      topn := current_setting('pg_profile.topn')::integer;
+   EXCEPTION
+      WHEN OTHERS THEN topn := 20;
+   END;
+   -- Getting retention setting
+   BEGIN
+      ret := current_setting('pg_profile.retention')::integer;
+   EXCEPTION
+      WHEN OTHERS THEN ret := 7;
+   END;
+   
    -- Deleting obsolote snapshots
-	DELETE FROM snapshots WHERE snap_time < now() - interval '7' day;
+	DELETE FROM snapshots WHERE snap_time < now() - (ret || ' days')::interval;
    -- Creating a new snapshot record
 	INSERT INTO snapshots(snap_time) 
    VALUES (now())
@@ -444,7 +459,7 @@ left join pg_catalog.pg_constraint con on(con.conindid = ix.indexrelid and con.c
 END;
 $$ LANGUAGE plpgsql; 
 
-CREATE OR REPLACE FUNCTION snapshot_dbobj_delta(IN s_id integer, IN topn integer = 20) RETURNS integer AS $$
+CREATE OR REPLACE FUNCTION snapshot_dbobj_delta(IN s_id integer, IN topn integer) RETURNS integer AS $$
 BEGIN
    -- Collecting stat info for objects of all databases
    PERFORM collect_obj_stats(s_id);
@@ -677,7 +692,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION dbstats_htbl(IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION dbstats_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
 	report text;
 
@@ -733,7 +748,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION statements_stats_htbl(IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION statements_stats_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
 	report text;
 
@@ -783,7 +798,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_scan_tables_htbl(IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION top_scan_tables_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
 	report text;
 
@@ -818,7 +833,7 @@ DECLARE
 BEGIN
 	-- Reporting table stats
 	report := tbl_stat_hdr;
-	FOR r_result IN c_tbl_stats(start_id, end_id,20) LOOP
+	FOR r_result IN c_tbl_stats(start_id, end_id,topn) LOOP
 		report := report||format(tbl_stat_tpl,
 			r_result.dbname,
          r_result.schemaname,
@@ -838,7 +853,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_dml_tables_htbl(IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION top_dml_tables_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
 	report text;
 
@@ -873,7 +888,7 @@ DECLARE
 BEGIN
 	-- Reporting table stats
 	report := tbl_stat_hdr;
-	FOR r_result IN c_tbl_stats(start_id, end_id,20) LOOP
+	FOR r_result IN c_tbl_stats(start_id, end_id,topn) LOOP
 		report := report||format(tbl_stat_tpl,
 			r_result.dbname,
          r_result.schemaname,
@@ -893,7 +908,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_growth_tables_htbl(IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION top_growth_tables_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
 	report text := '';
 
@@ -932,7 +947,7 @@ DECLARE
 BEGIN
 	-- Reporting table stats
 	report := tbl_stat_hdr;
-	FOR r_result IN c_tbl_stats(start_id, end_id,20) LOOP
+	FOR r_result IN c_tbl_stats(start_id, end_id,topn) LOOP
 		report := report||format(tbl_stat_tpl,
 			r_result.dbname,
          r_result.schemaname,
@@ -1008,7 +1023,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION tbl_top_dead_htbl(IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION tbl_top_dead_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
 	report text;
 
@@ -1041,7 +1056,7 @@ DECLARE
 BEGIN
 	-- Reporting vacuum stats
 	report := tbl_stat_hdr;
-	FOR r_result IN c_tbl_stats(end_id, 20) LOOP
+	FOR r_result IN c_tbl_stats(end_id, topn) LOOP
 		report := report||format(tbl_stat_tpl,
 			r_result.dbname,
          r_result.schemaname,
@@ -1058,7 +1073,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION tbl_top_mods_htbl(IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION tbl_top_mods_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
 	report text;
 
@@ -1092,7 +1107,7 @@ DECLARE
 BEGIN
 	-- Reporting vacuum stats
 	report := tbl_stat_hdr;
-	FOR r_result IN c_tbl_stats(end_id, 20) LOOP
+	FOR r_result IN c_tbl_stats(end_id, topn) LOOP
 		report := report||format(tbl_stat_tpl,
 			r_result.dbname,
          r_result.schemaname,
@@ -1110,7 +1125,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION ix_unused_htbl(IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION ix_unused_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
 	report text;
 
@@ -1142,7 +1157,7 @@ DECLARE
 	r_result RECORD;
 BEGIN
 	report := tbl_stat_hdr;
-	FOR r_result IN c_ix_stats(start_id, end_id, 20) LOOP
+	FOR r_result IN c_ix_stats(start_id, end_id, topn) LOOP
 		report := report||format(tbl_stat_tpl,
 			r_result.dbname,
          r_result.schemaname,
@@ -1157,7 +1172,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION tbl_top_io_htbl(IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION tbl_top_io_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
 	report text := '';
 
@@ -1184,7 +1199,7 @@ DECLARE
 
 	r_result RECORD;
 BEGIN
-	FOR r_result IN c_tbl_stats(start_id, end_id, 20) LOOP
+	FOR r_result IN c_tbl_stats(start_id, end_id, topn) LOOP
 		report := report||format(tbl_stat_tpl,
 			r_result.dbname,
          r_result.schemaname,
@@ -1204,7 +1219,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION ix_top_io_htbl(IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION ix_top_io_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
 	report text := '';
 
@@ -1229,7 +1244,7 @@ DECLARE
 
 	r_result RECORD;
 BEGIN
-	FOR r_result IN c_tbl_stats(start_id, end_id, 20) LOOP
+	FOR r_result IN c_tbl_stats(start_id, end_id, topn) LOOP
 		report := report||format(tbl_stat_tpl,
 			r_result.dbname,
          r_result.schemaname,
@@ -1247,7 +1262,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION func_top_time_htbl(IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION func_top_time_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
 	report text := '';
 
@@ -1275,7 +1290,7 @@ DECLARE
 
 	r_result RECORD;
 BEGIN
-	FOR r_result IN c_tbl_stats(start_id, end_id, 20) LOOP
+	FOR r_result IN c_tbl_stats(start_id, end_id, topn) LOOP
 		report := report||format(tbl_stat_tpl,
 			r_result.dbname,
          r_result.schemaname,
@@ -1296,7 +1311,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION func_top_calls_htbl(IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION func_top_calls_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
 	report text := '';
 
@@ -1324,7 +1339,7 @@ DECLARE
 
 	r_result RECORD;
 BEGIN
-	FOR r_result IN c_tbl_stats(start_id, end_id, 20) LOOP
+	FOR r_result IN c_tbl_stats(start_id, end_id, topn) LOOP
 		report := report||format(tbl_stat_tpl,
 			r_result.dbname,
          r_result.schemaname,
@@ -1345,7 +1360,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_elapsed_htbl(IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION top_elapsed_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
 	report text;
    
@@ -1383,7 +1398,7 @@ DECLARE
 BEGIN
 	-- Reporting on top 10 queries by elapsed time
 	report := elapsed_hdr;
-	FOR r_result IN c_elapsed_time(start_id, end_id,20) LOOP
+	FOR r_result IN c_elapsed_time(start_id, end_id,topn) LOOP
 		report := report||format(elapsed_tpl,
 			to_hex(r_result.queryid),
 			to_hex(r_result.queryid),
@@ -1403,7 +1418,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_exec_htbl(IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION top_exec_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
 	report text;
    
@@ -1437,7 +1452,7 @@ DECLARE
 BEGIN
 	-- Reporting on top 10 queries by executions
 	report := calls_hdr;
-	FOR r_result IN c_calls(start_id, end_id,20) LOOP
+	FOR r_result IN c_calls(start_id, end_id,topn) LOOP
 		report := report||format(calls_tpl,
 			to_hex(r_result.queryid),
 			to_hex(r_result.queryid),
@@ -1457,7 +1472,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_iowait_htbl(IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION top_iowait_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
 	report text;
    
@@ -1496,7 +1511,7 @@ DECLARE
 BEGIN
 	-- Reporting on top 10 queries by I/O wait time
 	report := iowait_hdr;
-	FOR r_result IN c_iowait_time(start_id, end_id,20) LOOP
+	FOR r_result IN c_iowait_time(start_id, end_id,topn) LOOP
 		report := report||format(iowait_tpl,
 			to_hex(r_result.queryid),
 			to_hex(r_result.queryid),
@@ -1514,7 +1529,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_gets_htbl(IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION top_gets_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
 	report text;
    
@@ -1552,7 +1567,7 @@ DECLARE
 BEGIN
 	-- Reporting on top queries by gets
 	report := gets_hdr;
-	FOR r_result IN c_gets(start_id, end_id,20) LOOP
+	FOR r_result IN c_gets(start_id, end_id,topn) LOOP
 		report := report||format(gets_tpl,
 			to_hex(r_result.queryid),
 			to_hex(r_result.queryid),
@@ -1570,7 +1585,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_temp_htbl(IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION top_temp_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
 	report text;
    
@@ -1608,7 +1623,7 @@ DECLARE
 BEGIN
 	-- Reporting on top queries by temp usage
 	report := temp_hdr;
-	FOR r_result IN c_temp(start_id, end_id,20) LOOP
+	FOR r_result IN c_temp(start_id, end_id,topn) LOOP
 		report := report||format(temp_tpl,
 			to_hex(r_result.queryid),
 			to_hex(r_result.queryid),
@@ -1659,7 +1674,8 @@ CREATE OR REPLACE FUNCTION report(IN start_id integer, IN end_id integer) RETURN
 DECLARE
 	tmp_text text;
    tmp_report text;
-	report text;
+	report   text;
+   topn     integer;
 	-- HTML elements templates
    report_tpl CONSTANT text := '<html><head><style>{css}</style><title>Postgres profile report {snaps}</title></head><body><H1>Postgres profile report {snaps}</H1><p>Report interval: {report_start} - {report_end}</p>{report}</body></html>';
    report_css CONSTANT text := 'table, th, td {border: 1px solid black; border-collapse: collapse; padding: 4px;} table tr:nth-child(even) {background-color: #eee;} table tr:nth-child(odd) {background-color: #fff;} table tr:hover{background-color:#d9ffcc} table th {color: black; background-color: #ffcc99;}';
@@ -1672,6 +1688,13 @@ BEGIN
    
    -- CSS
    report := replace(report_tpl,'{css}',report_css);
+   
+   -- Getting TopN setting
+   BEGIN
+      topn := current_setting('pg_profile.topn')::integer;
+   EXCEPTION
+      WHEN OTHERS THEN topn := 20;
+   END;
    
 	-- Checking snapshot existance, header generation
 	OPEN c_snap(start_id);
@@ -1750,31 +1773,31 @@ BEGIN
    --Reporting cluster stats
 	tmp_text := tmp_text || '<H2><a NAME=cl_stat>Cluster statistics</a></H2>';
 	tmp_text := tmp_text || '<H3><a NAME=db_stat>Databases stats</a></H3>';
-   tmp_text := tmp_text || dbstats_htbl(start_id, end_id);
+   tmp_text := tmp_text || dbstats_htbl(start_id, end_id, topn);
 
 	tmp_text := tmp_text || '<H3><a NAME=st_stat>Statements stats by database</a></H3>';
-   tmp_text := tmp_text || statements_stats_htbl(start_id, end_id);
+   tmp_text := tmp_text || statements_stats_htbl(start_id, end_id, topn);
    
    --Reporting on top queries by elapsed time
 	tmp_text := tmp_text||'<H2><a NAME=sql_stat>SQL Query stats</a></H2>';
    tmp_text := tmp_text||'<H3><a NAME=top_ela>Top SQL by elapsed time</a></H3>';
-   tmp_text := tmp_text || top_elapsed_htbl(start_id, end_id);
+   tmp_text := tmp_text || top_elapsed_htbl(start_id, end_id, topn);
 
 	-- Reporting on top queries by executions
 	tmp_text := tmp_text||'<H3><a NAME=top_calls>Top SQL by executions</a></H3>';
-   tmp_text := tmp_text||top_exec_htbl(start_id, end_id);
+   tmp_text := tmp_text||top_exec_htbl(start_id, end_id, topn);
 
 	-- Reporting on top queries by I/O wait time
 	tmp_text := tmp_text||'<H3><a NAME=top_iowait>Top SQL by I/O wait time</a></H3>';
-   tmp_text := tmp_text||top_iowait_htbl(start_id, end_id);
+   tmp_text := tmp_text||top_iowait_htbl(start_id, end_id, topn);
 
 	-- Reporting on top queries by gets
 	tmp_text := tmp_text||'<H3><a NAME=top_gets>Top SQL by gets</a></H3>';
-   tmp_text := tmp_text||top_gets_htbl(start_id, end_id);
+   tmp_text := tmp_text||top_gets_htbl(start_id, end_id, topn);
 
 	-- Reporting on top queries by temp usage
 	tmp_text := tmp_text||'<H3><a NAME=top_temp>Top SQL by temp usage</a></H3>';
-   tmp_text := tmp_text||top_temp_htbl(start_id, end_id);
+   tmp_text := tmp_text||top_temp_htbl(start_id, end_id, topn);
 
    -- Listing queries
 	tmp_text := tmp_text||'<H3><a NAME=sql_list>Complete List of SQL Text</a></H3>';
@@ -1784,38 +1807,38 @@ BEGIN
    -- Reporting scanned table
 	tmp_text := tmp_text||'<H2><a NAME=schema_stat>Schema objects stats</a></H2>';
    tmp_text := tmp_text||'<H3><a NAME=scanned_tbl>Most scanned tables</a></H3>';
-   tmp_text := tmp_text||top_scan_tables_htbl(start_id, end_id);
+   tmp_text := tmp_text||top_scan_tables_htbl(start_id, end_id, topn);
    
    tmp_text := tmp_text||'<H3><a NAME=dml_tbl>Top DML tables</a></H3>';
-   tmp_text := tmp_text||top_dml_tables_htbl(start_id, end_id);
+   tmp_text := tmp_text||top_dml_tables_htbl(start_id, end_id, topn);
 
    tmp_text := tmp_text||'<H3><a NAME=growth_tbl>Top growth tables</a></H3>';
-   tmp_text := tmp_text||top_growth_tables_htbl(start_id, end_id);
+   tmp_text := tmp_text||top_growth_tables_htbl(start_id, end_id, topn);
    
    tmp_text := tmp_text||'<H3><a NAME=ix_unused>Unused indexes</a></H3>';
    tmp_text := tmp_text||'<p>This table contains not-scanned indexes (during report period), ordered by number of DML operations on underlying tables. Constraint indexes are excluded.</p>';
-   tmp_text := tmp_text||ix_unused_htbl(start_id, end_id);
+   tmp_text := tmp_text||ix_unused_htbl(start_id, end_id, topn);
    
    
    tmp_text := tmp_text || '<H2><a NAME=io_stat>I/O Schema objects stats</a></H2>';
-   tmp_report := tbl_top_io_htbl(start_id, end_id);
+   tmp_report := tbl_top_io_htbl(start_id, end_id, topn);
    IF tmp_report != '' THEN
       tmp_text := tmp_text || '<H3><a NAME=tbl_io_stat>Top tables by read I/O</a></H3>';
       tmp_text := tmp_text || tmp_report;
    END IF;
-   tmp_report := ix_top_io_htbl(start_id, end_id);
+   tmp_report := ix_top_io_htbl(start_id, end_id, topn);
    IF tmp_report != '' THEN
       tmp_text := tmp_text || '<H3><a NAME=ix_io_stat>Top indexes by read I/O</a></H3>';
       tmp_text := tmp_text || tmp_report;
    END IF;
 
    tmp_text := tmp_text || '<H2><a NAME=func_stat>User function stats</a></H2>';
-   tmp_report := func_top_time_htbl(start_id, end_id);
+   tmp_report := func_top_time_htbl(start_id, end_id, topn);
    IF tmp_report != '' THEN
       tmp_text := tmp_text || '<H3><a NAME=funs_time_stat>Top functions by total time</a></H3>';
       tmp_text := tmp_text || tmp_report;
    END IF;
-   tmp_report := func_top_calls_htbl(start_id, end_id);
+   tmp_report := func_top_calls_htbl(start_id, end_id, topn);
    IF tmp_report != '' THEN
       tmp_text := tmp_text || '<H3><a NAME=funs_calls_stat>Top functions by executions</a></H3>';
       tmp_text := tmp_text || tmp_report;
@@ -1825,10 +1848,10 @@ BEGIN
 	tmp_text := tmp_text||'<H2><a NAME=vacuum_stats>Vacuum related stats</a></H2>';
 	tmp_text := tmp_text||'<p>Data in this section is not incremental. This data is valid for endind snapshot only.</p>';
    tmp_text := tmp_text||'<H3><a NAME=dead_tbl>Tables ordered by dead tuples ratio</a></H3>';
-   tmp_text := tmp_text||tbl_top_dead_htbl(start_id, end_id);
+   tmp_text := tmp_text||tbl_top_dead_htbl(start_id, end_id, topn);
 
    tmp_text := tmp_text||'<H3><a NAME=mod_tbl>Tables ordered by modified tuples ratio</a></H3>';
-   tmp_text := tmp_text||tbl_top_mods_htbl(start_id, end_id);
+   tmp_text := tmp_text||tbl_top_mods_htbl(start_id, end_id, topn);
    
    -- Reporting possible statements overflow
    tmp_report := check_stmt_cnt();

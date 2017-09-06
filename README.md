@@ -58,6 +58,10 @@ postgres=# CREATE EXTENSION pg_profile SCHEMA profile;
 ```
 All objects will be created in schema, defined by SCHEMA clause.
 ## Using pg_profile
+### Setting extension parameters
+You can define extension parameters like any other parameter in _postgresql.conf_ or in _postgresql.auto.conf_. Default values a shown in following list:
+* _pg_profile.topn = 20_ - Number of top objects (statements, relations, etc.), to be reported in each sorted report table. Also, this parameter affects size of a snapshot - the more objects you want appear in your report, the more objects we need to keep in a snapshot.
+* _pg_profile.retention = 7_ - Retention time of snapshots in days. Snapshots, aged _pg_profile.retention_ days and more will be automatically deleted on next _snapshot()_ call.
 ### Creating snapshots
 You must create at least 3 snapshots to be able to build a report between 2nd and 3rd snapshot.
 Snapshots are taken by calling snapshot function. I'm using cron of user _postgres_ like this:
@@ -101,3 +105,9 @@ $ psql -qt -c "SELECT profile.report(194,198)" -o report_194_198.html
 Now you can view file _report_194_198.html_ in any web browser.
 
 This AWR-like report will contain several tables describing database cluster load profile. Here you will find queries, with most time elapsed, most gets, most reads, I/O waits, and so on. You will see per database statistics, such as hit ratio, calls, reads, and so on. There will be statistics for database objects - most DML-intensive tables, most scanned tables, most growth tables, and so on. Finally, you will be reported on most readed tables and indexes.
+### What you need to remember...
+1. PostgreSQL collects execution statistics __after__ execution is complete. If single execution of a statement lasts for several snapshots, it will affect statistics of only last snapshot (in which it was completed).
+1. When this extension is in use reset of any PostgreSQL statistics may affect accuracy of a next snapshot. 
+## TODO-list
+- Some sort of "baselines" - snapshot series, excluded from default retention policy
+- Differential reports
