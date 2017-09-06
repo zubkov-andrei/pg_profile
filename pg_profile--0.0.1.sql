@@ -1262,9 +1262,9 @@ DECLARE
       sum(st.calls) as calls,
       sum(st.total_time) as total_time,
       sum(st.self_time) as self_time,
-      sum(st.total_time)/calls as m_time,
-      sum(st.self_time)/calls as m_stime
-   FROM ONLY(snap_statio_user_indexes) st
+      sum(st.total_time)/sum(st.calls) as m_time,
+      sum(st.self_time)/sum(st.calls) as m_stime
+   FROM ONLY(snap_stat_user_functions) st
    -- Database name and existance condition
    JOIN ONLY(snap_stat_database) db_s ON (db_s.datid=st.dbid and db_s.snap_id=s_id) 
 	JOIN ONLY(snap_stat_database) db_e ON (db_e.datid=st.dbid and db_e.snap_id=e_id and db_s.datname=db_e.datname)
@@ -1311,9 +1311,9 @@ DECLARE
       sum(st.calls) as calls,
       sum(st.total_time) as total_time,
       sum(st.self_time) as self_time,
-      sum(st.total_time)/calls as m_time,
-      sum(st.self_time)/calls as m_stime
-   FROM ONLY(snap_statio_user_indexes) st
+      sum(st.total_time)/sum(st.calls) as m_time,
+      sum(st.self_time)/sum(st.calls) as m_stime
+   FROM ONLY(snap_stat_user_functions) st
    -- Database name and existance condition
    JOIN ONLY(snap_stat_database) db_s ON (db_s.datid=st.dbid and db_s.snap_id=s_id) 
 	JOIN ONLY(snap_stat_database) db_e ON (db_e.datid=st.dbid and db_e.snap_id=e_id and db_s.datname=db_e.datname)
