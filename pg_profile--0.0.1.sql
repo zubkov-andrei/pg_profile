@@ -1296,7 +1296,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION func_calls_time_htbl(IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION func_top_calls_htbl(IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
 	report text := '';
 
