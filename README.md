@@ -29,7 +29,7 @@ pg_stat_statements.max = 1000
 pg_stat_statements.track = 'top'
 pg_stat_statements.save = off
 ```
-You must install and use _pg_profile_ extension as cluster superuser (for example, _postgres_), because only superusers can see all statements in _pg_stat_statements_ view. And user, that will make snapshots must be able to login in any database of your cluster without providing a password. Dblink is used for collecting object statistics. Peer authentication preferred - make shure your _pg_hba.conf_ allows this.
+You must install and use _pg_profile_ extension as cluster superuser (for example, _postgres_), because only superusers can see all statements in _pg_stat_statements_ view. And user, that will make snapshots must be able to login in any database of your cluster without providing a password. Dblink is used for collecting object statistics. Peer authentication preferred - make sure your _pg_hba.conf_ allows this.
 ## Installation
 ### Step 1 Installation of extension files
 There is two ways for installing extension files:
