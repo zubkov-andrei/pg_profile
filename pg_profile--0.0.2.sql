@@ -339,7 +339,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION snapshot(IN topn integer) IS 'Statistics snapshot creation function. Must be explicitly called periodically.';
+COMMENT ON FUNCTION snapshot() IS 'Statistics snapshot creation function. Must be explicitly called periodically.';
 
 CREATE OR REPLACE FUNCTION collect_obj_stats(IN s_id integer) RETURNS integer SET search_path=@extschema@,public AS $$
 DECLARE
