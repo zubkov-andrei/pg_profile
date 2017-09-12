@@ -57,6 +57,12 @@ postgres=# CREATE SCHEMA profile;
 postgres=# CREATE EXTENSION pg_profile SCHEMA profile;
 ```
 All objects will be created in schema, defined by SCHEMA clause. Installation in dedicated schema is recommended way - extension will create its own tables, sequences and functions. It is a good idea to keep them separate. If you do not whant to specify schema qualifier when using module, consider changing _search_path_ setting.
+### Step 3 Update to new version
+New versions of pg_profile will contain all necessary to update from any previous version. So, in case of update you will only need to install extension files (see Step 1) and update this extension, like this:
+```
+postgres=# alter extension pg_profile update;
+```
+All your historic data will remain unchanged if possible.
 ## Using pg_profile
 ### Setting extension parameters
 You can define extension parameters like any other parameter in _postgresql.conf_ or in _postgresql.auto.conf_. Default values a shown in following list:
@@ -152,4 +158,5 @@ postgres=# select * from profile.baseline_show();
 1. When this extension is in use reset of any PostgreSQL statistics may affect accuracy of a next snapshot. 
 ## TODO-list
 - [X] Some sort of "baselines" - snapshot series, excluded from default retention policy
+- [ ] Query IDs compatible with pgcenter utility
 - [ ] Differential reports
