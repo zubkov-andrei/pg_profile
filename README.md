@@ -116,7 +116,7 @@ Sections of a report:
   * Statements stats by database
 * SQL Query stats
   * Top SQL by elapsed time
-  * Top SQL by elapsed time
+  * Top SQL by executions
   * Top SQL by I/O wait time
   * Top SQL by gets
   * Top SQL by temp usage
