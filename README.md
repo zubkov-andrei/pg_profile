@@ -1,5 +1,5 @@
 # pg_profile
-This extension for PostgreSQL helps you to find out most resource intensive activities in your PostgreSQL database. This is a very first alpha version and it of course contains some bugs. If you'll find one, send me a feedback.
+This extension for PostgreSQL helps you to find out most resource intensive activities in your PostgreSQL database. This extension is in beta-testing state.
 ## Concepts
 This extension is based on standard statistics views of PostgreSQL. It is written in pl/pgsql and doesn't need any external libraries or software, but PostgreSQL database itself, and a cron-like tool performing periodic tasks. Initially developed and tested on PostgreSQL 9.6, but may work in previous versions too (not tested).
 
@@ -110,7 +110,8 @@ Now you can view file _report_480_482.html_ in any web browser.
 
 This AWR-like report will contain several tables describing database cluster load profile. Here you will find queries, with most time elapsed, most gets, most reads, I/O waits, and so on. You will see per database statistics, such as hit ratio, calls, reads, and so on. There will be statistics for database objects - most DML-intensive tables, most scanned tables, most growth tables, and so on. Finally, you will be reported on most readed tables and indexes.
 
-Sections of a report:
+#### Sections of a report
+The report will contain following sections:
 * Cluster statistics
   * Databases stats
   * Statements stats by database

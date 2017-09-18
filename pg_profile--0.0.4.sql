@@ -1,5 +1,6 @@
 \echo Use "CREATE EXTENSION pg_profile" to load this file. \quit
 
+/* ========= Tables ========= */
 CREATE TABLE snapshots (
 	snap_id SERIAL PRIMARY KEY,
 	snap_time timestamp (0) with time zone
@@ -16,12 +17,33 @@ CREATE TABLE snap_params (
 );
 COMMENT ON TABLE snap_params IS 'PostgreSQL parameters at time of snapshot';
 
+CREATE TABLE baselines (
+    bl_id SERIAL PRIMARY KEY,
+    bl_name varchar (25) UNIQUE,
+    keep_until timestamp (0) with time zone
+);
+COMMENT ON TABLE baselines IS 'Baselines list';
+
+CREATE TABLE bl_snaps (
+    snap_id integer REFERENCES snapshots (snap_id) ON DELETE RESTRICT,
+    bl_id integer REFERENCES baselines (bl_id) ON DELETE CASCADE,
+    CONSTRAINT bl_snaps_pk PRIMARY KEY (snap_id,bl_id)
+);
+COMMENT ON TABLE bl_snaps IS 'Snapshots in baselines';
+
+CREATE TABLE stmt_list(
+   queryid_md5    char(10),
+   query          text,
+   CONSTRAINT pk_snap_users PRIMARY KEY (queryid_md5)
+);
+COMMENT ON TABLE stmt_list IS 'Statements, captured in snapshots';
+
 CREATE TABLE snap_statements (
 	snap_id integer REFERENCES snapshots (snap_id) ON DELETE CASCADE,
 	userid oid,
 	dbid oid,
 	queryid bigint,
-	query text,
+   queryid_md5 char(10) REFERENCES stmt_list (queryid_md5) ON DELETE RESTRICT ON UPDATE CASCADE,
 	calls bigint,
 	total_time double precision,
 	min_time double precision,
@@ -41,9 +63,40 @@ CREATE TABLE snap_statements (
 	temp_blks_written bigint,
 	blk_read_time double precision,
 	blk_write_time double precision,
-   CONSTRAINT pk_snap_statements PRIMARY KEY (snap_id,userid,dbid,queryid)
+   CONSTRAINT pk_snap_statements_n PRIMARY KEY (snap_id,userid,dbid,queryid)
 );
 COMMENT ON TABLE snap_statements IS 'Snapshot statement statistics table (fields from pg_stat_statements)';
+
+CREATE VIEW v_snap_statements AS
+SELECT
+   st.snap_id as snap_id,
+   st.userid as userid,
+   st.dbid as dbid,
+   st.queryid as queryid,
+   queryid_md5 as queryid_md5,
+   st.calls as calls,
+   st.total_time as total_time,
+   st.min_time as min_time,
+   st.max_time as max_time,
+   st.mean_time as mean_time,
+   st.stddev_time as stddev_time,
+   st.rows as rows,
+   st.shared_blks_hit as shared_blks_hit,
+   st.shared_blks_read as shared_blks_read,
+   st.shared_blks_dirtied as shared_blks_dirtied,
+   st.shared_blks_written as shared_blks_written,
+   st.local_blks_hit as local_blks_hit,
+	st.local_blks_read as local_blks_read,
+	st.local_blks_dirtied as local_blks_dirtied,
+	st.local_blks_written as local_blks_written,
+	st.temp_blks_read as temp_blks_read,
+	st.temp_blks_written as temp_blks_written,
+	st.blk_read_time as blk_read_time,
+	st.blk_write_time as blk_write_time,
+   l.query as query
+FROM
+   snap_statements st
+   JOIN stmt_list l USING (queryid_md5);
 
 CREATE TABLE snap_statements_total (
 	snap_id integer REFERENCES snapshots (snap_id) ON DELETE CASCADE,
@@ -203,6 +256,8 @@ COMMENT ON TABLE snap_stat_database IS 'Snapshot database statistics table (fiel
 CREATE TABLE last_stat_database () INHERITS (snap_stat_database);
 COMMENT ON TABLE last_stat_database IS 'Last snapshot data for calculating diffs in next snapshot';
 
+/* ========= Snapshot functions ========= */
+
 CREATE OR REPLACE FUNCTION snapshot() RETURNS integer SET search_path=@extschema@,public AS $$
 DECLARE
 	id    integer;
@@ -222,9 +277,13 @@ BEGIN
    EXCEPTION
       WHEN OTHERS THEN ret := 7;
    END;
-   
+
+   -- Deleting obsolete baselines
+   DELETE FROM baselines WHERE keep_until < now();
    -- Deleting obsolote snapshots
-	DELETE FROM snapshots WHERE snap_time < now() - (ret || ' days')::interval;
+	DELETE FROM snapshots WHERE snap_time < now() - (ret || ' days')::interval
+      AND snap_id NOT IN (SELECT snap_id FROM bl_snaps);
+
    -- Creating a new snapshot record
 	INSERT INTO snapshots(snap_time) 
    VALUES (now())
@@ -235,26 +294,89 @@ BEGIN
    SELECT id,name,setting
    FROM pg_catalog.pg_settings
    WHERE name IN ('pg_stat_statements.max');
+   INSERT INTO snap_params
+   VALUES (id,'pg_profile.topn',topn);
    
    -- Snapshot data from pg_stat_statements for top whole cluster statements
-   INSERT INTO snap_statements 
-   SELECT id,st.* FROM pg_stat_statements st
+   INSERT INTO stmt_list 
+   SELECT 
+      left(md5(db.datname || r.rolname || st.query ), 10) AS queryid_md5,
+      regexp_replace(query,'\s+',' ','g') AS query
+   FROM pg_stat_statements st
+   JOIN pg_database db ON (st.dbid = db.oid)
+   JOIN pg_roles r ON (st.userid = r.oid)
    JOIN
-     (SELECT userid,dbid,queryid,
-      row_number() over (PARTITION BY dbid ORDER BY total_time DESC) AS time_p, 
-      row_number() over (PARTITION BY dbid ORDER BY calls DESC) AS calls_p,
-      row_number() over (PARTITION BY dbid ORDER BY (blk_read_time + blk_write_time) DESC) AS io_time_p,
-      row_number() over (PARTITION BY dbid ORDER BY (shared_blks_hit + shared_blks_read) DESC) AS gets_p,
-      row_number() over (PARTITION BY dbid ORDER BY (temp_blks_read + temp_blks_written) DESC) AS temp_p
-      FROM pg_stat_statements) tops
-   USING (userid,dbid,queryid)
-      WHERE
-        (tops.time_p <= topn or 
-        tops.calls_p <= topn or 
-        tops.io_time_p <= topn or 
-        tops.gets_p <= topn or 
-        tops.temp_p <= topn);
+      (SELECT
+      userid, dbid, md5(query) as q_md5,
+      row_number() over (ORDER BY sum(total_time) DESC) AS time_p, 
+      row_number() over (ORDER BY sum(calls) DESC) AS calls_p,
+      row_number() over (ORDER BY sum(blk_read_time + blk_write_time) DESC) AS io_time_p,
+      row_number() over (ORDER BY sum(shared_blks_hit + shared_blks_read) DESC) AS gets_p,
+      row_number() over (ORDER BY sum(temp_blks_read + temp_blks_written) DESC) AS temp_p
+      FROM pg_stat_statements
+      GROUP BY userid, dbid, md5(query)) rank_t
+   ON (st.userid=rank_t.userid AND st.dbid=rank_t.dbid AND md5(st.query)=rank_t.q_md5)
+   WHERE
+      time_p <= topn 
+      OR calls_p <= topn
+      OR io_time_p <= topn
+      OR gets_p <= topn
+      OR temp_p <= topn
+   ON CONFLICT DO NOTHING;
 
+   INSERT INTO snap_statements 
+   SELECT 
+      id,
+      st.userid,
+      st.dbid,
+      st.queryid,
+      left(md5(db.datname || r.rolname || st.query ), 10) AS queryid_md5,
+      st.calls,
+      st.total_time,
+      st.min_time,
+      st.max_time,
+      st.mean_time,
+      st.stddev_time,
+      st.rows,
+      st.shared_blks_hit,
+      st.shared_blks_read,
+      st.shared_blks_dirtied,
+      st.shared_blks_written,
+      st.local_blks_hit,
+      st.local_blks_read,
+      st.local_blks_dirtied,
+      st.local_blks_written,
+      st.temp_blks_read,
+      st.temp_blks_written,
+      st.blk_read_time,
+      st.blk_write_time
+   FROM pg_stat_statements st 
+      JOIN pg_database db ON (db.oid=st.dbid)
+      JOIN pg_roles r ON (r.oid=st.userid)
+      JOIN stmt_list stl ON (left(md5(db.datname || r.rolname || st.query ), 10) = stl.queryid_md5)
+   JOIN
+      (SELECT
+      userid, dbid, md5(query) as q_md5,
+      row_number() over (ORDER BY sum(total_time) DESC) AS time_p, 
+      row_number() over (ORDER BY sum(calls) DESC) AS calls_p,
+      row_number() over (ORDER BY sum(blk_read_time + blk_write_time) DESC) AS io_time_p,
+      row_number() over (ORDER BY sum(shared_blks_hit + shared_blks_read) DESC) AS gets_p,
+      row_number() over (ORDER BY sum(temp_blks_read + temp_blks_written) DESC) AS temp_p
+      FROM pg_stat_statements
+      GROUP BY userid, dbid, md5(query)) rank_t
+   ON (st.userid=rank_t.userid AND st.dbid=rank_t.dbid AND md5(st.query)=rank_t.q_md5)
+   WHERE
+      time_p <= topn 
+      OR calls_p <= topn
+      OR io_time_p <= topn
+      OR gets_p <= topn
+      OR temp_p <= topn;
+      
+   -- Deleting unused statements
+   DELETE FROM stmt_list
+   WHERE queryid_md5 NOT IN
+   (SELECT queryid_md5 FROM snap_statements);
+   
    -- Aggregeted statistics data
    INSERT INTO snap_statements_total
    SELECT id,dbid,sum(calls),sum(total_time),sum(rows),sum(shared_blks_hit),sum(shared_blks_read),sum(shared_blks_dirtied),sum(shared_blks_written),
@@ -508,7 +630,8 @@ BEGIN
          t.n_tup_upd-l.n_tup_upd as n_tup_upd,
          t.n_tup_del-l.n_tup_del as n_tup_del,
          t.n_tup_hot_upd-l.n_tup_hot_upd as n_tup_hot_upd,
-         t.n_live_tup,t.n_dead_tup as n_dead_tup,
+         t.n_live_tup as n_live_tup,
+         t.n_dead_tup as n_dead_tup,
          t.n_mod_since_analyze,
          t.last_vacuum,
          t.last_autovacuum,
@@ -522,10 +645,12 @@ BEGIN
          t.relsize-l.relsize as relsize_diff,
          row_number() OVER (ORDER BY t.seq_scan-l.seq_scan desc) scan_rank,
          row_number() OVER (ORDER BY t.n_tup_ins-l.n_tup_ins+t.n_tup_upd-l.n_tup_upd+t.n_tup_del-l.n_tup_del+t.n_tup_hot_upd-l.n_tup_hot_upd desc) dml_rank,
-         row_number() OVER (ORDER BY t.relsize-l.relsize desc) size_rank
+         row_number() OVER (ORDER BY t.relsize-l.relsize desc) growth_rank,
+         row_number() OVER (ORDER BY t.n_dead_tup*100/GREATEST(t.n_live_tup,1) desc) dead_pct_rank,
+         row_number() OVER (ORDER BY t.n_mod_since_analyze*100/GREATEST(t.n_live_tup,1) desc) mod_pct_rank
       FROM temp_stat_user_tables t JOIN last_stat_user_tables l USING (dbid,relid)
       WHERE l.snap_id=t.snap_id-1 AND t.snap_id=s_id) diff
-   WHERE scan_rank <= topn OR dml_rank <= topn OR size_rank <= topn;
+   WHERE scan_rank <= topn OR dml_rank <= topn OR growth_rank <= topn OR dead_pct_rank <= topn OR mod_pct_rank <= topn;
    
    INSERT INTO snap_stat_user_indexes
    SELECT
@@ -692,13 +817,69 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION snapshot_show(IN days integer = NULL) RETURNS TABLE(snapshot integer, date_time timestamp (0) with time zone) SET search_path=@extschema@,public AS $$
+   SELECT snap_id, snap_time
+   FROM snapshots
+   WHERE days IS NULL OR snap_time > now() - (days || ' days')::interval
+   ORDER BY snap_id;
+$$ LANGUAGE SQL;
+
+/* ========= Baseline management functions ========= */
+
+CREATE OR REPLACE FUNCTION baseline_new(IN name varchar(25), IN start_id integer, IN end_id integer, IN days integer = NULL) RETURNS integer SET search_path=@extschema@,public AS $$
+DECLARE
+   baseline_id integer;
+BEGIN
+   INSERT INTO baselines(bl_name,keep_until)
+   VALUES (name,now() + (days || ' days')::interval)
+   RETURNING bl_id INTO baseline_id;
+   
+   INSERT INTO bl_snaps (snap_id,bl_id)
+   SELECT snap_id, baseline_id
+   FROM snapshots
+   WHERE snap_id BETWEEN start_id AND end_id;
+   
+	RETURN baseline_id;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION baseline_drop(IN name varchar(25) = null) RETURNS integer SET search_path=@extschema@,public AS $$
+DECLARE
+   del_rows integer;
+BEGIN
+   DELETE FROM baselines WHERE name IS NULL OR bl_name = name;
+   GET DIAGNOSTICS del_rows = ROW_COUNT;
+	RETURN del_rows;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION baseline_keep(IN name varchar(25) = null, IN days integer = null) RETURNS integer SET search_path=@extschema@,public AS $$
+DECLARE
+   upd_rows integer;
+BEGIN
+   UPDATE baselines SET keep_until = now() + (days || ' days')::interval WHERE name IS NULL OR bl_name = name;
+   GET DIAGNOSTICS upd_rows = ROW_COUNT;
+	RETURN upd_rows;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION baseline_show() RETURNS TABLE(baseline varchar(25), min_snap integer, max_snap integer, keep_until_time timestamp (0) with time zone) SET search_path=@extschema@,public AS $$
+   SELECT bl_name as baseline,min_snap_id,max_snap_id, keep_until 
+   FROM baselines b JOIN 
+   (SELECT bl_id,min(snap_id) min_snap_id,max(snap_id) max_snap_id FROM bl_snaps GROUP BY bl_id) b_agg
+   USING (bl_id)
+   ORDER BY min_snap_id;
+$$ LANGUAGE SQL;
+
+/* ========= Reporting functions ========= */
+
 CREATE OR REPLACE FUNCTION dbstats_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
-	report text;
+	report text := '';
 
 	-- Database stats TPLs
-	database_hdr CONSTANT text := '<table><tr><th>Database</th><th>Committs</th><th>Rollbacks</th><th>BlkHit%(read/hit)</th><th>Tup Ret/Fet</th><th>Tup Ins</th><th>Tup Del</th><th>Temp Bytes(Files)</th><th>Deadlocks</th></tr>';
-	database_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s%%(%s/%s)</td><td>%s/%s</td><td>%s</td><td>%s</td><td>%s(%s)</td><td>%s</td></tr>';
+	tab_tpl CONSTANT text := '<table><tr><th>Database</th><th>Committs</th><th>Rollbacks</th><th>BlkHit%(read/hit)</th><th>Tup Ret/Fet</th><th>Tup Ins</th><th>Tup Del</th><th>Temp Bytes(Files)</th><th>Deadlocks</th></tr>{rows}</table>';
+	row_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s%%(%s/%s)</td><td>%s/%s</td><td>%s</td><td>%s</td><td>%s(%s)</td><td>%s</td></tr>';
 
    --Cursor for db stats
    c_dbstats CURSOR (s_id integer, e_id integer) FOR
@@ -725,9 +906,8 @@ DECLARE
 	r_result RECORD;
 BEGIN
 	-- Reporting summary databases stats
-	report := database_hdr;
 	FOR r_result IN c_dbstats(start_id, end_id) LOOP
-		report := report||format(database_tpl,
+		report := report||format(row_tpl,
 			r_result.dbname,
 			r_result.xact_commit,
          r_result.xact_rollback,
@@ -744,17 +924,21 @@ BEGIN
          );
 	END LOOP;
    
-	RETURN report||'</table>';
+   IF report != '' THEN
+      report := replace(tab_tpl,'{rows}',report);
+   END IF;
+   
+	RETURN  report;
 END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION statements_stats_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
-	report text;
+	report text := '';
 
 	-- Database stats TPLs
-	statements_hdr CONSTANT text := '<table><tr><th>Database</th><th>Calls</th><th>Total time(s)</th><th>Shared gets</th><th>Local gets</th><th>Shared dirtied</th><th>Local dirtied</th><th>Temp_r (blk)</th><th>Temp_w (blk)</th><th>Statements</th></tr>';
-	database_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
+	tab_tpl CONSTANT text := '<table><tr><th>Database</th><th>Calls</th><th>Total time(s)</th><th>Shared gets</th><th>Local gets</th><th>Shared dirtied</th><th>Local dirtied</th><th>Temp_r (blk)</th><th>Temp_w (blk)</th><th>Statements</th></tr>{rows}</table>';
+	row_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
 
    --Cursor for db stats
    c_dbstats CURSOR (s_id integer, e_id integer) FOR
@@ -778,9 +962,8 @@ DECLARE
 	r_result RECORD;
 BEGIN
 	-- Reporting summary databases stats
-	report := statements_hdr;
 	FOR r_result IN c_dbstats(start_id, end_id) LOOP
-		report := report||format(database_tpl,
+		report := report||format(row_tpl,
 			r_result.dbname,
 			r_result.calls,
          round(CAST(r_result.total_time AS numeric),2),
@@ -794,17 +977,21 @@ BEGIN
          );
 	END LOOP;
    
-	RETURN report||'</table>';
+   IF report != '' THEN
+      report := replace(tab_tpl,'{rows}',report);
+   END IF;
+   
+	RETURN  report;
 END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION top_scan_tables_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
-	report text;
+	report text := '';
 
 	-- Tables stats template
-	tbl_stat_hdr CONSTANT text := '<table><tr><th>DB</th><th>Schema</th><th>Table</th><th>SeqScan</th><th>SeqFet</th><th>IxScan</th><th>IxFet</th><th>Ins</th><th>Upd</th><th>Del</th><th>HUpd</th></tr>';
-	tbl_stat_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
+	tab_tpl CONSTANT text := '<table><tr><th>DB</th><th>Schema</th><th>Table</th><th>SeqScan</th><th>SeqFet</th><th>IxScan</th><th>IxFet</th><th>Ins</th><th>Upd</th><th>Del</th><th>HUpd</th></tr>{rows}</table>';
+	row_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
 
    --Cursor for tables stats
    c_tbl_stats CURSOR (s_id integer, e_id integer, cnt integer) FOR
@@ -832,9 +1019,8 @@ DECLARE
 	r_result RECORD;
 BEGIN
 	-- Reporting table stats
-	report := tbl_stat_hdr;
 	FOR r_result IN c_tbl_stats(start_id, end_id,topn) LOOP
-		report := report||format(tbl_stat_tpl,
+		report := report||format(row_tpl,
 			r_result.dbname,
          r_result.schemaname,
          r_result.relname,
@@ -849,17 +1035,21 @@ BEGIN
          );
 	END LOOP;
    
-	RETURN report||'</table>';
+   IF report != '' THEN
+      report := replace(tab_tpl,'{rows}',report);
+   END IF;
+   
+	RETURN  report;
 END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION top_dml_tables_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
-	report text;
+	report text := '';
 
 	-- Tables stats template
-	tbl_stat_hdr CONSTANT text := '<table><tr><th>DB</th><th>Schema</th><th>Table</th><th>Ins</th><th>Upd</th><th>Del</th><th>HUpd</th><th>SeqScan</th><th>SeqFet</th><th>IxScan</th><th>IxFet</th></tr>';
-	tbl_stat_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
+	tab_tpl CONSTANT text := '<table><tr><th>DB</th><th>Schema</th><th>Table</th><th>Ins</th><th>Upd</th><th>Del</th><th>HUpd</th><th>SeqScan</th><th>SeqFet</th><th>IxScan</th><th>IxFet</th></tr>{rows}</table>';
+	row_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
 
    --Cursor for tables stats
    c_tbl_stats CURSOR (s_id integer, e_id integer, cnt integer) FOR
@@ -887,9 +1077,8 @@ DECLARE
 	r_result RECORD;
 BEGIN
 	-- Reporting table stats
-	report := tbl_stat_hdr;
 	FOR r_result IN c_tbl_stats(start_id, end_id,topn) LOOP
-		report := report||format(tbl_stat_tpl,
+		report := report||format(row_tpl,
 			r_result.dbname,
          r_result.schemaname,
          r_result.relname,
@@ -904,7 +1093,11 @@ BEGIN
          );
 	END LOOP;
 	
-   RETURN report||'</table>';
+   IF report != '' THEN
+      report := replace(tab_tpl,'{rows}',report);
+   END IF;
+   
+	RETURN  report;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -913,8 +1106,8 @@ DECLARE
 	report text := '';
 
 	-- Tables stats template
-	tbl_stat_hdr CONSTANT text := '<table><tr><th>DB</th><th>Schema</th><th>Table</th><th>Size</th><th>Growth</th><th>Ins</th><th>Upd</th><th>Del</th><th>HUpd</th></tr>';
-	tbl_stat_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
+	tab_tpl CONSTANT text := '<table><tr><th>DB</th><th>Schema</th><th>Table</th><th>Size</th><th>Growth</th><th>Ins</th><th>Upd</th><th>Del</th><th>HUpd</th></tr>{rows}</table>';
+	row_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
 
    --Cursor for tables stats
    c_tbl_stats CURSOR (s_id integer, e_id integer, cnt integer) FOR
@@ -946,9 +1139,8 @@ DECLARE
 	r_result RECORD;
 BEGIN
 	-- Reporting table stats
-	report := tbl_stat_hdr;
 	FOR r_result IN c_tbl_stats(start_id, end_id,topn) LOOP
-		report := report||format(tbl_stat_tpl,
+		report := report||format(row_tpl,
 			r_result.dbname,
          r_result.schemaname,
          r_result.relname,
@@ -961,14 +1153,18 @@ BEGIN
          );
 	END LOOP;
    
-	RETURN  report||'</table>';
+   IF report != '' THEN
+      report := replace(tab_tpl,'{rows}',report);
+   END IF;
+   
+	RETURN  report;
 END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION check_stmt_cnt(IN start_id integer = 0, IN end_id integer = 0) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
-	tbl_tpl CONSTANT text := '<table><tr><th>Snapshot ID</th><th>Snapshot Time</th><th>Stmts Captured</th><th>pg_stat_statements.max</th></tr>{rows}</table>';
-	snap_row_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
+	tab_tpl CONSTANT text := '<table><tr><th>Snapshot ID</th><th>Snapshot Time</th><th>Stmts Captured</th><th>pg_stat_statements.max</th></tr>{rows}</table>';
+	row_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
    
    report text := '';
 
@@ -997,7 +1193,7 @@ DECLARE
 BEGIN
    IF start_id = 0 THEN
       FOR r_result IN c_stmt_all_stats LOOP
-         report := report||format(snap_row_tpl,
+         report := report||format(row_tpl,
             r_result.snap_id,
             r_result.snap_time,
             r_result.stmt_cnt,
@@ -1006,7 +1202,7 @@ BEGIN
       END LOOP;
    ELSE
       FOR r_result IN c_stmt_stats(start_id,end_id) LOOP
-         report := report||format(snap_row_tpl,
+         report := report||format(row_tpl,
             r_result.snap_id,
             r_result.snap_time,
             r_result.stmt_cnt,
@@ -1016,7 +1212,7 @@ BEGIN
    END IF; 
    
    IF report != '' THEN
-      report := replace(tbl_tpl,'{rows}',report);
+      report := replace(tab_tpl,'{rows}',report);
    END IF;
    
 	RETURN  report;
@@ -1025,11 +1221,11 @@ $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION tbl_top_dead_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
-	report text;
+	report text := '';
 
 	-- Top dead tuples table
-	tbl_stat_hdr CONSTANT text := '<table><tr><th>DB</th><th>Schema</th><th>Table</th><th>Live</th><th>Dead</th><th>%Dead</th><th>Last AV</th><th>Size</th></tr>';
-	tbl_stat_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
+	tab_tpl CONSTANT text := '<table><tr><th>DB</th><th>Schema</th><th>Table</th><th>Live</th><th>Dead</th><th>%Dead</th><th>Last AV</th><th>Size</th></tr>{rows}</table>';
+	row_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
 
    --Cursor for tables stats
    c_tbl_stats CURSOR (e_id integer, cnt integer) FOR
@@ -1049,15 +1245,14 @@ DECLARE
    -- Min 5 MB in size
       AND st.relsize > 5 * 1024^2
       AND st.n_dead_tup > 0
-   ORDER BY n_dead_tup/GREATEST(n_live_tup,1)
+   ORDER BY n_dead_tup*100/GREATEST(n_live_tup,1) DESC
    LIMIT cnt;
 
 	r_result RECORD;
 BEGIN
 	-- Reporting vacuum stats
-	report := tbl_stat_hdr;
 	FOR r_result IN c_tbl_stats(end_id, topn) LOOP
-		report := report||format(tbl_stat_tpl,
+		report := report||format(row_tpl,
 			r_result.dbname,
          r_result.schemaname,
          r_result.relname,
@@ -1069,17 +1264,21 @@ BEGIN
          );
 	END LOOP;
 	
-   RETURN report||'</table>';
+   IF report != '' THEN
+      report := replace(tab_tpl,'{rows}',report);
+   END IF;
+   
+	RETURN  report;
 END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION tbl_top_mods_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
-	report text;
+	report text := '';
 
 	-- Top modified tuples table
-	tbl_stat_hdr CONSTANT text := '<table><tr><th>DB</th><th>Schema</th><th>Table</th><th>Live</th><th>Dead</th><th>Mods</th><th>%Mod</th><th>Last AA</th><th>Size</th></tr>';
-	tbl_stat_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
+	tab_tpl CONSTANT text := '<table><tr><th>DB</th><th>Schema</th><th>Table</th><th>Live</th><th>Dead</th><th>Mods</th><th>%Mod</th><th>Last AA</th><th>Size</th></tr>{rows}</table>';
+	row_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
 
    --Cursor for tables stats
    c_tbl_stats CURSOR (e_id integer, cnt integer) FOR
@@ -1100,15 +1299,14 @@ DECLARE
    -- Min 5 MB in size
       AND relsize > 5 * 1024^2
       AND n_mod_since_analyze > 0
-   ORDER BY n_mod_since_analyze/GREATEST(n_live_tup,1) DESC
+   ORDER BY n_mod_since_analyze*100/GREATEST(n_live_tup,1) DESC
    LIMIT cnt;
 
 	r_result RECORD;
 BEGIN
 	-- Reporting vacuum stats
-	report := tbl_stat_hdr;
 	FOR r_result IN c_tbl_stats(end_id, topn) LOOP
-		report := report||format(tbl_stat_tpl,
+		report := report||format(row_tpl,
 			r_result.dbname,
          r_result.schemaname,
          r_result.relname,
@@ -1121,16 +1319,20 @@ BEGIN
          );
 	END LOOP;
    
-	RETURN report||'</table>';
+   IF report != '' THEN
+      report := replace(tab_tpl,'{rows}',report);
+   END IF;
+   
+	RETURN  report;
 END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION ix_unused_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
-	report text;
+	report text := '';
 
-	tbl_stat_hdr CONSTANT text := '<table><tr><th>DB</th><th>Schema</th><th>Table</th><th>Index</th><th>ixSize</th><th>Table DML ops (w/o HOT)</th></tr>';
-	tbl_stat_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
+	tab_tpl CONSTANT text := '<table><tr><th>DB</th><th>Schema</th><th>Table</th><th>Index</th><th>ixSize</th><th>Table DML ops (w/o HOT)</th></tr>{rows}</table>';
+	row_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
 
    c_ix_stats CURSOR (s_id integer, e_id integer, cnt integer) FOR
    SELECT 
@@ -1156,9 +1358,8 @@ DECLARE
 
 	r_result RECORD;
 BEGIN
-	report := tbl_stat_hdr;
 	FOR r_result IN c_ix_stats(start_id, end_id, topn) LOOP
-		report := report||format(tbl_stat_tpl,
+		report := report||format(row_tpl,
 			r_result.dbname,
          r_result.schemaname,
          r_result.relname,
@@ -1168,7 +1369,11 @@ BEGIN
          );
 	END LOOP;
    
-	RETURN report||'</table>';
+   IF report != '' THEN
+      report := replace(tab_tpl,'{rows}',report);
+   END IF;
+   
+	RETURN  report;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -1176,8 +1381,8 @@ CREATE OR REPLACE FUNCTION tbl_top_io_htbl(IN start_id integer, IN end_id intege
 DECLARE
 	report text := '';
 
-	tbl_stat_hdr CONSTANT text := '<table><tr><th>DB</th><th>Schema</th><th>Table</th><th>Heap</th><th>Ix</th><th>TOAST</th><th>TOAST-Ix</th></tr>{rows}</table>';
-	tbl_stat_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
+	tab_tpl CONSTANT text := '<table><tr><th>DB</th><th>Schema</th><th>Table</th><th>Heap</th><th>Ix</th><th>TOAST</th><th>TOAST-Ix</th></tr>{rows}</table>';
+	row_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
 
    c_tbl_stats CURSOR (s_id integer, e_id integer, cnt integer) FOR
    SELECT 
@@ -1200,7 +1405,7 @@ DECLARE
 	r_result RECORD;
 BEGIN
 	FOR r_result IN c_tbl_stats(start_id, end_id, topn) LOOP
-		report := report||format(tbl_stat_tpl,
+		report := report||format(row_tpl,
 			r_result.dbname,
          r_result.schemaname,
          r_result.relname,
@@ -1212,7 +1417,7 @@ BEGIN
 	END LOOP;
    
    IF report != '' THEN
-      RETURN replace(tbl_stat_hdr,'{rows}',report);
+      RETURN replace(tab_tpl,'{rows}',report);
    ELSE
       RETURN '';
    END IF;
@@ -1223,8 +1428,8 @@ CREATE OR REPLACE FUNCTION ix_top_io_htbl(IN start_id integer, IN end_id integer
 DECLARE
 	report text := '';
 
-	tbl_stat_hdr CONSTANT text := '<table><tr><th>DB</th><th>Schema</th><th>Table</th><th>Index</th><th>Blk Reads</th></tr>{rows}</table>';
-	tbl_stat_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
+	tab_tpl CONSTANT text := '<table><tr><th>DB</th><th>Schema</th><th>Table</th><th>Index</th><th>Blk Reads</th></tr>{rows}</table>';
+	row_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
 
    c_tbl_stats CURSOR (s_id integer, e_id integer, cnt integer) FOR
    SELECT 
@@ -1245,7 +1450,7 @@ DECLARE
 	r_result RECORD;
 BEGIN
 	FOR r_result IN c_tbl_stats(start_id, end_id, topn) LOOP
-		report := report||format(tbl_stat_tpl,
+		report := report||format(row_tpl,
 			r_result.dbname,
          r_result.schemaname,
          r_result.relname,
@@ -1255,7 +1460,7 @@ BEGIN
 	END LOOP;
    
    IF report != '' THEN
-      RETURN replace(tbl_stat_hdr,'{rows}',report);
+      RETURN replace(tab_tpl,'{rows}',report);
    ELSE
       RETURN '';
    END IF;
@@ -1266,8 +1471,8 @@ CREATE OR REPLACE FUNCTION func_top_time_htbl(IN start_id integer, IN end_id int
 DECLARE
 	report text := '';
 
-	tbl_stat_hdr CONSTANT text := '<table><tr><th>DB</th><th>Schema</th><th>Function</th><th>Executions</th><th>Total time</th><th>Self time</th><th>Mean time</th><th>Mean self time</th></tr>{rows}</table>';
-	tbl_stat_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
+	tab_tpl CONSTANT text := '<table><tr><th>DB</th><th>Schema</th><th>Function</th><th>Executions</th><th>Total time</th><th>Self time</th><th>Mean time</th><th>Mean self time</th></tr>{rows}</table>';
+	row_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
 
    c_tbl_stats CURSOR (s_id integer, e_id integer, cnt integer) FOR
    SELECT 
@@ -1291,7 +1496,7 @@ DECLARE
 	r_result RECORD;
 BEGIN
 	FOR r_result IN c_tbl_stats(start_id, end_id, topn) LOOP
-		report := report||format(tbl_stat_tpl,
+		report := report||format(row_tpl,
 			r_result.dbname,
          r_result.schemaname,
          r_result.funcname,
@@ -1304,7 +1509,7 @@ BEGIN
 	END LOOP;
    
    IF report != '' THEN
-      RETURN replace(tbl_stat_hdr,'{rows}',report);
+      RETURN replace(tab_tpl,'{rows}',report);
    ELSE
       RETURN '';
    END IF;
@@ -1315,8 +1520,8 @@ CREATE OR REPLACE FUNCTION func_top_calls_htbl(IN start_id integer, IN end_id in
 DECLARE
 	report text := '';
 
-	tbl_stat_hdr CONSTANT text := '<table><tr><th>DB</th><th>Schema</th><th>Function</th><th>Executions</th><th>Total time</th><th>Self time</th><th>Mean time</th><th>Mean self time</th></tr>{rows}</table>';
-	tbl_stat_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
+	tab_tpl CONSTANT text := '<table><tr><th>DB</th><th>Schema</th><th>Function</th><th>Executions</th><th>Total time</th><th>Self time</th><th>Mean time</th><th>Mean self time</th></tr>{rows}</table>';
+	row_tpl CONSTANT text := '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
 
    c_tbl_stats CURSOR (s_id integer, e_id integer, cnt integer) FOR
    SELECT 
@@ -1340,7 +1545,7 @@ DECLARE
 	r_result RECORD;
 BEGIN
 	FOR r_result IN c_tbl_stats(start_id, end_id, topn) LOOP
-		report := report||format(tbl_stat_tpl,
+		report := report||format(row_tpl,
 			r_result.dbname,
          r_result.schemaname,
          r_result.funcname,
@@ -1353,7 +1558,7 @@ BEGIN
 	END LOOP;
    
    IF report != '' THEN
-      RETURN replace(tbl_stat_hdr,'{rows}',report);
+      RETURN replace(tab_tpl,'{rows}',report);
    ELSE
       RETURN '';
    END IF;
@@ -1362,20 +1567,20 @@ $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION top_elapsed_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
-	report text;
+	report text := '';
    
 	-- Elapsed time sorted list TPLs
-	elapsed_hdr CONSTANT text := '<table><tr><th>Query ID</th><th>Database</th><th>Elapsed(s)</th><th>%Total</th><th>Rows</th><th>Mean(ms)</th><th>Min(ms)</th><th>Max(ms)</th><th>StdErr(ms)</th><th>Executions</th></tr>';
-	elapsed_tpl CONSTANT text := '<tr><td><a HREF="#%s">%s</a></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
+	tab_tpl CONSTANT text := '<table><tr><th>Query ID</th><th>Database</th><th>Elapsed(s)</th><th>%Total</th><th>Rows</th><th>Mean(ms)</th><th>Min(ms)</th><th>Max(ms)</th><th>StdErr(ms)</th><th>Executions</th></tr>{rows}</table>';
+	row_tpl CONSTANT text := '<tr><td><a HREF="#%s">%s</a></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
 
 	--Cursor for top(cnt) queries ordered by epapsed time 
 	c_elapsed_time CURSOR (s_id integer, e_id integer, cnt integer) FOR 
    WITH tot AS (SELECT GREATEST(sum(total_time),1) AS total_time
          FROM snap_statements_total
-         WHERE snap_id BETWEEN s_id AND e_id
+         WHERE snap_id BETWEEN s_id + 1 AND e_id
          )
-	SELECT st.queryid,
-	st.query,db_s.datname as dbname,sum(st.calls) as calls,sum(st.total_time)/1000 as total_time,sum(st.total_time/tot.total_time)*100 as total_pct,
+	SELECT st.queryid_md5 as queryid,
+	st.query,db_s.datname as dbname,sum(st.calls) as calls,sum(st.total_time)/1000 as total_time,sum(st.total_time*100/tot.total_time) as total_pct,
    min(st.min_time) as min_time,max(st.max_time) as max_time,sum(st.mean_time*st.calls)/sum(st.calls) as mean_time,
 	sqrt(sum((power(st.stddev_time,2)+power(st.mean_time,2))*st.calls)/sum(st.calls)-power(sum(st.mean_time*st.calls)/sum(st.calls),2)) as stddev_time,
 	sum(st.rows) as rows, sum(st.shared_blks_hit) as shared_blks_hit, sum(st.shared_blks_read) as shared_blks_read,
@@ -1383,25 +1588,24 @@ DECLARE
 	sum(st.local_blks_hit) as local_blks_hit, sum(st.local_blks_read) as local_blks_read, sum(st.local_blks_dirtied) as local_blks_dirtied,
 	sum(st.local_blks_written) as local_blks_written, sum(st.temp_blks_read) as temp_blks_read, sum(st.temp_blks_written) as temp_blks_written,
 	sum(st.blk_read_time) as blk_read_time, sum(st.blk_write_time) as blk_write_time
-	FROM snap_statements st 
+	FROM v_snap_statements st
    -- Database name and existance condition
    JOIN ONLY(snap_stat_database) db_s ON (db_s.datid=st.dbid and db_s.snap_id=s_id) 
 	JOIN ONLY(snap_stat_database) db_e ON (db_e.datid=st.dbid and db_e.snap_id=e_id and db_s.datname=db_e.datname)
    -- Total stats
    CROSS JOIN tot
-	WHERE st.snap_id BETWEEN s_id + 1 AND e_id
-	GROUP BY st.queryid,st.query,db_s.datname
+	WHERE st.snap_id BETWEEN db_s.snap_id + 1 AND db_e.snap_id
+	GROUP BY st.queryid_md5,st.query,db_s.datname
 	ORDER BY total_time DESC
 	LIMIT cnt;
    
 	r_result RECORD;
 BEGIN
 	-- Reporting on top 10 queries by elapsed time
-	report := elapsed_hdr;
 	FOR r_result IN c_elapsed_time(start_id, end_id,topn) LOOP
-		report := report||format(elapsed_tpl,
-			to_hex(r_result.queryid),
-			to_hex(r_result.queryid),
+		report := report||format(row_tpl,
+			r_result.queryid,
+			r_result.queryid,
          r_result.dbname,
 			round(CAST(r_result.total_time AS numeric),1),
 			round(CAST(r_result.total_pct AS numeric),2),
@@ -1414,48 +1618,51 @@ BEGIN
       PERFORM collect_queries(r_result.queryid,r_result.query);
 	END LOOP;
    
-	RETURN report||'</table>';
+   IF report != '' THEN
+      RETURN replace(tab_tpl,'{rows}',report);
+   ELSE
+      RETURN '';
+   END IF;
 END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION top_exec_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
-	report text;
+	report text := '';
    
 	-- Executions sorted list TPLs
-	calls_hdr CONSTANT text := '<table><tr><th>Query ID</th><th>Database</th><th>Executions</th><th>%Total</th><th>Rows</th><th>Mean(ms)</th><th>Min(ms)</th><th>Max(ms)</th><th>StdErr(ms)</th><th>Total(s)</th></tr>';
-	calls_tpl CONSTANT text := '<tr><td><a HREF="#%s">%s</a></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
+	tab_tpl CONSTANT text := '<table><tr><th>Query ID</th><th>Database</th><th>Executions</th><th>%Total</th><th>Rows</th><th>Mean(ms)</th><th>Min(ms)</th><th>Max(ms)</th><th>StdErr(ms)</th><th>Total(s)</th></tr>{rows}</table>';
+	row_tpl CONSTANT text := '<tr><td><a HREF="#%s">%s</a></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
 
 	--Cursor for top(cnt) querues ordered by executions 
 	c_calls CURSOR (s_id integer, e_id integer, cnt integer) FOR 
    WITH tot AS (SELECT GREATEST(sum(calls),1) AS calls
          FROM snap_statements_total
-         WHERE snap_id BETWEEN s_id AND e_id
+         WHERE snap_id BETWEEN s_id + 1 AND e_id
          )
-	SELECT st.queryid,
+	SELECT st.queryid_md5 as queryid,
 	st.query,db_s.datname as dbname,sum(st.calls) as calls,sum(st.calls/tot.calls)*100 as total_pct,sum(st.total_time)/1000 as total_time,min(st.min_time) as min_time,
    max(st.max_time) as max_time,sum(st.mean_time*st.calls)/sum(st.calls) as mean_time,
 	sqrt(sum((power(st.stddev_time,2)+power(st.mean_time,2))*st.calls)/sum(st.calls)-power(sum(st.mean_time*st.calls)/sum(st.calls),2)) as stddev_time,
 	sum(st.rows) as rows
-	FROM snap_statements st
+	FROM v_snap_statements st
    -- Database name and existance condition
    JOIN ONLY(snap_stat_database) db_s ON (db_s.datid=st.dbid and db_s.snap_id=s_id) 
 	JOIN ONLY(snap_stat_database) db_e ON (db_e.datid=st.dbid and db_e.snap_id=e_id and db_s.datname=db_e.datname)
    -- Total stats
    CROSS JOIN tot
-	WHERE st.snap_id BETWEEN s_id + 1 AND e_id
-	GROUP BY st.queryid,st.query,db_s.datname
+	WHERE st.snap_id BETWEEN db_s.snap_id + 1 AND db_e.snap_id
+	GROUP BY st.queryid_md5,st.query,db_s.datname
 	ORDER BY calls DESC
 	LIMIT cnt;
    
 	r_result RECORD;
 BEGIN
 	-- Reporting on top 10 queries by executions
-	report := calls_hdr;
 	FOR r_result IN c_calls(start_id, end_id,topn) LOOP
-		report := report||format(calls_tpl,
-			to_hex(r_result.queryid),
-			to_hex(r_result.queryid),
+		report := report||format(row_tpl,
+			r_result.queryid,
+			r_result.queryid,
          r_result.dbname,
 			r_result.calls,
 			round(CAST(r_result.total_pct AS numeric),2),
@@ -1468,17 +1675,21 @@ BEGIN
       PERFORM collect_queries(r_result.queryid,r_result.query);
 	END LOOP;
    
-	RETURN report||'</table>';
+   IF report != '' THEN
+      RETURN replace(tab_tpl,'{rows}',report);
+   ELSE
+      RETURN '';
+   END IF;
 END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION top_iowait_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
-	report text;
+	report text := '';
    
 	-- IOWait time sorted list TPLs
-	iowait_hdr CONSTANT text := '<table><tr><th>Query ID</th><th>Database</th><th>Total(s)</th><th>IO wait(s)</th><th>%Total</th><th>Reads</th><th>Writes</th><th>Executions</th></tr>';
-	iowait_tpl CONSTANT text := '<tr><td><a HREF="#%s">%s</a></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
+	tab_tpl CONSTANT text := '<table><tr><th>Query ID</th><th>Database</th><th>Total(s)</th><th>IO wait(s)</th><th>%Total</th><th>Reads</th><th>Writes</th><th>Executions</th></tr>{rows}</table>';
+	row_tpl CONSTANT text := '<tr><td><a HREF="#%s">%s</a></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
 
 	--Cursor for top(cnt) querues ordered by I/O Wait time 
 	c_iowait_time CURSOR (s_id integer, e_id integer, cnt integer) FOR 
@@ -1487,22 +1698,22 @@ DECLARE
          FROM snap_statements_total
          WHERE snap_id BETWEEN s_id + 1 AND e_id
          )
-	SELECT st.queryid,
+	SELECT st.queryid_md5 as queryid,
 	st.query,db_s.datname as dbname,sum(st.calls) as calls,sum(st.total_time)/1000 as total_time,
 	sum(st.rows) as rows, sum(st.shared_blks_hit) as shared_blks_hit, sum(st.shared_blks_read) as shared_blks_read,
 	sum(st.shared_blks_dirtied) as shared_blks_dirtied, sum(st.shared_blks_written) as shared_blks_written,
 	sum(st.local_blks_hit) as local_blks_hit, sum(st.local_blks_read) as local_blks_read, sum(st.local_blks_dirtied) as local_blks_dirtied,
 	sum(st.local_blks_written) as local_blks_written, sum(st.temp_blks_read) as temp_blks_read, sum(st.temp_blks_written) as temp_blks_written,
 	sum(st.blk_read_time) as blk_read_time, sum(st.blk_write_time) as blk_write_time, (sum(st.blk_read_time + st.blk_write_time))/1000 as io_time,
-   (sum(st.blk_read_time/tot.blk_read_time) + sum(st.blk_write_time/tot.blk_write_time))*100 as total_pct
-	FROM snap_statements st
+   (sum(st.blk_read_time + st.blk_write_time)*100/min(tot.blk_read_time+tot.blk_write_time)) as total_pct
+	FROM v_snap_statements st
    -- Database name and existance condition
    JOIN ONLY(snap_stat_database) db_s ON (db_s.datid=st.dbid and db_s.snap_id=s_id) 
 	JOIN ONLY(snap_stat_database) db_e ON (db_e.datid=st.dbid and db_e.snap_id=e_id and db_s.datname=db_e.datname)
    -- Total stats
    CROSS JOIN tot
-	WHERE st.snap_id BETWEEN s_id + 1 AND e_id
-	GROUP BY st.queryid,st.query,db_s.datname
+	WHERE st.snap_id BETWEEN db_s.snap_id + 1 AND db_e.snap_id
+	GROUP BY st.queryid_md5,st.query,db_s.datname
 	HAVING sum(st.blk_read_time) + sum(st.blk_write_time) > 0
 	ORDER BY io_time DESC
 	LIMIT cnt;
@@ -1510,11 +1721,10 @@ DECLARE
 	r_result RECORD;
 BEGIN
 	-- Reporting on top 10 queries by I/O wait time
-	report := iowait_hdr;
 	FOR r_result IN c_iowait_time(start_id, end_id,topn) LOOP
-		report := report||format(iowait_tpl,
-			to_hex(r_result.queryid),
-			to_hex(r_result.queryid),
+		report := report||format(row_tpl,
+			r_result.queryid,
+			r_result.queryid,
          r_result.dbname,
 			round(CAST(r_result.total_time AS numeric),1),
 			round(CAST(r_result.io_time AS numeric),3),
@@ -1525,17 +1735,21 @@ BEGIN
       PERFORM collect_queries(r_result.queryid,r_result.query);
 	END LOOP;
 
-	RETURN report||'</table>';
+   IF report != '' THEN
+      RETURN replace(tab_tpl,'{rows}',report);
+   ELSE
+      RETURN '';
+   END IF;
 END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION top_gets_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
-	report text;
+	report text := '';
    
 	-- Gets sorted list TPLs
-	gets_hdr CONSTANT text := '<table><tr><th>Query ID</th><th>Database</th><th>Total(s)</th><th>Rows</th><th>Gets</th><th>%Total</th><th>Hits(%)</th><th>Executions</th></tr>';
-	gets_tpl CONSTANT text := '<tr><td><a HREF="#%s">%s</a></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
+	tab_tpl CONSTANT text := '<table><tr><th>Query ID</th><th>Database</th><th>Total(s)</th><th>Rows</th><th>Gets</th><th>%Total</th><th>Hits(%)</th><th>Executions</th></tr>{rows}</table>';
+	row_tpl CONSTANT text := '<tr><td><a HREF="#%s">%s</a></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
 
 	--Cursor for top(cnt) querues ordered by gets
 	c_gets CURSOR (s_id integer, e_id integer, cnt integer) FOR 
@@ -1544,21 +1758,21 @@ DECLARE
          FROM snap_statements_total
          WHERE snap_id BETWEEN s_id + 1 AND e_id
          )
-	SELECT st.queryid,
+	SELECT st.queryid_md5 as queryid,
 	st.query,db_s.datname as dbname,sum(st.calls) as calls,sum(st.total_time)/1000 as total_time,
 	sum(st.rows) as rows,
 	sum(st.shared_blks_hit) + sum(st.shared_blks_read) as gets,
-   (sum(st.shared_blks_hit/tot.shared_blks_hit) + sum(st.shared_blks_read/tot.shared_blks_read))*100 as total_pct,
+   (sum(st.shared_blks_hit + st.shared_blks_read)*100/min(tot.shared_blks_read + tot.shared_blks_hit)) as total_pct,
 	sum(st.shared_blks_hit) * 100 / CASE WHEN (sum(st.shared_blks_hit)+sum(st.shared_blks_read)) = 0 THEN 1
 		ELSE (sum(st.shared_blks_hit)+sum(st.shared_blks_read)) END as hit_pct
-	FROM snap_statements st
+	FROM v_snap_statements st
    -- Database name and existance condition
    JOIN ONLY(snap_stat_database) db_s ON (db_s.datid=st.dbid and db_s.snap_id=s_id) 
 	JOIN ONLY(snap_stat_database) db_e ON (db_e.datid=st.dbid and db_e.snap_id=e_id and db_s.datname=db_e.datname)
    -- Total stats
    CROSS JOIN tot
-	WHERE st.snap_id BETWEEN s_id + 1 AND e_id
-	GROUP BY st.queryid,st.query,db_s.datname
+	WHERE st.snap_id BETWEEN db_s.snap_id + 1 AND db_e.snap_id
+	GROUP BY st.queryid_md5,st.query,db_s.datname
 	HAVING sum(st.shared_blks_hit) + sum(st.shared_blks_read) > 0
 	ORDER BY gets DESC
 	LIMIT cnt;
@@ -1566,11 +1780,10 @@ DECLARE
 	r_result RECORD;
 BEGIN
 	-- Reporting on top queries by gets
-	report := gets_hdr;
 	FOR r_result IN c_gets(start_id, end_id,topn) LOOP
-		report := report||format(gets_tpl,
-			to_hex(r_result.queryid),
-			to_hex(r_result.queryid),
+		report := report||format(row_tpl,
+			r_result.queryid,
+			r_result.queryid,
          r_result.dbname,
 			round(CAST(r_result.total_time AS numeric),1),
 			r_result.rows,
@@ -1581,17 +1794,21 @@ BEGIN
       PERFORM collect_queries(r_result.queryid,r_result.query);
 	END LOOP;
    
-	RETURN report||'</table>';
+   IF report != '' THEN
+      RETURN replace(tab_tpl,'{rows}',report);
+   ELSE
+      RETURN '';
+   END IF;
 END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION top_temp_htbl(IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
-	report text;
+	report text := '';
    
 	-- Temp usage sorted list TPLs
-	temp_hdr CONSTANT text := '<table><tr><th>Query ID</th><th>Database</th><th>Total(s)</th><th>Rows</th><th>Gets</th><th>Hits(%)</th><th>Temp_w(blk)</th><th>%Total</th><th>Temp_r(blk)</th><th>%Total</th><th>Executions</th></tr>';
-	temp_tpl CONSTANT text := '<tr><td><a HREF="#%s">%s</a></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
+	tab_tpl CONSTANT text := '<table><tr><th>Query ID</th><th>Database</th><th>Total(s)</th><th>Rows</th><th>Gets</th><th>Hits(%)</th><th>Temp_w(blk)</th><th>%Total</th><th>Temp_r(blk)</th><th>%Total</th><th>Executions</th></tr>{rows}</table>';
+	row_tpl CONSTANT text := '<tr><td><a HREF="#%s">%s</a></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>';
 
 	--Cursor for top(cnt) querues ordered by temp usage 
 	c_temp CURSOR (s_id integer, e_id integer, cnt integer) FOR 
@@ -1600,21 +1817,21 @@ DECLARE
          FROM snap_statements_total
          WHERE snap_id BETWEEN s_id + 1 AND e_id
          )
-	SELECT st.queryid,
+	SELECT st.queryid_md5 as queryid,
 	st.query,db_s.datname as dbname,sum(st.calls) as calls,sum(st.total_time)/1000 as total_time,
 	sum(st.rows) as rows, sum(st.shared_blks_hit) + sum(st.shared_blks_read) as gets,
 	sum(st.shared_blks_hit) * 100 / GREATEST(sum(st.shared_blks_hit)+sum(st.shared_blks_read),1) as hit_pct,
 	sum(st.temp_blks_read) as temp_blks_read, sum(st.temp_blks_written) as temp_blks_written,
-   sum(st.temp_blks_read/tot.temp_blks_read)*100 as read_total_pct,
-   sum(st.temp_blks_written/tot.temp_blks_written)*100 as write_total_pct
-	FROM snap_statements st
+   sum(st.temp_blks_read*100/tot.temp_blks_read) as read_total_pct,
+   sum(st.temp_blks_written*100/tot.temp_blks_written) as write_total_pct
+	FROM v_snap_statements st
    -- Database name and existance condition
    JOIN ONLY(snap_stat_database) db_s ON (db_s.datid=st.dbid and db_s.snap_id=s_id) 
 	JOIN ONLY(snap_stat_database) db_e ON (db_e.datid=st.dbid and db_e.snap_id=e_id and db_s.datname=db_e.datname)
    -- Total stats
    CROSS JOIN tot
-	WHERE st.snap_id BETWEEN s_id + 1 AND e_id
-	GROUP BY st.queryid,st.query,db_s.datname
+	WHERE st.snap_id BETWEEN db_s.snap_id + 1 AND db_e.snap_id
+	GROUP BY st.queryid_md5,st.query,db_s.datname
 	HAVING sum(st.temp_blks_read) + sum(st.temp_blks_written) > 0
 	ORDER BY sum(st.temp_blks_read) + sum(st.temp_blks_written) DESC
 	LIMIT cnt;
@@ -1622,11 +1839,10 @@ DECLARE
 	r_result RECORD;
 BEGIN
 	-- Reporting on top queries by temp usage
-	report := temp_hdr;
 	FOR r_result IN c_temp(start_id, end_id,topn) LOOP
-		report := report||format(temp_tpl,
-			to_hex(r_result.queryid),
-			to_hex(r_result.queryid),
+		report := report||format(row_tpl,
+			r_result.queryid,
+			r_result.queryid,
          r_result.dbname,
 			round(CAST(r_result.total_time AS numeric),1),
 			r_result.rows,
@@ -1640,11 +1856,15 @@ BEGIN
       PERFORM collect_queries(r_result.queryid,r_result.query);
 	END LOOP;
 
-	RETURN report||'</table>';
+   IF report != '' THEN
+      RETURN replace(tab_tpl,'{rows}',report);
+   ELSE
+      RETURN '';
+   END IF;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION collect_queries(IN query_id bigint, IN query_text text) RETURNS integer SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION collect_queries(IN query_id char(10), IN query_text text) RETURNS integer SET search_path=@extschema@,public AS $$
 BEGIN
    INSERT INTO queries_list VALUES (query_id,regexp_replace(query_text,'\s+',' ','g')) ON CONFLICT DO NOTHING;
    RETURN 0;
@@ -1655,18 +1875,35 @@ CREATE OR REPLACE FUNCTION report_queries() RETURNS text SET search_path=@extsch
 DECLARE
    c_queries CURSOR FOR SELECT queryid, querytext FROM queries_list;
    qr_result RECORD;
-   queries_report text := '';
-   queries_tpl CONSTANT text := '<table><tr><th>QueryID</th><th>Query Text</th></tr>{queries}</table>';
-   query_tpl CONSTANT text := '<tr><td><a NAME=%s>%s</a></td><td>%s</td></tr>';
+   report text := '';
+   query_text text := '';
+   tab_tpl CONSTANT text := '<table><tr><th>QueryID</th><th>Query Text</th></tr>{rows}</table>';
+   row_tpl CONSTANT text := '<tr><td><a NAME=%s>%s</a></td><td>%s</td></tr>';
 BEGIN
    FOR qr_result IN c_queries LOOP
-		queries_report := queries_report||format(query_tpl,
-			to_hex(qr_result.queryid),
-			to_hex(qr_result.queryid),
-			qr_result.querytext);
+      query_text := replace(qr_result.querytext,'<','&lt;');
+      query_text := replace(query_text,'>','&gt;');
+		report := report||format(row_tpl,
+			qr_result.queryid,
+			qr_result.queryid,
+			query_text);
 	END LOOP;
 
-	RETURN replace(queries_tpl,'{queries}',queries_report);
+   IF report != '' THEN
+      RETURN replace(tab_tpl,'{rows}',report);
+   ELSE
+      RETURN '';
+   END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION nodata_wrapper(IN section_text text) RETURNS text SET search_path=@extschema@,public AS $$
+BEGIN
+   IF section_text IS NULL OR section_text = '' THEN
+      RETURN '<p>No data in this section</p>';
+   ELSE
+      RETURN section_text;
+   END IF;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -1684,7 +1921,7 @@ DECLARE
 	snap_rec snapshots%rowtype;
 BEGIN
    -- Creating temporary table for reported queries
-   CREATE TEMPORARY TABLE IF NOT EXISTS queries_list (queryid bigint PRIMARY KEY, querytext text) ON COMMIT DELETE ROWS;
+   CREATE TEMPORARY TABLE IF NOT EXISTS queries_list (queryid char(10) PRIMARY KEY, querytext text) ON COMMIT DELETE ROWS;
    
    -- CSS
    report := replace(report_tpl,'{css}',report_css);
@@ -1735,7 +1972,7 @@ BEGIN
    tmp_text := tmp_text || '<li><a HREF=#sql_stat>SQL Query stats</a></li>';
    tmp_text := tmp_text || '<ul>';
    tmp_text := tmp_text || '<li><a HREF=#top_ela>Top SQL by elapsed time</a></li>';
-   tmp_text := tmp_text || '<li><a HREF=#top_calls>Top SQL by elapsed time</a></li>';
+   tmp_text := tmp_text || '<li><a HREF=#top_calls>Top SQL by executions</a></li>';
    tmp_text := tmp_text || '<li><a HREF=#top_iowait>Top SQL by I/O wait time</a></li>';
    tmp_text := tmp_text || '<li><a HREF=#top_gets>Top SQL by gets</a></li>';
    tmp_text := tmp_text || '<li><a HREF=#top_temp>Top SQL by temp usage</a></li>';
@@ -1773,85 +2010,74 @@ BEGIN
    --Reporting cluster stats
 	tmp_text := tmp_text || '<H2><a NAME=cl_stat>Cluster statistics</a></H2>';
 	tmp_text := tmp_text || '<H3><a NAME=db_stat>Databases stats</a></H3>';
-   tmp_text := tmp_text || dbstats_htbl(start_id, end_id, topn);
+   tmp_text := tmp_text || nodata_wrapper(dbstats_htbl(start_id, end_id, topn));
 
 	tmp_text := tmp_text || '<H3><a NAME=st_stat>Statements stats by database</a></H3>';
-   tmp_text := tmp_text || statements_stats_htbl(start_id, end_id, topn);
+   tmp_text := tmp_text || nodata_wrapper(statements_stats_htbl(start_id, end_id, topn));
    
    --Reporting on top queries by elapsed time
 	tmp_text := tmp_text||'<H2><a NAME=sql_stat>SQL Query stats</a></H2>';
    tmp_text := tmp_text||'<H3><a NAME=top_ela>Top SQL by elapsed time</a></H3>';
-   tmp_text := tmp_text || top_elapsed_htbl(start_id, end_id, topn);
+   tmp_text := tmp_text || nodata_wrapper(top_elapsed_htbl(start_id, end_id, topn));
 
 	-- Reporting on top queries by executions
 	tmp_text := tmp_text||'<H3><a NAME=top_calls>Top SQL by executions</a></H3>';
-   tmp_text := tmp_text||top_exec_htbl(start_id, end_id, topn);
+   tmp_text := tmp_text || nodata_wrapper(top_exec_htbl(start_id, end_id, topn));
 
 	-- Reporting on top queries by I/O wait time
 	tmp_text := tmp_text||'<H3><a NAME=top_iowait>Top SQL by I/O wait time</a></H3>';
-   tmp_text := tmp_text||top_iowait_htbl(start_id, end_id, topn);
+   tmp_text := tmp_text || nodata_wrapper(top_iowait_htbl(start_id, end_id, topn));
 
 	-- Reporting on top queries by gets
 	tmp_text := tmp_text||'<H3><a NAME=top_gets>Top SQL by gets</a></H3>';
-   tmp_text := tmp_text||top_gets_htbl(start_id, end_id, topn);
+   tmp_text := tmp_text || nodata_wrapper(top_gets_htbl(start_id, end_id, topn));
 
 	-- Reporting on top queries by temp usage
 	tmp_text := tmp_text||'<H3><a NAME=top_temp>Top SQL by temp usage</a></H3>';
-   tmp_text := tmp_text||top_temp_htbl(start_id, end_id, topn);
+   tmp_text := tmp_text || nodata_wrapper(top_temp_htbl(start_id, end_id, topn));
 
    -- Listing queries
 	tmp_text := tmp_text||'<H3><a NAME=sql_list>Complete List of SQL Text</a></H3>';
-   tmp_text := tmp_text||report_queries();
+   tmp_text := tmp_text || nodata_wrapper(report_queries());
    
    -- Reporting Object stats
    -- Reporting scanned table
 	tmp_text := tmp_text||'<H2><a NAME=schema_stat>Schema objects stats</a></H2>';
    tmp_text := tmp_text||'<H3><a NAME=scanned_tbl>Most scanned tables</a></H3>';
-   tmp_text := tmp_text||top_scan_tables_htbl(start_id, end_id, topn);
+   tmp_text := tmp_text || nodata_wrapper(top_scan_tables_htbl(start_id, end_id, topn));
    
    tmp_text := tmp_text||'<H3><a NAME=dml_tbl>Top DML tables</a></H3>';
-   tmp_text := tmp_text||top_dml_tables_htbl(start_id, end_id, topn);
+   tmp_text := tmp_text || nodata_wrapper(top_dml_tables_htbl(start_id, end_id, topn));
 
    tmp_text := tmp_text||'<H3><a NAME=growth_tbl>Top growth tables</a></H3>';
-   tmp_text := tmp_text||top_growth_tables_htbl(start_id, end_id, topn);
+   tmp_text := tmp_text || nodata_wrapper(top_growth_tables_htbl(start_id, end_id, topn));
    
    tmp_text := tmp_text||'<H3><a NAME=ix_unused>Unused indexes</a></H3>';
    tmp_text := tmp_text||'<p>This table contains not-scanned indexes (during report period), ordered by number of DML operations on underlying tables. Constraint indexes are excluded.</p>';
-   tmp_text := tmp_text||ix_unused_htbl(start_id, end_id, topn);
-   
+   tmp_text := tmp_text || nodata_wrapper(ix_unused_htbl(start_id, end_id, topn));
    
    tmp_text := tmp_text || '<H2><a NAME=io_stat>I/O Schema objects stats</a></H2>';
-   tmp_report := tbl_top_io_htbl(start_id, end_id, topn);
-   IF tmp_report != '' THEN
-      tmp_text := tmp_text || '<H3><a NAME=tbl_io_stat>Top tables by read I/O</a></H3>';
-      tmp_text := tmp_text || tmp_report;
-   END IF;
-   tmp_report := ix_top_io_htbl(start_id, end_id, topn);
-   IF tmp_report != '' THEN
-      tmp_text := tmp_text || '<H3><a NAME=ix_io_stat>Top indexes by read I/O</a></H3>';
-      tmp_text := tmp_text || tmp_report;
-   END IF;
+   tmp_text := tmp_text || '<H3><a NAME=tbl_io_stat>Top tables by read I/O</a></H3>';
+   tmp_text := tmp_text || nodata_wrapper(tbl_top_io_htbl(start_id, end_id, topn));
+
+   tmp_text := tmp_text || '<H3><a NAME=ix_io_stat>Top indexes by read I/O</a></H3>';
+   tmp_text := tmp_text || nodata_wrapper(ix_top_io_htbl(start_id, end_id, topn));
 
    tmp_text := tmp_text || '<H2><a NAME=func_stat>User function stats</a></H2>';
-   tmp_report := func_top_time_htbl(start_id, end_id, topn);
-   IF tmp_report != '' THEN
-      tmp_text := tmp_text || '<H3><a NAME=funs_time_stat>Top functions by total time</a></H3>';
-      tmp_text := tmp_text || tmp_report;
-   END IF;
-   tmp_report := func_top_calls_htbl(start_id, end_id, topn);
-   IF tmp_report != '' THEN
-      tmp_text := tmp_text || '<H3><a NAME=funs_calls_stat>Top functions by executions</a></H3>';
-      tmp_text := tmp_text || tmp_report;
-   END IF;
+   tmp_text := tmp_text || '<H3><a NAME=funs_time_stat>Top functions by total time</a></H3>';
+   tmp_text := tmp_text || nodata_wrapper(func_top_time_htbl(start_id, end_id, topn));
+   
+   tmp_text := tmp_text || '<H3><a NAME=funs_calls_stat>Top functions by executions</a></H3>';
+   tmp_text := tmp_text || nodata_wrapper(func_top_calls_htbl(start_id, end_id, topn));
    
    -- Reporting vacuum related stats
 	tmp_text := tmp_text||'<H2><a NAME=vacuum_stats>Vacuum related stats</a></H2>';
 	tmp_text := tmp_text||'<p>Data in this section is not incremental. This data is valid for endind snapshot only.</p>';
    tmp_text := tmp_text||'<H3><a NAME=dead_tbl>Tables ordered by dead tuples ratio</a></H3>';
-   tmp_text := tmp_text||tbl_top_dead_htbl(start_id, end_id, topn);
+   tmp_text := tmp_text || nodata_wrapper(tbl_top_dead_htbl(start_id, end_id, topn));
 
    tmp_text := tmp_text||'<H3><a NAME=mod_tbl>Tables ordered by modified tuples ratio</a></H3>';
-   tmp_text := tmp_text||tbl_top_mods_htbl(start_id, end_id, topn);
+   tmp_text := tmp_text || nodata_wrapper(tbl_top_mods_htbl(start_id, end_id, topn));
    
    -- Reporting possible statements overflow
    tmp_report := check_stmt_cnt();
