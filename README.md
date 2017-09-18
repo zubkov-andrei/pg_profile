@@ -159,5 +159,5 @@ postgres=# select * from profile.baseline_show();
 1. When this extension is in use reset of any PostgreSQL statistics may affect accuracy of a next snapshot. 
 ## TODO-list
 - [X] Some sort of "baselines" - snapshot series, excluded from default retention policy
-- [ ] Query IDs compatible with pgcenter utility
+- [X] Query IDs compatible with pgcenter utility
 - [ ] Differential reports
