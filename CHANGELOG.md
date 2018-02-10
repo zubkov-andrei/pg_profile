@@ -1,5 +1,8 @@
 # pg_profile changelog
 
+## 0.0.4a
+- bugfix of #1 with postgresql on non-standard port, thanks @triwada
+
 ## 0.0.4
 - queryid in pgCenter style
 - normalized query storage table
