@@ -1,11 +1,11 @@
 # pg_profile
-This extension for PostgreSQL helps you to find out most resource intensive activities in your PostgreSQL database. This extension is in beta-testing state.
+This extension for PostgreSQL helps you to find out most resource intensive activities in your PostgreSQL database.
 ## Concepts
-This extension is based on standard statistics views of PostgreSQL. It is written in pl/pgsql and doesn't need any external libraries or software, but PostgreSQL database itself, and a cron-like tool performing periodic tasks. Initially developed and tested on PostgreSQL 9.6, but may work in previous versions too (not tested).
+This extension is based on standard statistics views of PostgreSQL. It is written in pl/pgsql and doesn't need any external libraries or software, but PostgreSQL database itself, and a cron-like tool performing periodic tasks. Initially developed and tested on PostgreSQL 9.6, but may work in previous versions too (not tested). Extension is compatible with PostgreSQL 10.
 
 Some sort of historic repository will be created in your database by this extension. This repository will hold statistics "snapshots" for your database, just as Oracle AWR do. Snapshot is taken by calling _snapshot()_ function. PostgreSQL doesn't have any job-like engine, so you'll need to use cron.
 
-Periodic snapshots can help you finding most resource intensive statements in the past. Suppose, you were reported performance degradation several hours ago. No problem, you can build a report between several snapshots to see load profile of your database between snapshots. It's worse using some monitoring tool such a Zabbix to know exact time when performance issues was happening. There is several tools to send PostgreSQL stats into Zabbix, but I'm using my own tool, written in Java - it collects for me statistics from many Oracle and Postgres servers and sends data to Zabbix.
+Periodic snapshots can help you finding most resource intensive statements in the past. Suppose, you were reported performance degradation several hours ago. No problem, you can build a report between several snapshots to see load profile of your database between snapshots. It's worse using some monitoring tool such a Zabbix to know exact time when performance issues was happening. 
 
 Of course, you can make an explicit snapshot before running any batch processing, and after it will end.
 
@@ -32,7 +32,7 @@ pg_stat_statements.save = off
 You must install and use _pg_profile_ extension as cluster superuser (for example, _postgres_), because only superusers can see all statements in _pg_stat_statements_ view. And user, that will make snapshots must be able to login in any database of your cluster without providing a password. Dblink is used for collecting object statistics. Peer authentication preferred - make sure your _pg_hba.conf_ allows this.
 ## Installation
 ### Step 1 Installation of extension files
-There is two ways for installing extension files:
+There are two ways for installing extension files:
 * Makefile provided, so you can use
 ```
 # make install
@@ -56,18 +56,19 @@ postgres=# CREATE EXTENSION pg_stat_statements;
 postgres=# CREATE SCHEMA profile;
 postgres=# CREATE EXTENSION pg_profile SCHEMA profile;
 ```
-All objects will be created in schema, defined by SCHEMA clause. Installation in dedicated schema is recommended way - extension will create its own tables, sequences and functions. It is a good idea to keep them separate. If you do not whant to specify schema qualifier when using module, consider changing _search_path_ setting.
+All objects will be created in schema, defined by SCHEMA clause. Installation in dedicated schema is recommended way - extension will create its own tables, views, sequences and functions. It is a good idea to keep them separate. If you do not whant to specify schema qualifier when using module, consider changing _search_path_ setting.
 ### Step 3 Update to new version
-New versions of pg_profile will contain all necessary to update from any previous version. So, in case of update you will only need to install extension files (see Step 1) and update this extension, like this:
+New versions of pg_profile will contain all necessary to update from any previous one. So, in case of update you will only need to install extension files (see Step 1) and update the extension, like this:
 ```
 postgres=# alter extension pg_profile update;
 ```
 All your historic data will remain unchanged if possible.
 ## Using pg_profile
 ### Setting extension parameters
-You can define extension parameters like any other parameter in _postgresql.conf_ or in _postgresql.auto.conf_. Default values a shown in following list:
+You can define extension parameters like any other parameter in _postgresql.conf_. Default values a shown in following list:
 * _pg_profile.topn = 20_ - Number of top objects (statements, relations, etc.), to be reported in each sorted report table. Also, this parameter affects size of a snapshot - the more objects you want appear in your report, the more objects we need to keep in a snapshot.
 * _pg_profile.retention = 7_ - Retention time of snapshots in days. Snapshots, aged _pg_profile.retention_ days and more will be automatically deleted on next _snapshot()_ call.
+* _pg_profile.lockid = 2174049485089987259_ - This "magic" number is used for pg_advisory_lock in _snapshot()_ function, ensuring only one snapshot() function is running.
 ### Creating snapshots
 You must create at least 3 snapshots to be able to build a report between 2nd and 3rd snapshot.
 Snapshots are taken by calling _snapshot()_ function. I'm using cron of user _postgres_ like this:
@@ -115,6 +116,7 @@ The report will contain following sections:
 * Cluster statistics
   * Databases stats
   * Statements stats by database
+  * Cluster stats
 * SQL Query stats
   * Top SQL by elapsed time
   * Top SQL by executions
@@ -125,7 +127,9 @@ The report will contain following sections:
 * Schema objects stats
   * Most scanned tables
   * Top DML tables
-  * Top growth tables
+  * Top Delete/Update tables with vacuum run count
+  * Top growing tables
+  * Top growing indexes
   * Unused indexes
 * I/O Schema objects stats
   * Top tables by I/O
@@ -158,6 +162,5 @@ postgres=# select * from profile.baseline_show();
 1. PostgreSQL collects execution statistics __after__ execution is complete. If single execution of a statement lasts for several snapshots, it will affect statistics of only last snapshot (in which it was completed).
 1. When this extension is in use reset of any PostgreSQL statistics may affect accuracy of a next snapshot. 
 ## TODO-list
-- [X] Some sort of "baselines" - snapshot series, excluded from default retention policy
-- [X] Query IDs compatible with pgcenter utility
 - [ ] Differential reports
+- [ ] Collecting data from other Postgres instances
