@@ -1,5 +1,5 @@
 # Profiler extension for PostgreSQL
 comment = 'PostgreSQL load profile repository and report builder'
-default_version = '0.0.5'
+default_version = '0.0.5a'
 relocatable = false
 requires = 'pg_stat_statements,dblink,plpgsql'

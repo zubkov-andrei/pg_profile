@@ -1,5 +1,8 @@
 # pg_profile changelog
 
+## 0.0.5a
+- bugfix: In index stats base relation size was displayed as IX size
+
 ## 0.0.5
 - Growth column in "Databases stats" report section
 - Bgwriter and WAL-generation stats in new report section "Cluster stats"
