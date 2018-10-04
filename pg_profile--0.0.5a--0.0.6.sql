@@ -574,40 +574,40 @@ DROP TABLE baselines_old,
  last_stat_cluster_old
  CASCADE;
 
-DROP FUNCTION IF EXISTS baseline_drop;
-DROP FUNCTION IF EXISTS baseline_keep;
-DROP FUNCTION IF EXISTS baseline_new;
-DROP FUNCTION IF EXISTS baseline_show;
-DROP FUNCTION IF EXISTS check_stmt_cnt;
-DROP FUNCTION IF EXISTS cluster_stats_htbl;
-DROP FUNCTION IF EXISTS collect_obj_stats;
-DROP FUNCTION IF EXISTS collect_queries;
-DROP FUNCTION IF EXISTS dbstats_htbl;
-DROP FUNCTION IF EXISTS func_top_calls_htbl;
-DROP FUNCTION IF EXISTS func_top_time_htbl;
-DROP FUNCTION IF EXISTS ix_top_io_htbl;
-DROP FUNCTION IF EXISTS ix_unused_htbl;
-DROP FUNCTION IF EXISTS nodata_wrapper;
-DROP FUNCTION IF EXISTS report;
-DROP FUNCTION IF EXISTS report_queries;
-DROP FUNCTION IF EXISTS snapshot;
-DROP FUNCTION IF EXISTS snapshot_dbobj_delta;
-DROP FUNCTION IF EXISTS snapshot_show;
-DROP FUNCTION IF EXISTS statements_stats_htbl;
-DROP FUNCTION IF EXISTS tbl_top_dead_htbl;
-DROP FUNCTION IF EXISTS tbl_top_io_htbl;
-DROP FUNCTION IF EXISTS tbl_top_mods_htbl;
-DROP FUNCTION IF EXISTS top_dml_tables_htbl;
-DROP FUNCTION IF EXISTS top_elapsed_htbl;
-DROP FUNCTION IF EXISTS top_exec_htbl;
-DROP FUNCTION IF EXISTS top_gets_htbl;
-DROP FUNCTION IF EXISTS top_growth_indexes_htbl;
-DROP FUNCTION IF EXISTS top_growth_tables_htbl;
-DROP FUNCTION IF EXISTS top_iowait_htbl;
-DROP FUNCTION IF EXISTS top_scan_tables_htbl;
-DROP FUNCTION IF EXISTS top_temp_htbl;
-DROP FUNCTION IF EXISTS top_upd_vac_tables_htbl;
-
+ DROP FUNCTION statements_stats_htbl(start_id integer, end_id integer, topn integer);
+ DROP FUNCTION cluster_stats_htbl(start_id integer, end_id integer);
+ DROP FUNCTION top_scan_tables_htbl(start_id integer, end_id integer, topn integer);
+ DROP FUNCTION top_dml_tables_htbl(start_id integer, end_id integer, topn integer);
+ DROP FUNCTION top_upd_vac_tables_htbl(start_id integer, end_id integer, topn integer);
+ DROP FUNCTION top_growth_tables_htbl(start_id integer, end_id integer, topn integer);
+ DROP FUNCTION nodata_wrapper(section_text text);
+ DROP FUNCTION report(start_id integer, end_id integer);
+ DROP FUNCTION snapshot();
+ DROP FUNCTION collect_obj_stats(s_id integer);
+ DROP FUNCTION snapshot_dbobj_delta(s_id integer, topn integer);
+ DROP FUNCTION snapshot_show(days integer);
+ DROP FUNCTION baseline_new(name character varying, start_id integer, end_id integer, days integer);
+ DROP FUNCTION baseline_drop(name character varying);
+ DROP FUNCTION baseline_keep(name character varying, days integer);
+ DROP FUNCTION baseline_show();
+ DROP FUNCTION dbstats_htbl(start_id integer, end_id integer, topn integer);
+ DROP FUNCTION top_growth_indexes_htbl(start_id integer, end_id integer, topn integer);
+ DROP FUNCTION tbl_top_dead_htbl(start_id integer, end_id integer, topn integer);
+ DROP FUNCTION tbl_top_mods_htbl(start_id integer, end_id integer, topn integer);
+ DROP FUNCTION ix_unused_htbl(start_id integer, end_id integer, topn integer);
+ DROP FUNCTION tbl_top_io_htbl(start_id integer, end_id integer, topn integer);
+ DROP FUNCTION ix_top_io_htbl(start_id integer, end_id integer, topn integer);
+ DROP FUNCTION func_top_time_htbl(start_id integer, end_id integer, topn integer);
+ DROP FUNCTION func_top_calls_htbl(start_id integer, end_id integer, topn integer);
+ DROP FUNCTION check_stmt_cnt(start_id integer, end_id integer);
+ DROP FUNCTION top_elapsed_htbl(start_id integer, end_id integer, topn integer);
+ DROP FUNCTION top_exec_htbl(start_id integer, end_id integer, topn integer);
+ DROP FUNCTION top_iowait_htbl(start_id integer, end_id integer, topn integer);
+ DROP FUNCTION top_gets_htbl(start_id integer, end_id integer, topn integer);
+ DROP FUNCTION top_temp_htbl(start_id integer, end_id integer, topn integer);
+ DROP FUNCTION collect_queries(query_id character, query_text text);
+ DROP FUNCTION report_queries();
+ 
 /* ========= Internal functions ========= */
 
 CREATE OR REPLACE FUNCTION get_connstr(IN snode_id integer) RETURNS text SET search_path=@extschema@,public SET lock_timeout=300000 AS $$
