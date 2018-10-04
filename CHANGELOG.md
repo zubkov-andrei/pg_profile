@@ -1,5 +1,8 @@
 # pg_profile changelog
 
+## 0.0.6
+- Collect data from other PostgreSQL clusters
+
 ## 0.0.5a
 - bugfix: In index stats base relation size was displayed as IX size
 
