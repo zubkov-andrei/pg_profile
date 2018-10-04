@@ -61,7 +61,7 @@ CREATE TABLE nodes (
 COMMENT ON TABLE nodes IS 'Monitored nodes (Postgres clusters) list';
 
 INSERT INTO nodes (node_name,enabled,connstr,last_snap_id) 
-  SELECT 'local',true,'dbname='||current_database()||' port='||current_setting('port'),max(snap_id) FROM snapshots;
+  SELECT 'local',true,'dbname='||current_database()||' port='||current_setting('port'),coalesce(max(snap_id),0) FROM snapshots;
 
 ALTER TABLE snapshots RENAME TO snapshots_old;
 
