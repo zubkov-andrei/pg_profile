@@ -1,5 +1,11 @@
 # pg_profile changelog
 
+## 0.0.7
+- Interval compare reports
+- Sequential scans now ordered by appox. seq. scanned pages (based on relation size)
+- Added report examples in repository (issue #5 reported by @saifulmuhajir)
+- Simplified baseline management for local node
+
 ## 0.0.6
 - Collect data from other PostgreSQL clusters
 
