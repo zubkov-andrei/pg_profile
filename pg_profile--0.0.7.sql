@@ -877,7 +877,10 @@ CREATE OR REPLACE FUNCTION snapshot() RETURNS text SET search_path=@extschema@,p
 DECLARE
     c_nodes CURSOR FOR
     SELECT node_id FROM nodes WHERE enabled;
-    failures    integer ARRAY;
+    faillog     text := '';
+    etext       text := '';
+    edetail     text := '';
+    econtext     text := '';
     
     r_result    RECORD;
 BEGIN    
@@ -892,11 +895,17 @@ BEGIN
         BEGIN
             PERFORM snapshot(r_result.node_id);
         EXCEPTION
-            WHEN OTHERS THEN failures := array_append(failures,r_result.node_id);
+            WHEN OTHERS THEN 
+                BEGIN
+                    GET STACKED DIAGNOSTICS etext = MESSAGE_TEXT,
+                        edetail = PG_EXCEPTION_DETAIL,
+                        econtext = PG_EXCEPTION_CONTEXT;
+                    faillog := faillog || format (E'Node: %s\n%s\n%s\n%s\n', r_result.node_id, etext, econtext, edetail);
+                END;
         END;
     END LOOP;
-    IF array_length(failures,1) > 0 THEN
-        RETURN 'FAILED nodes identifiers: '||array_to_string(failures,',');
+    IF faillog != '' THEN
+        RETURN faillog;
     ELSE
         RETURN 'OK';
     END IF;
@@ -1051,12 +1060,11 @@ CREATE OR REPLACE FUNCTION collect_obj_stats(IN snode_id integer, IN s_id intege
 DECLARE
     --Cursor for db stats
     c_dblist CURSOR FOR
-    SELECT datid,datname,port FROM dblink('node_connection',
-    'select dbs.datid,dbs.datname,s1.setting as port from pg_catalog.pg_stat_database dbs, pg_catalog.pg_settings s1
-    where dbs.datname not like ''template_'' and s1.name=''port''') AS dbl (
+    SELECT datid,datname FROM dblink('node_connection',
+    'select dbs.oid,dbs.datname from pg_catalog.pg_database dbs
+    where dbs.datname not like ''template_'' and dbs.datallowconn') AS dbl (
         datid oid,
-        datname name,
-        port text
+        datname name
     );
 
 	r_result    RECORD;
@@ -5186,3 +5194,8 @@ END;
 $$ LANGUAGE plpgsql;
 COMMENT ON FUNCTION report_diff(IN baseline varchar(25), IN start2_id integer,
 IN end2_id integer) IS 'Statistics differential report generation function for local node. Takes start and end snapshot_ids of first interval and reference baseline name as second interval.';
+SELECT 'drop function '||proc.pronamespace::regnamespace||'.'||proc.proname||'('||pg_get_function_identity_arguments(proc.oid)||');' 
+FROM pg_depend dep 
+    JOIN pg_extension ext ON (dep.refobjid = ext.oid)
+    JOIN pg_proc proc ON (proc.oid = dep.objid)
+WHERE ext.extname='pg_profile' AND dep.deptype='e' AND dep.classid='pg_proc'::regclass;
