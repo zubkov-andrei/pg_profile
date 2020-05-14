@@ -1,0 +1,85 @@
+CREATE SCHEMA IF NOT EXISTS profile;
+CREATE SCHEMA IF NOT EXISTS dblink;
+CREATE SCHEMA IF NOT EXISTS statements;
+CREATE EXTENSION dblink SCHEMA dblink;
+CREATE EXTENSION pg_stat_statements SCHEMA statements;
+CREATE EXTENSION pg_profile SCHEMA profile;
+SELECT * FROM profile.snapshot();
+ node  | result 
+-------+--------
+ local | OK
+(1 row)
+
+SELECT * FROM profile.snapshot();
+ node  | result 
+-------+--------
+ local | OK
+(1 row)
+
+SELECT count(1) FROM profile.report(1,2);
+ count 
+-------
+     1
+(1 row)
+
+SELECT * FROM profile.snapshot();
+ node  | result 
+-------+--------
+ local | OK
+(1 row)
+
+SELECT count(1) FROM profile.report_diff(1,2,2,3);
+NOTICE:  relation "queries_list" already exists, skipping
+ count 
+-------
+     1
+(1 row)
+
+SELECT * FROM profile.snapshot();
+ node  | result 
+-------+--------
+ local | OK
+(1 row)
+
+SELECT * FROM profile.snapshot();
+ node  | result 
+-------+--------
+ local | OK
+(1 row)
+
+UPDATE profile.snapshots SET snap_time = now() - '4 days'::interval - '10 minutes'::interval WHERE node_id = 1 AND snap_id = 1;
+UPDATE profile.snapshots SET snap_time = now() - '3 days'::interval - '10 minutes'::interval WHERE node_id = 1 AND snap_id = 2;
+UPDATE profile.snapshots SET snap_time = now() - '2 days'::interval - '10 minutes'::interval WHERE node_id = 1 AND snap_id = 3;
+UPDATE profile.snapshots SET snap_time = now() - '1 days'::interval - '10 minutes'::interval WHERE node_id = 1 AND snap_id = 4;
+UPDATE profile.snapshots SET snap_time = now() - '23 hours'::interval - '10 minutes'::interval WHERE node_id = 1 AND snap_id = 5;
+SELECT * FROM profile.snapshot();
+ node  | result 
+-------+--------
+ local | OK
+(1 row)
+
+SELECT COUNT(*) FROM profile.snapshots WHERE snap_time < now() - '1 days'::interval;
+ count 
+-------
+     4
+(1 row)
+
+SELECT * FROM profile.node_retention('local',1);
+ node_retention 
+----------------
+              1
+(1 row)
+
+SELECT * FROM profile.snapshot();
+ node  | result 
+-------+--------
+ local | OK
+(1 row)
+
+SELECT COUNT(*) FROM profile.snapshots WHERE snap_time < now() - '1 days'::interval;
+ count 
+-------
+     0
+(1 row)
+
+DROP EXTENSION pg_profile;

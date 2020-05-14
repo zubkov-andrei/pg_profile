@@ -1,6 +1,28 @@
 # pg_profile changelog
 
+## 0.1.1
+
+Due to total refactoring done in this release, migration from 0.0.7 is very difficult, so right now migration from 0.0.7 is not supported.
+
+- Code reorganization, new Makefile
+- Sequential scanned table now sorted by scanned pages estimation
+- Order correction in top tables by read IO
+- TOAST tables is now calculated and shown with main tables
+- More fields in "Top SQL by I/O wait time" section
+- Non-superuser install (see Privileges in doc)
+- Collect postgres GUC parameters historic values and show them in reports
+- Tablespaces support: size, growth and objects belong (Daria Vilkova)
+- Fixed object rename issue
+- New sections in report: "Top SQL by shared dirtied", "Top SQL by shared written", "Top tables by gets", "Top indexes by gets"
+- Improved statement list in reports - now clicked statement_id is highlighted
+- Workaround for amazon RDS
+- Database sizes is now shown in reports (Daria Vilkova)
+- Reports can be generated using time intervals (tstzrange type)
+- *snapshot_show()* now displays info about stats reset, also report contains information about stats reset
+- a lot of bugfixes and other improvements
+
 ## 0.0.7
+
 - Interval compare reports
 - Sequential scans now ordered by appox. seq. scanned pages (based on relation size)
 - Added report examples in repository (issue #5 reported by @saifulmuhajir)
