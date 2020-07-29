@@ -1355,7 +1355,7 @@ BEGIN
         (dbcur.node_id = dblst.node_id AND dbcur.datid = dblst.datid AND dblst.snap_id = dbcur.snap_id - 1 AND dbcur.stats_reset = dblst.stats_reset)
       LEFT OUTER JOIN last_stat_tables lst ON
         (dblst.node_id=lst.node_id AND lst.snap_id = dblst.snap_id AND lst.datid=dblst.datid AND cur.relid=lst.relid AND cur.tablespaceid=lst.tablespaceid)
-    WHERE cur.snap_id = s_id
+    WHERE cur.snap_id = s_id AND cur.node_id = snode_id
     GROUP BY cur.node_id, cur.snap_id, cur.datid, cur.relkind, cur.tablespaceid;
 
     -- Stats of user indexes
