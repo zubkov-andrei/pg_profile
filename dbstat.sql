@@ -2,25 +2,24 @@
 
 /* ========= Cluster databases report functions ========= */
 
-CREATE OR REPLACE FUNCTION dbstats(IN snode_id integer, IN start_id integer, IN end_id integer, IN topn integer)
+CREATE OR REPLACE FUNCTION dbstats(IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
 RETURNS TABLE(
     datid oid,
     dbname name,
-    xact_commit     bigint,
-    xact_rollback   bigint,
-    blks_read       bigint,
-    blks_hit        bigint,
-    tup_returned    bigint,
-    tup_fetched     bigint,
-    tup_inserted    bigint,
-    tup_updated     bigint,
-    tup_deleted     bigint,
-    temp_files      bigint,
-    temp_bytes      bigint,
-    datsize         bigint,
-    datsize_delta   bigint,
-    deadlocks       bigint,
-    blks_hit_pct    double precision)
+    xact_commit       bigint,
+    xact_rollback     bigint,
+    blks_read         bigint,
+    blks_hit          bigint,
+    tup_returned      bigint,
+    tup_fetched       bigint,
+    tup_inserted      bigint,
+    tup_updated       bigint,
+    tup_deleted       bigint,
+    temp_files        bigint,
+    temp_bytes        bigint,
+    datsize           bigint,
+    datsize_delta     bigint,
+    deadlocks         bigint)
 SET search_path=@extschema@,public AS $$
     SELECT
         st.datid AS datid,
@@ -38,51 +37,41 @@ SET search_path=@extschema@,public AS $$
         sum(temp_bytes)::bigint AS temp_bytes,
         sum(datsize)::bigint AS datsize,
         sum(datsize_delta)::bigint AS datsize_delta,
-        sum(deadlocks)::bigint AS deadlocks,
-        sum(blks_hit)*100/GREATEST(sum(blks_hit)+sum(blks_read),1)::double precision AS blks_hit_pct
-    FROM snap_stat_database st
-        /* Start snapshot existance condition
-        Start snapshot stats does not account in report, but we must be sure
-        that start snapshot exists, as it is reference point of next snapshot
+        sum(deadlocks)::bigint AS deadlocks
+    FROM sample_stat_database st
+        /* Start sample existance condition
+        Start sample stats does not account in report, but we must be sure
+        that start sample exists, as it is reference point of next sample
         */
-        JOIN snapshots snap_s ON (st.node_id = snap_s.node_id AND snap_s.snap_id = start_id)
-        /* End snapshot existance condition
-        Make sure that end snapshot exists, so we really account full interval
+        JOIN samples sample_s ON (st.server_id = sample_s.server_id AND sample_s.sample_id = start_id)
+        /* End sample existance condition
+        Make sure that end sample exists, so we really account full interval
         */
-        JOIN snapshots snap_e ON (st.node_id = snap_e.node_id AND snap_e.snap_id = end_id)
-    WHERE st.node_id = snode_id AND datname NOT LIKE 'template_' AND st.snap_id BETWEEN snap_s.snap_id + 1 AND snap_e.snap_id
+        JOIN samples sample_e ON (st.server_id = sample_e.server_id AND sample_e.sample_id = end_id)
+    WHERE st.server_id = sserver_id AND datname NOT LIKE 'template_' AND st.sample_id BETWEEN sample_s.sample_id + 1 AND sample_e.sample_id
     GROUP BY st.datid,st.datname
-    --HAVING max(stats_reset)=min(stats_reset);
 $$ LANGUAGE sql;
 
-CREATE OR REPLACE FUNCTION dbstats_reset(IN snode_id integer, IN start_id integer, IN end_id integer)
+CREATE OR REPLACE FUNCTION dbstats_reset(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS TABLE(
   datname       name,
   stats_reset   timestamp with time zone,
-  snap_id       integer
+  sample_id       integer
 )
 SET search_path=@extschema@,public AS $$
     SELECT
-        st.datname,
-        st.stats_reset,
-        st.snap_id
-    FROM snap_stat_database st
-        JOIN snap_stat_database stfirst ON
-          (stfirst.node_id = st.node_id AND stfirst.snap_id = start_id AND stfirst.datid = st.datid)
-        /* Start snapshot existance condition
-        Start snapshot stats does not account in report, but we must be sure
-        that start snapshot exists, as it is reference point of next snapshot
-        */
-        JOIN snapshots snap_s ON (st.node_id = snap_s.node_id AND snap_s.snap_id = start_id)
-        /* End snapshot existance condition
-        Make sure that end snapshot exists, so we really account full interval
-        */
-        JOIN snapshots snap_e ON (st.node_id = snap_e.node_id AND snap_e.snap_id = end_id)
-    WHERE st.node_id = snode_id AND st.datname NOT LIKE 'template_' AND st.snap_id BETWEEN snap_s.snap_id AND snap_e.snap_id
-      AND st.stats_reset != stfirst.stats_reset
+        st1.datname,
+        st1.stats_reset,
+        st1.sample_id
+    FROM sample_stat_database st1
+        LEFT JOIN sample_stat_database st2 ON
+          (st2.server_id = st1.server_id AND st2.sample_id = st1.sample_id - 1 AND st2.datid = st1.datid)
+    WHERE st1.server_id = sserver_id AND st1.datname NOT LIKE 'template_' AND st1.sample_id BETWEEN start_id + 1 AND end_id
+      AND st1.stats_reset != st2.stats_reset
+    ORDER BY sample_id ASC
 $$ LANGUAGE sql;
 
-CREATE OR REPLACE FUNCTION dbstats_reset_htbl(IN jreportset jsonb, IN snode_id integer, IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION dbstats_reset_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -91,26 +80,39 @@ DECLARE
     c_dbstats CURSOR FOR
     SELECT
         datname,
-        snap_id,
+        sample_id,
         stats_reset
-    FROM dbstats_reset(snode_id,start_id,end_id)
+    FROM dbstats_reset(sserver_id,start_id,end_id)
       ORDER BY stats_reset ASC;
 
     r_result RECORD;
 BEGIN
     -- Database stats TPLs
     jtab_tpl := jsonb_build_object(
-      'tab_hdr','<table><tr><th>Database</th><th>Snapshot</th><th>Reset time</th></tr>{rows}</table>',
-      'snap_tpl','<tr><td>%s</td><td {value}>%s</td><td {value}>%s</td></tr>');
+      'tab_hdr',
+        '<table>'
+          '<tr>'
+            '<th>Database</th>'
+            '<th>Sample</th>'
+            '<th>Reset time</th>'
+          '</tr>'
+          '{rows}'
+        '</table>',
+      'sample_tpl',
+      '<tr>'
+        '<td>%s</td>'
+        '<td {value}>%s</td>'
+        '<td {value}>%s</td>'
+      '</tr>');
     -- apply settings to templates
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
 
     -- Reporting summary databases stats
     FOR r_result IN c_dbstats LOOP
         report := report||format(
-            jtab_tpl #>> ARRAY['snap_tpl'],
+            jtab_tpl #>> ARRAY['sample_tpl'],
             r_result.datname,
-            r_result.snap_id,
+            r_result.sample_id,
             r_result.stats_reset
         );
     END LOOP;
@@ -123,7 +125,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION dbstats_reset_diff_htbl(IN jreportset jsonb, IN snode_id integer, IN start1_id integer, IN end1_id integer,
+CREATE OR REPLACE FUNCTION dbstats_reset_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
 IN start2_id integer, IN end2_id integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -134,23 +136,44 @@ DECLARE
     SELECT
         interval_num,
         datname,
-        snap_id,
+        sample_id,
         stats_reset
     FROM
-      (SELECT 1 AS interval_num, datname, snap_id, stats_reset
-        FROM dbstats_reset(snode_id,start1_id,end1_id)
+      (SELECT 1 AS interval_num, datname, sample_id, stats_reset
+        FROM dbstats_reset(sserver_id,start1_id,end1_id)
       UNION ALL
-      SELECT 2 AS interval_num, datname, snap_id, stats_reset
-        FROM dbstats_reset(snode_id,start2_id,end2_id)) AS snapshots
+      SELECT 2 AS interval_num, datname, sample_id, stats_reset
+        FROM dbstats_reset(sserver_id,start2_id,end2_id)) AS samples
     ORDER BY interval_num, stats_reset ASC;
 
     r_result RECORD;
 BEGIN
     -- Database stats TPLs
     jtab_tpl := jsonb_build_object(
-      'tab_hdr','<table><tr><th>I</th><th>Database</th><th>Snapshot</th><th>Reset time</th></tr>{rows}</table>',
-      'snap_tpl1','<tr {interval1}><td {label} {title1}>1</td><td>%s</td><td {value}>%s</td><td {value}>%s</td></tr>',
-      'snap_tpl2','<tr {interval2}><td {label} {title2}>2</td><td>%s</td><td {value}>%s</td><td {value}>%s</td></tr>');
+      'tab_hdr',
+        '<table>'
+          '<tr>'
+            '<th>I</th>'
+            '<th>Database</th>'
+            '<th>Sample</th>'
+            '<th>Reset time</th>'
+          '</tr>'
+          '{rows}'
+        '</table>',
+      'sample_tpl1',
+        '<tr {interval1}>'
+          '<td {label} {title1}>1</td>'
+          '<td>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+        '</tr>',
+      'sample_tpl2',
+        '<tr {interval2}>'
+          '<td {label} {title2}>2</td>'
+          '<td>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+        '</tr>');
     -- apply settings to templates
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
 
@@ -159,16 +182,16 @@ BEGIN
       CASE r_result.interval_num
         WHEN 1 THEN
           report := report||format(
-              jtab_tpl #>> ARRAY['snap_tpl1'],
+              jtab_tpl #>> ARRAY['sample_tpl1'],
               r_result.datname,
-              r_result.snap_id,
+              r_result.sample_id,
               r_result.stats_reset
           );
         WHEN 2 THEN
           report := report||format(
-              jtab_tpl #>> ARRAY['snap_tpl2'],
+              jtab_tpl #>> ARRAY['sample_tpl2'],
               r_result.datname,
-              r_result.snap_id,
+              r_result.sample_id,
               r_result.stats_reset
           );
         END CASE;
@@ -182,7 +205,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION dbstats_htbl(IN jreportset jsonb, IN snode_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION dbstats_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -190,30 +213,77 @@ DECLARE
     --Cursor for db stats
     c_dbstats CURSOR FOR
     SELECT
-        dbname,
-        xact_commit,
-        xact_rollback,
-        blks_read,
-        blks_hit,
-        tup_returned,
-        tup_fetched,
-        tup_inserted,
-        tup_updated,
-        tup_deleted,
-        temp_files,
-        pg_size_pretty(temp_bytes) AS temp_bytes,
-        pg_size_pretty(datsize) AS datsize,
-        pg_size_pretty(datsize_delta) AS datsize_delta,
-        deadlocks,
-        blks_hit_pct
-    FROM dbstats(snode_id,start_id,end_id,topn);
+        COALESCE(dbname,'Total') as dbname,
+        sum(xact_commit) as xact_commit,
+        sum(xact_rollback) as xact_rollback,
+        sum(blks_read) as blks_read,
+        sum(blks_hit) as blks_hit,
+        sum(tup_returned) as tup_returned,
+        sum(tup_fetched) as tup_fetched,
+        sum(tup_inserted) as tup_inserted,
+        sum(tup_updated) as tup_updated,
+        sum(tup_deleted) as tup_deleted,
+        sum(temp_files) as temp_files,
+        pg_size_pretty(sum(temp_bytes)) AS temp_bytes,
+        pg_size_pretty(sum(datsize)) AS datsize,
+        pg_size_pretty(sum(datsize_delta)) AS datsize_delta,
+        sum(deadlocks) as deadlocks,
+        (sum(blks_hit)*100/NULLIF(sum(blks_hit)+sum(blks_read),0))::double precision AS blks_hit_pct
+    FROM dbstats(sserver_id,start_id,end_id,topn) st
+    GROUP BY ROLLUP(dbname)
+    ORDER BY st.dbname NULLS LAST;
 
     r_result RECORD;
 BEGIN
     -- Database stats TPLs
     jtab_tpl := jsonb_build_object(
-      'tab_hdr','<table><tr><th>Database</th><th>Commits</th><th>Rollbacks</th><th>Deadlocks</th><th>BlkHit%(read/hit)</th><th>Tup Ret/Fet</th><th>Tup Ins</th><th>Tup Upd</th><th>Tup Del</th><th>Temp Size(Files)</th><th>Size</th><th>Growth</th></tr>{rows}</table>',
-      'db_tpl','<tr><td>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s%%(%s/%s)</td><td {value}>%s/%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s(%s)</td><td {value}>%s</td><td {value}>%s</td></tr>');
+      'tab_hdr',
+        '<table>'
+          '<tr>'
+            '<th rowspan="2">Database</th>'
+            '<th colspan="3">Transactions</th>'
+            '<th colspan="3">Block statistics</th>'
+            '<th colspan="5">Tuples</th>'
+            '<th colspan="2">Temp files</th>'
+            '<th rowspan="2" title="Database size as is was at the moment of last sample in report interval">Size</th>'
+            '<th rowspan="2" title="Database size increment during report interval">Growth</th>'
+          '</tr>'
+          '<tr>'
+            '<th title="Number of transactions in this database that have been committed">Commits</th>'
+            '<th title="Number of transactions in this database that have been rolled back">Rollbacks</th>'
+            '<th title="Number of deadlocks detected in this database">Deadlocks</th>'
+            '<th title="Buffer cache hit ratio">Hit(%)</th>'
+            '<th title="Number of disk blocks read in this database">Read</th>'
+            '<th title="Number of times disk blocks were found already in the buffer cache">Hit</th>'
+            '<th title="Number of rows returned by queries in this database">Ret</th>'
+            '<th title="Number of rows fetched by queries in this database">Fet</th>'
+            '<th title="Number of rows inserted by queries in this database">Ins</th>'
+            '<th title="Number of rows updated by queries in this database">Upd</th>'
+            '<th title="Number of rows deleted">Del</th>'
+            '<th title="Total amount of data written to temporary files by queries in this database">Size</th>'
+            '<th title="Number of temporary files created by queries in this database">Files</th>'
+          '</tr>'
+          '{rows}'
+        '</table>',
+      'db_tpl',
+        '<tr>'
+          '<td>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+        '</tr>');
           -- apply settings to templates
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
 
@@ -249,7 +319,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 
-CREATE OR REPLACE FUNCTION dbstats_diff_htbl(IN jreportset jsonb, IN snode_id integer, IN start1_id integer, IN end1_id integer,
+CREATE OR REPLACE FUNCTION dbstats_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
    IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -258,47 +328,114 @@ DECLARE
     --Cursor for db stats
     c_dbstats CURSOR FOR
     SELECT
-        COALESCE(dbs1.dbname,dbs2.dbname) AS dbname,
-        dbs1.xact_commit AS xact_commit1,
-        dbs1.xact_rollback AS xact_rollback1,
-        dbs1.blks_read AS blks_read1,
-        dbs1.blks_hit AS blks_hit1,
-        dbs1.tup_returned AS tup_returned1,
-        dbs1.tup_fetched AS tup_fetched1,
-        dbs1.tup_inserted AS tup_inserted1,
-        dbs1.tup_updated AS tup_updated1,
-        dbs1.tup_deleted AS tup_deleted1,
-        dbs1.temp_files AS temp_files1,
-        pg_size_pretty(dbs1.temp_bytes) AS temp_bytes1,
-        pg_size_pretty(dbs1.datsize) AS datsize1,
-        pg_size_pretty(dbs1.datsize_delta) AS datsize_delta1,
-        dbs1.deadlocks AS deadlocks1,
-        dbs1.blks_hit_pct AS blks_hit_pct1,
-        dbs2.xact_commit AS xact_commit2,
-        dbs2.xact_rollback AS xact_rollback2,
-        dbs2.blks_read AS blks_read2,
-        dbs2.blks_hit AS blks_hit2,
-        dbs2.tup_returned AS tup_returned2,
-        dbs2.tup_fetched AS tup_fetched2,
-        dbs2.tup_inserted AS tup_inserted2,
-        dbs2.tup_updated AS tup_updated2,
-        dbs2.tup_deleted AS tup_deleted2,
-        dbs2.temp_files AS temp_files2,
-        pg_size_pretty(dbs2.temp_bytes) AS temp_bytes2,
-        pg_size_pretty(dbs2.datsize) AS datsize2,
-        pg_size_pretty(dbs2.datsize_delta) AS datsize_delta2,
-        dbs2.deadlocks AS deadlocks2,
-        dbs2.blks_hit_pct AS blks_hit_pct2
-    FROM dbstats(snode_id,start1_id,end1_id,topn) dbs1 FULL OUTER JOIN dbstats(snode_id,start2_id,end2_id,topn) dbs2
-        USING (datid);
+        COALESCE(COALESCE(dbs1.dbname,dbs2.dbname),'Total') AS dbname,
+        sum(dbs1.xact_commit) AS xact_commit1,
+        sum(dbs1.xact_rollback) AS xact_rollback1,
+        sum(dbs1.blks_read) AS blks_read1,
+        sum(dbs1.blks_hit) AS blks_hit1,
+        sum(dbs1.tup_returned) AS tup_returned1,
+        sum(dbs1.tup_fetched) AS tup_fetched1,
+        sum(dbs1.tup_inserted) AS tup_inserted1,
+        sum(dbs1.tup_updated) AS tup_updated1,
+        sum(dbs1.tup_deleted) AS tup_deleted1,
+        sum(dbs1.temp_files) AS temp_files1,
+        pg_size_pretty(sum(dbs1.temp_bytes)) AS temp_bytes1,
+        pg_size_pretty(sum(dbs1.datsize)) AS datsize1,
+        pg_size_pretty(sum(dbs1.datsize_delta)) AS datsize_delta1,
+        sum(dbs1.deadlocks) AS deadlocks1,
+        (sum(dbs1.blks_hit)*100/NULLIF(sum(dbs1.blks_hit)+sum(dbs1.blks_read),0))::double precision AS blks_hit_pct1,
+        sum(dbs2.xact_commit) AS xact_commit2,
+        sum(dbs2.xact_rollback) AS xact_rollback2,
+        sum(dbs2.blks_read) AS blks_read2,
+        sum(dbs2.blks_hit) AS blks_hit2,
+        sum(dbs2.tup_returned) AS tup_returned2,
+        sum(dbs2.tup_fetched) AS tup_fetched2,
+        sum(dbs2.tup_inserted) AS tup_inserted2,
+        sum(dbs2.tup_updated) AS tup_updated2,
+        sum(dbs2.tup_deleted) AS tup_deleted2,
+        sum(dbs2.temp_files) AS temp_files2,
+        pg_size_pretty(sum(dbs2.temp_bytes)) AS temp_bytes2,
+        pg_size_pretty(sum(dbs2.datsize)) AS datsize2,
+        pg_size_pretty(sum(dbs2.datsize_delta)) AS datsize_delta2,
+        sum(dbs2.deadlocks) AS deadlocks2,
+        (sum(dbs2.blks_hit)*100/NULLIF(sum(dbs2.blks_hit)+sum(dbs2.blks_read),0))::double precision AS blks_hit_pct2
+    FROM dbstats(sserver_id,start1_id,end1_id,topn) dbs1 FULL OUTER JOIN dbstats(sserver_id,start2_id,end2_id,topn) dbs2
+        USING (datid)
+    GROUP BY ROLLUP(COALESCE(dbs1.dbname,dbs2.dbname))
+    ORDER BY COALESCE(dbs1.dbname,dbs2.dbname) NULLS LAST;
 
     r_result RECORD;
 BEGIN
     -- Database stats TPLs
     jtab_tpl := jsonb_build_object(
-      'tab_hdr','<table {difftbl}><tr><th>Database</th><th>I</th><th>Commits</th><th>Rollbacks</th><th>Deadlocks</th><th>BlkHit%(read/hit)</th><th>Tup Ret/Fet</th><th>Tup Ins</th><th>Tup Upd</th><th>Tup Del</th><th>Temp Size(Files)</th><th>Size</th><th>Growth</th></tr>{rows}</table>',
-     'db_tpl','<tr {interval1}><td {rowtdspanhdr}>%s</td><td {label} {title1}>1</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s%%(%s/%s)</td><td {value}>%s/%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s(%s)</td><td {value}>%s</td><td {value}>%s</td></tr>'||
-        '<tr {interval2}><td {label} {title2}>2</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s%%(%s/%s)</td><td {value}>%s/%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s(%s)</td><td {value}>%s</td><td {value}>%s</td></tr><tr style="visibility:collapse"></tr>');
+      'tab_hdr',
+        '<table {difftbl}>'
+          '<tr>'
+            '<th rowspan="2">Database</th>'
+            '<th rowspan="2">I</th>'
+            '<th colspan="3">Transactions</th>'
+            '<th colspan="3">Block statistics</th>'
+            '<th colspan="5">Tuples</th>'
+            '<th colspan="2">Temp files</th>'
+            '<th rowspan="2" title="Database size as is was at the moment of last sample in report interval">Size</th>'
+            '<th rowspan="2" title="Database size increment during report interval">Growth</th>'
+          '</tr>'
+          '<tr>'
+            '<th title="Number of transactions in this database that have been committed">Commits</th>'
+            '<th title="Number of transactions in this database that have been rolled back">Rollbacks</th>'
+            '<th title="Number of deadlocks detected in this database">Deadlocks</th>'
+            '<th title="Buffer cache hit ratio">Hit(%)</th>'
+            '<th title="Number of disk blocks read in this database">Read</th>'
+            '<th title="Number of times disk blocks were found already in the buffer cache">Hit</th>'
+            '<th title="Number of rows returned by queries in this database">Ret</th>'
+            '<th title="Number of rows fetched by queries in this database">Fet</th>'
+            '<th title="Number of rows inserted by queries in this database">Ins</th>'
+            '<th title="Number of rows updated by queries in this database">Upd</th>'
+            '<th title="Number of rows deleted">Del</th>'
+            '<th title="Total amount of data written to temporary files by queries in this database">Size</th>'
+            '<th title="Number of temporary files created by queries in this database">Files</th>'
+          '</tr>'
+          '{rows}'
+        '</table>',
+      'db_tpl',
+        '<tr {interval1}>'
+          '<td {rowtdspanhdr}>%s</td>'
+          '<td {label} {title1}>1</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+        '</tr>'
+        '<tr {interval2}>'
+          '<td {label} {title2}>2</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+        '</tr>'
+        '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
 
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);

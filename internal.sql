@@ -1,15 +1,15 @@
 /* ========= Internal functions ========= */
 
-CREATE OR REPLACE FUNCTION get_connstr(IN snode_id integer) RETURNS text SET search_path=@extschema@,public SET lock_timeout=300000 AS $$
+CREATE OR REPLACE FUNCTION get_connstr(IN sserver_id integer) RETURNS text SET search_path=@extschema@,public SET lock_timeout=300000 AS $$
 DECLARE
-    node_connstr text = null;
+    server_connstr text = null;
 BEGIN
-    --Getting node_connstr
-    SELECT connstr INTO node_connstr FROM nodes n WHERE n.node_id = snode_id;
-    IF (node_connstr IS NULL) THEN
-        RAISE 'node_id not found';
+    --Getting server_connstr
+    SELECT connstr INTO server_connstr FROM servers n WHERE n.server_id = sserver_id;
+    IF (server_connstr IS NULL) THEN
+        RAISE 'server_id not found';
     ELSE
-        RETURN node_connstr;
+        RETURN server_connstr;
     END IF;
 END;
 $$ LANGUAGE plpgsql;
@@ -42,19 +42,19 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION get_snapids_by_timerange(IN snode_id integer, IN time_range tstzrange)
+CREATE OR REPLACE FUNCTION get_sampleids_by_timerange(IN sserver_id integer, IN time_range tstzrange)
 RETURNS TABLE (
     start_id    integer,
     end_id      integer
 ) SET search_path=@extschema@,public AS $$
 BEGIN
-  SELECT min(s1.snap_id),max(s2.snap_id) INTO start_id,end_id FROM
-    snapshots s1 JOIN
-    snapshots s2 ON (s1.node_id = s2.node_id AND s1.snap_id + 1 = s2.snap_id)
-  WHERE s1.node_id = snode_id AND tstzrange(s1.snap_time,s2.snap_time) && time_range;
-  
+  SELECT min(s1.sample_id),max(s2.sample_id) INTO start_id,end_id FROM
+    samples s1 JOIN
+    samples s2 ON (s1.server_id = s2.server_id AND s1.sample_id + 1 = s2.sample_id)
+  WHERE s1.server_id = sserver_id AND tstzrange(s1.sample_time,s2.sample_time) && time_range;
+
     IF start_id IS NULL OR end_id IS NULL THEN
-      RAISE 'Suitable snapshots not found';
+      RAISE 'Suitable samples not found';
     END IF;
 
     RETURN NEXT;
@@ -62,29 +62,29 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION get_node_by_name(IN node name)
+CREATE OR REPLACE FUNCTION get_server_by_name(IN server name)
 RETURNS integer SET search_path=@extschema@,public AS $$
 DECLARE
-    snode_id     integer;
+    sserver_id     integer;
 BEGIN
-    SELECT node_id INTO snode_id FROM nodes WHERE node_name=node;
-    IF snode_id IS NULL THEN
-        RAISE 'Node not found.';
+    SELECT server_id INTO sserver_id FROM servers WHERE server_name=server;
+    IF sserver_id IS NULL THEN
+        RAISE 'Server not found.';
     END IF;
 
-    RETURN snode_id;
+    RETURN sserver_id;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION get_baseline_snapshots(IN snode_id integer, baseline varchar(25))
+CREATE OR REPLACE FUNCTION get_baseline_samples(IN sserver_id integer, baseline varchar(25))
 RETURNS TABLE (
     start_id    integer,
     end_id      integer
 ) SET search_path=@extschema@,public AS $$
 BEGIN
-    SELECT min(snap_id), max(snap_id) INTO start_id,end_id
-    FROM baselines JOIN bl_snaps USING (bl_id,node_id)
-    WHERE node_id = snode_id AND bl_name = baseline;
+    SELECT min(sample_id), max(sample_id) INTO start_id,end_id
+    FROM baselines JOIN bl_samples USING (bl_id,server_id)
+    WHERE server_id = sserver_id AND bl_name = baseline;
     IF start_id IS NULL OR end_id IS NULL THEN
       RAISE 'Baseline not found';
     END IF;

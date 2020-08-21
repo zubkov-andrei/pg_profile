@@ -1,8 +1,8 @@
 /* ===== Tables stats functions ===== */
 
-CREATE OR REPLACE FUNCTION tablespace_stats(IN snode_id integer, IN start_id integer, IN end_id integer)
+CREATE OR REPLACE FUNCTION tablespace_stats(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS TABLE(
-    node_id integer,
+    server_id integer,
     tablespaceid oid,
     tablespacename name,
     tablespacepath text,
@@ -10,29 +10,29 @@ RETURNS TABLE(
     size_delta bigint
 ) SET search_path=@extschema@,public AS $$
     SELECT
-        st.node_id,
+        st.server_id,
         st.tablespaceid,
         st.tablespacename,
         st.tablespacepath,
         sum(st.size)::bigint AS size,
         sum(st.size_delta)::bigint AS size_delta
-    FROM v_snap_stat_tablespaces st
+    FROM v_sample_stat_tablespaces st
 
-        /* Start snapshot existance condition
-        Start snapshot stats does not account in report, but we must be sure
-        that start snapshot exists, as it is reference point of next snapshot
+        /* Start sample existance condition
+        Start sample stats does not account in report, but we must be sure
+        that start sample exists, as it is reference point of next sample
         */
-        JOIN snapshots snap_s ON (st.node_id = snap_s.node_id AND snap_s.snap_id = start_id)
-        /* End snapshot existance condition
-        Make sure that end snapshot exists, so we really account full interval
+        JOIN samples sample_s ON (st.server_id = sample_s.server_id AND sample_s.sample_id = start_id)
+        /* End sample existance condition
+        Make sure that end sample exists, so we really account full interval
         */
-        JOIN snapshots snap_e ON (st.node_id = snap_e.node_id AND snap_e.snap_id = end_id)
-    WHERE st.node_id = snode_id
-      AND st.snap_id BETWEEN snap_s.snap_id + 1 AND snap_e.snap_id
-    GROUP BY st.node_id, st.tablespaceid, st.tablespacename, st.tablespacepath
+        JOIN samples sample_e ON (st.server_id = sample_e.server_id AND sample_e.sample_id = end_id)
+    WHERE st.server_id = sserver_id
+      AND st.sample_id BETWEEN sample_s.sample_id + 1 AND sample_e.sample_id
+    GROUP BY st.server_id, st.tablespaceid, st.tablespacename, st.tablespacepath
 $$ LANGUAGE sql;
 
-CREATE OR REPLACE FUNCTION tablespaces_stats_htbl(IN jreportset jsonb, IN snode_id integer, IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION tablespaces_stats_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -44,15 +44,30 @@ DECLARE
         tablespacepath,
         pg_size_pretty(size) as size,
         pg_size_pretty(size_delta) as size_delta
-    FROM tablespace_stats(snode_id,start_id,end_id);
+    FROM tablespace_stats(sserver_id,start_id,end_id);
 
     r_result RECORD;
 BEGIN
        --- Populate templates
 
     jtab_tpl := jsonb_build_object(
-      'tab_hdr','<table><tr><th>Tablespace</th><th>Path</th><th>Size</th><th>Growth</th></tr>{rows}</table>',
-      'ts_tpl','<tr><td>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td></tr>');
+      'tab_hdr',
+        '<table>'
+          '<tr>'
+            '<th>Tablespace</th>'
+            '<th>Path</th>'
+            '<th title="Tablespace size as it was at the moment of last sample in report interval">Size</th>'
+            '<th title="Tablespace size increment during report interval">Growth</th>'
+          '</tr>'
+          '{rows}'
+        '</table>',
+      'ts_tpl',
+        '<tr>'
+          '<td>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+        '</tr>');
 
     -- apply settings to templates
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
@@ -77,7 +92,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION tablespaces_stats_diff_htbl(IN jreportset jsonb, IN snode_id integer, IN start1_id integer, IN end1_id integer,
+CREATE OR REPLACE FUNCTION tablespaces_stats_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
 IN start2_id integer, IN end2_id integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -92,16 +107,38 @@ DECLARE
         pg_size_pretty(stat2.size) as size2,
         pg_size_pretty(stat1.size_delta) as size_delta1,
         pg_size_pretty(stat2.size_delta) as size_delta2
-    FROM tablespace_stats(snode_id,start1_id,end1_id) stat1
-        FULL OUTER JOIN tablespace_stats(snode_id,start2_id,end2_id) stat2 USING (node_id,tablespaceid);
+    FROM tablespace_stats(sserver_id,start1_id,end1_id) stat1
+        FULL OUTER JOIN tablespace_stats(sserver_id,start2_id,end2_id) stat2 USING (server_id,tablespaceid);
 
     r_result RECORD;
 BEGIN
      -- Tablespace stats template
      jtab_tpl := jsonb_build_object(
-      'tab_hdr','<table {difftbl}><tr><th>Tablespace</th><th>Path</th><th>I</th><th>Size</th><th>Growth</th></tr>{rows}</table>',
-      'ts_tpl','<tr {interval1}><td {rowtdspanhdr}>%s</td><td {rowtdspanhdr_mono}>%s</td><td {label} {title1}>1</td><td {value}>%s</td><td {value}>%s</td></tr>'||
-        '<tr {interval2}><td {label} {title2}>2</td><td {value}>%s</td><td {value}>%s</td></tr><tr style="visibility:collapse"></tr>');
+      'tab_hdr',
+        '<table {difftbl}>'
+          '<tr>'
+            '<th>Tablespace</th>'
+            '<th>Path</th>'
+            '<th>I</th>'
+            '<th title="Tablespace size as it was at the moment of last sample in report interval">Size</th>'
+            '<th title="Tablespace size increment during report interval">Growth</th>'
+          '</tr>'
+          '{rows}'
+        '</table>',
+      'ts_tpl',
+        '<tr {interval1}>'
+          '<td {rowtdspanhdr}>%s</td>'
+          '<td {rowtdspanhdr_mono}>%s</td>'
+          '<td {label} {title1}>1</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+        '</tr>'
+        '<tr {interval2}>'
+          '<td {label} {title2}>2</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+        '</tr>'
+        '<tr style="visibility:collapse"></tr>');
 
     -- apply settings to templates
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);

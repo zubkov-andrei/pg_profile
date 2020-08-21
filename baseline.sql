@@ -1,78 +1,104 @@
 /* ========= Baseline management functions ========= */
 
-CREATE OR REPLACE FUNCTION baseline_new(IN node name, IN name varchar(25), IN start_id integer, IN end_id integer, IN days integer = NULL) RETURNS integer SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION create_baseline(IN server name, IN name varchar(25), IN start_id integer, IN end_id integer, IN days integer = NULL) RETURNS integer SET search_path=@extschema@,public AS $$
 DECLARE
     baseline_id integer;
-    snode_id     integer;
+    sserver_id     integer;
 BEGIN
-    SELECT node_id INTO snode_id FROM nodes WHERE node_name=node;
-    IF snode_id IS NULL THEN
-        RAISE 'Node not found';
+    SELECT server_id INTO sserver_id FROM servers WHERE server_name=server;
+    IF sserver_id IS NULL THEN
+        RAISE 'Server not found';
     END IF;
 
-    INSERT INTO baselines(node_id,bl_name,keep_until)
-    VALUES (snode_id,name,now() + (days || ' days')::interval)
+    INSERT INTO baselines(server_id,bl_name,keep_until)
+    VALUES (sserver_id,name,now() + (days || ' days')::interval)
     RETURNING bl_id INTO baseline_id;
 
-    INSERT INTO bl_snaps (node_id,snap_id,bl_id)
-    SELECT node_id,snap_id,baseline_id
-    FROM snapshots s JOIN nodes n USING (node_id)
-    WHERE node_id=snode_id AND snap_id BETWEEN start_id AND end_id;
+    INSERT INTO bl_samples (server_id,sample_id,bl_id)
+    SELECT server_id,sample_id,baseline_id
+    FROM samples s JOIN servers n USING (server_id)
+    WHERE server_id=sserver_id AND sample_id BETWEEN start_id AND end_id;
 
     RETURN baseline_id;
 END;
 $$ LANGUAGE plpgsql;
+COMMENT ON FUNCTION create_baseline(IN server name, IN name varchar(25), IN start_id integer, IN end_id integer, IN days integer) IS 'New baseline by ID''s';
 
-CREATE OR REPLACE FUNCTION baseline_new(IN name varchar(25), IN start_id integer, IN end_id integer, IN days integer = NULL) RETURNS integer SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION create_baseline(IN name varchar(25), IN start_id integer, IN end_id integer, IN days integer = NULL) RETURNS integer SET search_path=@extschema@,public AS $$
 BEGIN
-    RETURN baseline_new('local',name,start_id,end_id,days);
+    RETURN create_baseline('local',name,start_id,end_id,days);
 END;
 $$ LANGUAGE plpgsql;
+COMMENT ON FUNCTION create_baseline(IN name varchar(25), IN start_id integer, IN end_id integer, IN days integer) IS 'Local server new baseline by ID''s';
 
+CREATE OR REPLACE FUNCTION create_baseline(IN server name, IN name varchar(25), IN time_range tstzrange, IN days integer = NULL) RETURNS integer SET search_path=@extschema@,public AS $$
+DECLARE
+  range_ids record;
+BEGIN
+  SELECT * INTO STRICT range_ids
+  FROM get_sampleids_by_timerange(get_server_by_name(server), time_range);
 
-CREATE OR REPLACE FUNCTION baseline_drop(IN node name, IN name varchar(25)) RETURNS integer SET search_path=@extschema@,public AS $$
+  RETURN create_baseline(server,name,range_ids.start_id,range_ids.end_id,days);
+END;
+$$ LANGUAGE plpgsql;
+COMMENT ON FUNCTION create_baseline(IN server name, IN name varchar(25), IN time_range tstzrange, IN days integer) IS 'New baseline by time range';
+
+CREATE OR REPLACE FUNCTION create_baseline(IN name varchar(25), IN time_range tstzrange, IN days integer = NULL) RETURNS integer
+  SET search_path=@extschema@,public AS $$
+BEGIN
+  RETURN create_baseline('local',name,time_range,days);
+END;
+$$ LANGUAGE plpgsql;
+COMMENT ON FUNCTION create_baseline(IN name varchar(25), IN time_range tstzrange, IN days integer) IS 'Local server new baseline by time range';
+
+CREATE OR REPLACE FUNCTION drop_baseline(IN server name, IN name varchar(25)) RETURNS integer SET search_path=@extschema@,public AS $$
 DECLARE
     del_rows integer;
 BEGIN
-    DELETE FROM baselines WHERE bl_name = name AND node_id IN (SELECT node_id FROM nodes WHERE node_name = node);
+    DELETE FROM baselines WHERE bl_name = name AND server_id IN (SELECT server_id FROM servers WHERE server_name = server);
     GET DIAGNOSTICS del_rows = ROW_COUNT;
     RETURN del_rows;
 END;
 $$ LANGUAGE plpgsql;
+COMMENT ON FUNCTION drop_baseline(IN server name, IN name varchar(25)) IS 'Drop baseline on server';
 
-CREATE OR REPLACE FUNCTION baseline_drop(IN name varchar(25)) RETURNS integer SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION drop_baseline(IN name varchar(25)) RETURNS integer SET search_path=@extschema@,public AS $$
 BEGIN
-    RETURN baseline_drop('local',name);
+    RETURN drop_baseline('local',name);
 END;
 $$ LANGUAGE plpgsql;
+COMMENT ON FUNCTION drop_baseline(IN name varchar(25)) IS 'Drop baseline on local server';
 
-CREATE OR REPLACE FUNCTION baseline_keep(IN node name, IN name varchar(25) = null, IN days integer = null) RETURNS integer SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION keep_baseline(IN server name, IN name varchar(25) = null, IN days integer = null) RETURNS integer SET search_path=@extschema@,public AS $$
 DECLARE
     upd_rows integer;
 BEGIN
-    UPDATE baselines SET keep_until = now() + (days || ' days')::interval WHERE (name IS NULL OR bl_name = name) AND node_id IN (SELECT node_id FROM nodes WHERE node_name = node);
+    UPDATE baselines SET keep_until = now() + (days || ' days')::interval WHERE (name IS NULL OR bl_name = name) AND server_id IN (SELECT server_id FROM servers WHERE server_name = server);
     GET DIAGNOSTICS upd_rows = ROW_COUNT;
     RETURN upd_rows;
 END;
 $$ LANGUAGE plpgsql;
+COMMENT ON FUNCTION  keep_baseline(IN server name, IN name varchar(25), IN days integer) IS 'Set new baseline retention on server';
 
-CREATE OR REPLACE FUNCTION baseline_keep(IN name varchar(25) = null, IN days integer = null) RETURNS integer SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION keep_baseline(IN name varchar(25) = null, IN days integer = null) RETURNS integer SET search_path=@extschema@,public AS $$
 BEGIN
-    RETURN baseline_keep('local',name,days);
+    RETURN keep_baseline('local',name,days);
 END;
 $$ LANGUAGE plpgsql;
+COMMENT ON FUNCTION keep_baseline(IN name varchar(25), IN days integer) IS 'Set new baseline retention on local server';
 
-CREATE OR REPLACE FUNCTION baseline_show(IN node name = 'local')
+CREATE OR REPLACE FUNCTION show_baselines(IN server name = 'local')
 RETURNS TABLE (
        baseline varchar(25),
-       min_snap integer,
-       max_snap integer,
+       min_sample integer,
+       max_sample integer,
        keep_until_time timestamp (0) with time zone
 ) SET search_path=@extschema@,public AS $$
-    SELECT bl_name as baseline,min_snap_id,max_snap_id, keep_until
+    SELECT bl_name as baseline,min_sample_id,max_sample_id, keep_until
     FROM baselines b JOIN
-        (SELECT node_id,bl_id,min(snap_id) min_snap_id,max(snap_id) max_snap_id FROM bl_snaps GROUP BY node_id,bl_id) b_agg
-    USING (node_id,bl_id)
-    WHERE node_id IN (SELECT node_id FROM nodes WHERE node_name = node)
-    ORDER BY min_snap_id;
+        (SELECT server_id,bl_id,min(sample_id) min_sample_id,max(sample_id) max_sample_id FROM bl_samples GROUP BY server_id,bl_id) b_agg
+    USING (server_id,bl_id)
+    WHERE server_id IN (SELECT server_id FROM servers WHERE server_name = server)
+    ORDER BY min_sample_id;
 $$ LANGUAGE sql;
+COMMENT ON FUNCTION show_baselines(IN server name) IS 'Show server baselines (local server assumed if omitted)';

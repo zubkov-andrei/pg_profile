@@ -1,29 +1,29 @@
 # pg_profile
 This extension for PostgreSQL helps you to find out most resource intensive activities in your PostgreSQL databases.
 ## Concepts
-This extension is based on statistics views of PostgreSQL and contrib extension *pg_stat_statements*. It is written in pure pl/pgsql and doesn't need any external libraries or software, but PostgreSQL database itself, and a cron-like tool performing periodic tasks. Initially developed and tested on PostgreSQL 9.6, and may be incompatible with earlier releases.
+This extension is based on statistics views of PostgreSQL and contrib extensions *pg_stat_statements* and *pg_stat_kcache*. It is written in pure pl/pgsql and doesn't need any external libraries or software, but PostgreSQL database itself and a cron-like tool performing periodic tasks. Initially developed and tested on PostgreSQL 9.6 extension may be incompatible with earlier releases.
 
-Historic repository will be created in your database by this extension. This repository will hold statistics "snapshots" for your postgres clusters. Snapshot is taken by calling _snapshot()_ function. PostgreSQL doesn't have any job-like engine, so you'll need to use *cron*.
+Historic repository will be created in your database by this extension. This repository will hold statistics "samples" for your postgres clusters. Sample is taken by calling _take_sample()_ function. PostgreSQL doesn't have any job-like engine, so you'll need to use *cron*.
 
-Periodic snapshots can help you finding most resource intensive activities in the past. Suppose, you were reported performance degradation several hours ago. Resolving such issue, you can build a report between two snapshots bounding performance issue period to see load profile of your database. It's worse using a monitoring tool such as Zabbix to know exact time when performance issues was happening.
+Periodic samples can help you finding most resource intensive activities in the past. Suppose, you were reported performance degradation several hours ago. Resolving such issue, you can build a report between two samples bounding performance issue period to see load profile of your database. It's worse using a monitoring tool such as Zabbix to know exact time when performance issues was happening.
 
-You can take an explicit snapshot before running any batch processing, and after it will be done.
+You can take an explicit samples before running any batch processing, and after it will be done.
 
-Any time you make a snapshot, _pg_stat_statements_reset()_ will be called, ensuring you will not loose statements due to reaching *pg_stat_statements.max*. Also, report will contain section, informing you if captured statements count in any snapshot reaches 90% of _pg_stat_statements.max_.
+Any time you take a sample, _pg_stat_statements_reset()_ will be called, ensuring you will not loose statements due to reaching *pg_stat_statements.max*. Also, report will contain section, informing you if captured statements count in any sample reaches 90% of _pg_stat_statements.max_.
 
-*pg_profile*, installed in one cluster is able to collect statistics from other clusters, called *nodes*. You just need to define some nodes, providing names and connection strings and make sure connection can be established to all databases of all nodes. Now you can track statistics on your standbys from master, or from any other node. Once extension is installed, a *local* node is automatically created - this is a node for cluster where *pg_profile* resides.
+*pg_profile*, installed in one cluster is able to collect statistics from other clusters, called *servers*. You just need to define some servers, providing names and connection strings and make sure connection can be established to all databases of all defined servers. Now you can track statistics on your standbys from master, or from any other server. Once extension is installed, a *local* server is automatically created - this is a *server* for cluster where *pg_profile* resides.
 
 ## Prerequisites
 
-Although pg_profile is usually installed in the target cluster, it also can collect performance data from other clusters. Hence, we have prerequisites for *pg_profile* database, and for *nodes*.
+Although pg_profile is usually installed in the target cluster, it also can collect performance data from other clusters. Hence, we have prerequisites for *pg_profile* database, and for *servers*.
 
 ### pg_profile database prerequisites
 
 _pg_profile_ extension depends on extensions _plpgsql_ and _dblink_.
 
-### Nodes prerequisites
+### Servers prerequisites
 
-The only mandatory  requirement for node cluster is the ability to connect from pg_profile database using provided node connection string. All other requirements are optional, but they can improve completeness of gathered statistics.
+The only mandatory requirement for server cluster is the ability to connect from pg_profile database using provided server connection string. All other requirements are optional, but they can improve completeness of gathered statistics.
 
 Consider setting following Statistics Collector parameters:
 
@@ -34,10 +34,12 @@ track_io_timing = on
 track_functions = all/pl
 ```
 
-If you need statement statistics in reports, then database, mentioned in node connection string must have _pg_stat_statements_ extension configured. Set *pg_stat_statements* parameters to meet your needs (see PostgreSQL documentation):
+If you need statement statistics in reports, then database, mentioned in server connection string must have _pg_stat_statements_ extension installed and configured. Set *pg_stat_statements* parameters to meet your needs (see PostgreSQL documentation):
 
-* _pg_stat_statements.max_ - low setting for this parameter may cause some statements statistics to be wiped out before snapshot is taken. Report will warn you if your _pg_stat_statements.max_ is seems to be undersized.
+* _pg_stat_statements.max_ - low setting for this parameter may cause some statements statistics to be wiped out before sample is taken. Report will warn you if your _pg_stat_statements.max_ is seems to be undersized.
 * _pg_stat_statements.track = 'top'_ - _all_ value will affect accuracy of _%Total_ fields for statements-related sections of report.
+
+If CPU and filesystem statistics is needed, consider installing *pg_stat_kcache* extension.
 
 ## Installation
 
@@ -46,7 +48,7 @@ If you need statement statistics in reports, then database, mentioned in node co
 * Copy files of extension (pg_profile*) to PostgreSQL extensions location, which is
 
 ```
-# cp pg_profile* `pg_config --sharedir`/extension
+# tar xzf pg_profile-<version>.tar.gz --directory $(pg_config --sharedir)/extension
 ```
 
 Just make sure you are using appropriate *pg_config*.
@@ -90,7 +92,7 @@ You will need postgresql development packages to build pg_profile.
 sudo make USE_PGXS=y install && make USE_PGXS=y installcheck
 ```
 
-If you only need to get sql-script for manual creation of *pg_profile* objects - it may be useful in case of RDS installation, do 
+If you only need to get sql-script for manual creation of *pg_profile* objects - it may be useful in case of RDS installation, do
 
 ```
 make USE_PGXS=y sqlfile

@@ -1,35 +1,56 @@
 /* ========= Statement stats functions ========= */
 
-CREATE OR REPLACE FUNCTION profile_checkavail_statstatements(IN snode_id integer, IN start_id integer, IN end_id integer)
+CREATE OR REPLACE FUNCTION profile_checkavail_statstatements(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS BOOLEAN
 SET search_path=@extschema@,public AS $$
-  SELECT count(sn.snap_id) = count(st.snap_id)
-  FROM snapshots sn LEFT OUTER JOIN snap_statements_total st USING (node_id, snap_id)
-  WHERE sn.node_id = snode_id AND sn.snap_id BETWEEN start_id + 1 AND end_id
+-- Check if there was available pg_stat_statements statistics during report interval
+  SELECT count(sn.sample_id) = count(st.sample_id)
+  FROM samples sn LEFT OUTER JOIN sample_statements_total st USING (server_id, sample_id)
+  WHERE sn.server_id = sserver_id AND sn.sample_id BETWEEN start_id + 1 AND end_id
 $$ LANGUAGE sql;
 
-CREATE OR REPLACE FUNCTION statements_stats(IN snode_id integer, IN start_id integer, IN end_id integer, IN topn integer)
+CREATE OR REPLACE FUNCTION profile_checkavail_statements_v18(IN sserver_id integer, IN start_id integer, IN end_id integer)
+RETURNS BOOLEAN
+SET search_path=@extschema@,public AS $$
+-- Check if there was available pg_stat_statements v1.8 during report interval
+  SELECT count(*) = count(plans) AND count(*) > 0
+  FROM sample_statements sn
+  WHERE sn.server_id = sserver_id AND sn.sample_id BETWEEN start_id + 1 AND end_id
+$$ LANGUAGE sql;
+
+CREATE OR REPLACE FUNCTION statements_stats(IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
 RETURNS TABLE(
-        dbname name,
-        datid oid,
-        calls bigint,
-        total_time double precision,
-        shared_gets bigint,
-        local_gets bigint,
+        dbname              name,
+        datid               oid,
+        calls               bigint,
+        plans               bigint,
+        total_exec_time     double precision,
+        total_plan_time     double precision,
+        blk_read_time       double precision,
+        blk_write_time      double precision,
+        trg_fn_total_time   double precision,
+        shared_gets         bigint,
+        local_gets          bigint,
         shared_blks_dirtied bigint,
-        local_blks_dirtied bigint,
-        temp_blks_read bigint,
-        temp_blks_written bigint,
-        local_blks_read bigint,
-        local_blks_written bigint,
-        statements bigint
+        local_blks_dirtied  bigint,
+        temp_blks_read      bigint,
+        temp_blks_written   bigint,
+        local_blks_read     bigint,
+        local_blks_written  bigint,
+        statements          bigint,
+        wal_bytes           bigint
 )
 SET search_path=@extschema@,public AS $$
     SELECT
-        snap_db.datname AS dbname,
-        snap_db.datid AS datid,
+        sample_db.datname AS dbname,
+        sample_db.datid AS datid,
         sum(st.calls)::bigint AS calls,
-        sum(st.total_time)/1000::double precision AS total_time,
+        sum(st.plans)::bigint AS plans,
+        sum(st.total_exec_time)/1000::double precision AS total_exec_time,
+        sum(st.total_plan_time)/1000::double precision AS total_plan_time,
+        sum(st.blk_read_time)/1000::double precision AS blk_read_time,
+        sum(st.blk_write_time)/1000::double precision AS blk_write_time,
+        (sum(trg.total_time)/1000)::double precision AS trg_fn_total_time,
         sum(st.shared_blks_hit + st.shared_blks_read)::bigint AS shared_gets,
         sum(st.local_blks_hit + st.local_blks_read)::bigint AS local_gets,
         sum(st.shared_blks_dirtied)::bigint AS shared_blks_dirtied,
@@ -38,25 +59,28 @@ SET search_path=@extschema@,public AS $$
         sum(st.temp_blks_written)::bigint AS temp_blks_written,
         sum(st.local_blks_read)::bigint AS local_blks_read,
         sum(st.local_blks_written)::bigint AS local_blks_written,
-        sum(st.statements)::bigint AS statements
-    FROM snap_statements_total st
+        sum(st.statements)::bigint AS statements,
+        sum(st.wal_bytes)::bigint AS wal_bytes
+    FROM sample_statements_total st
+        LEFT OUTER JOIN sample_stat_user_func_total trg
+          ON (st.server_id = trg.server_id AND st.sample_id = trg.sample_id AND st.datid = trg.datid AND trg.trg_fn)
         -- Database name
-        JOIN snap_stat_database snap_db
-        ON (st.node_id=snap_db.node_id AND st.snap_id=snap_db.snap_id AND st.datid=snap_db.datid)
-        /* Start snapshot existance condition
-        Start snapshot stats does not account in report, but we must be sure
-        that start snapshot exists, as it is reference point of next snapshot
+        JOIN sample_stat_database sample_db
+        ON (st.server_id=sample_db.server_id AND st.sample_id=sample_db.sample_id AND st.datid=sample_db.datid)
+        /* Start sample existance condition
+        Start sample stats does not account in report, but we must be sure
+        that start sample exists, as it is reference point of next sample
         */
-        JOIN snapshots snap_s ON (st.node_id = snap_s.node_id AND snap_s.snap_id = start_id)
-        /* End snapshot existance condition
-        Make sure that end snapshot exists, so we really account full interval
+        JOIN samples sample_s ON (st.server_id = sample_s.server_id AND sample_s.sample_id = start_id)
+        /* End sample existance condition
+        Make sure that end sample exists, so we really account full interval
         */
-        JOIN snapshots snap_e ON (st.node_id = snap_e.node_id AND snap_e.snap_id = end_id)
-    WHERE st.node_id = snode_id AND st.snap_id BETWEEN snap_s.snap_id + 1 AND snap_e.snap_id
-    GROUP BY snap_db.datname, snap_db.datid;
+        JOIN samples sample_e ON (st.server_id = sample_e.server_id AND sample_e.sample_id = end_id)
+    WHERE st.server_id = sserver_id AND st.sample_id BETWEEN sample_s.sample_id + 1 AND sample_e.sample_id
+    GROUP BY sample_db.datname, sample_db.datid;
 $$ LANGUAGE sql;
 
-CREATE OR REPLACE FUNCTION statements_stats_htbl(IN jreportset jsonb, IN snode_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE OR REPLACE FUNCTION statements_stats_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -66,7 +90,11 @@ DECLARE
     SELECT
         COALESCE(dbname,'Total') as dbname_t,
         sum(calls) as calls,
-        sum(total_time) as total_time,
+        sum(total_exec_time) as total_exec_time,
+        sum(total_plan_time) as total_plan_time,
+        sum(blk_read_time) as blk_read_time,
+        sum(blk_write_time) as blk_write_time,
+        sum(trg_fn_total_time) as trg_fn_total_time,
         sum(shared_gets) as shared_gets,
         sum(local_gets) as local_gets,
         sum(shared_blks_dirtied) as shared_blks_dirtied,
@@ -75,8 +103,9 @@ DECLARE
         sum(temp_blks_written) as temp_blks_written,
         sum(local_blks_read) as local_blks_read,
         sum(local_blks_written) as local_blks_written,
-        sum(statements) as statements
-    FROM statements_stats(snode_id,start_id,end_id,topn)
+        sum(statements) as statements,
+        sum(wal_bytes) as wal_bytes
+    FROM statements_stats(sserver_id,start_id,end_id,topn)
     GROUP BY ROLLUP(dbname)
     ORDER BY dbname NULLS LAST;
 
@@ -84,8 +113,82 @@ DECLARE
 BEGIN
     -- Database stats TPLs
     jtab_tpl := jsonb_build_object(
-      'tab_hdr','<table><tr><th>Database</th><th>Calls</th><th>Total time(s)</th><th>Shared gets</th><th>Local gets</th><th>Shared dirtied</th><th>Local dirtied</th><th>Work_r (blk)</th><th>Work_w (blk)</th><th>Local_r (blk)</th><th>Local_w (blk)</th><th>Statements</th></tr>{rows}</table>',
-      'stdb_tpl','<tr><td>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td></tr>');
+      'tab_hdr',
+        '<table>'
+          '<tr>'
+            '<th rowspan="2">Database</th>'
+            '<th rowspan="2"title="Number of query executions">Calls</th>'
+            '{time_hdr}'
+            '<th colspan="2" title="Number of blocks fetched (hit + read)">Fetched (blk)</th>'
+            '<th colspan="2" title="Number of blocks dirtied">Dirtied (blk)</th>'
+            '<th colspan="2" title="Number of blocks, used in operations (like sorts and joins)">Temp (blk)</th>'
+            '<th colspan="2" title="Number of blocks, used for temporary tables">Local (blk)</th>'
+            '<th rowspan="2">Statements</th>'
+            '{wal_bytes_hdr}'
+          '</tr>'
+          '<tr>'
+            '{plan_time_hdr}'
+            '<th title="Time spent executing queries">Exec</th>'
+            '<th title="Time spent reading blocks">Read</th>'   -- I/O time
+            '<th title="Time spent writing blocks">Write</th>'
+            '<th title="Time spent in trigger functions">Trg</th>'    -- Triger functions time
+            '<th>Shared</th>' -- Fetched
+            '<th>Local</th>'
+            '<th>Shared</th>' -- Dirtied
+            '<th>Local</th>'
+            '<th>Read</th>'   -- Work area read blks
+            '<th>Write</th>'  -- Work area write blks
+            '<th>Read</th>'   -- Local read blks
+            '<th>Write</th>'  -- Local write blks
+          '</tr>'
+          '{rows}'
+        '</table>',
+      'stdb_tpl',
+        '<tr>'
+          '<td>%1$s</td>'
+          '<td {value}>%2$s</td>'
+          '{plan_time_cell}'
+          '<td {value}>%4$s</td>'
+          '<td {value}>%5$s</td>'
+          '<td {value}>%6$s</td>'
+          '<td {value}>%7$s</td>'
+          '<td {value}>%8$s</td>'
+          '<td {value}>%9$s</td>'
+          '<td {value}>%10$s</td>'
+          '<td {value}>%11$s</td>'
+          '<td {value}>%12$s</td>'
+          '<td {value}>%13$s</td>'
+          '<td {value}>%14$s</td>'
+          '<td {value}>%15$s</td>'
+          '<td {value}>%16$s</td>'
+          '{wal_bytes_cell}'
+        '</tr>',
+      'time_hdr', -- Time header for stat_statements less then v1.8
+        '<th colspan="4">Time (s)</th>',
+      'time_hdr_plan_time', -- Time header for stat_statements v1.8 - added plan time field
+        '<th colspan="5">Time (s)</th>',
+      'plan_time_hdr',
+        '<th title="Time spent planning queries">Plan</th>',
+      'plan_time_cell',
+        '<td {value}>%3$s</td>',
+      'wal_bytes_hdr',
+        '<th rowspan="2">WAL size</th>',
+      'wal_bytes_cell',
+        '<td {value}>%17$s</td>');
+    -- Conditional template
+    IF jsonb_extract_path_text(jreportset, 'report_features', 'statstatements_v1.8')::boolean THEN
+      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{time_hdr}',jtab_tpl->>'time_hdr_plan_time')));
+      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{wal_bytes_hdr}',jtab_tpl->>'wal_bytes_hdr')));
+      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{plan_time_hdr}',jtab_tpl->>'plan_time_hdr')));
+      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{plan_time_cell}',jtab_tpl->>'plan_time_cell')));
+      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{wal_bytes_cell}',jtab_tpl->>'wal_bytes_cell')));
+    ELSE
+      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{time_hdr}',jtab_tpl->>'time_hdr')));
+      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{wal_bytes_hdr}','')));
+      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{plan_time_hdr}','')));
+      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{plan_time_cell}','')));
+      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{wal_bytes_cell}','')));
+    END IF;
     -- apply settings to templates
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
 
@@ -95,7 +198,11 @@ BEGIN
             jtab_tpl #>> ARRAY['stdb_tpl'],
             r_result.dbname_t,
             r_result.calls,
-            round(CAST(r_result.total_time AS numeric),2),
+            round(CAST(r_result.total_plan_time AS numeric),2),
+            round(CAST(r_result.total_exec_time AS numeric),2),
+            round(CAST(r_result.blk_read_time AS numeric),2),
+            round(CAST(r_result.blk_write_time AS numeric),2),
+            round(CAST(r_result.trg_fn_total_time AS numeric),2),
             r_result.shared_gets,
             r_result.local_gets,
             r_result.shared_blks_dirtied,
@@ -104,7 +211,8 @@ BEGIN
             r_result.temp_blks_written,
             r_result.local_blks_read,
             r_result.local_blks_written,
-            r_result.statements
+            r_result.statements,
+            pg_size_pretty(r_result.wal_bytes)
         );
     END LOOP;
 
@@ -116,7 +224,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION statements_stats_diff_htbl(IN jreportset jsonb, IN snode_id integer, IN start1_id integer, IN end1_id integer,
+CREATE OR REPLACE FUNCTION statements_stats_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
 IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -125,38 +233,13 @@ DECLARE
     --Cursor for db stats
     c_dbstats CURSOR FOR
     SELECT
-        COALESCE(st1.dbname,st2.dbname) as dbname,
-        st1.calls as calls1,
-        st1.total_time as total_time1,
-        st1.shared_gets as shared_gets1,
-        st1.local_gets as local_gets1,
-        st1.shared_blks_dirtied as shared_blks_dirtied1,
-        st1.local_blks_dirtied as local_blks_dirtied1,
-        st1.temp_blks_read as temp_blks_read1,
-        st1.temp_blks_written as temp_blks_written1,
-        st1.local_blks_read as local_blks_read1,
-        st1.local_blks_written as local_blks_written1,
-        st1.statements as statements1,
-        st2.calls as calls2,
-        st2.total_time as total_time2,
-        st2.shared_gets as shared_gets2,
-        st2.local_gets as local_gets2,
-        st2.shared_blks_dirtied as shared_blks_dirtied2,
-        st2.local_blks_dirtied as local_blks_dirtied2,
-        st2.temp_blks_read as temp_blks_read2,
-        st2.temp_blks_written as temp_blks_written2,
-        st2.local_blks_read as local_blks_read2,
-        st2.local_blks_written as local_blks_written2,
-        st2.statements as statements2
-    FROM statements_stats(snode_id,start1_id,end1_id,topn) st1
-        FULL OUTER JOIN statements_stats(snode_id,start2_id,end2_id,topn) st2 USING (datid)
-    ORDER BY COALESCE(st1.dbname,st2.dbname);
-
-    c_dbstats_total CURSOR FOR
-    SELECT
-        'Total' as dbname,
+        COALESCE(COALESCE(st1.dbname,st2.dbname),'Total') as dbname,
         sum(st1.calls) as calls1,
-        sum(st1.total_time) as total_time1,
+        sum(st1.total_exec_time) as total_exec_time1,
+        sum(st1.total_plan_time) as total_plan_time1,
+        sum(st1.blk_read_time) as blk_read_time1,
+        sum(st1.blk_write_time) as blk_write_time1,
+        sum(st1.trg_fn_total_time) as trg_fn_total_time1,
         sum(st1.shared_gets) as shared_gets1,
         sum(st1.local_gets) as local_gets1,
         sum(st1.shared_blks_dirtied) as shared_blks_dirtied1,
@@ -166,8 +249,13 @@ DECLARE
         sum(st1.local_blks_read) as local_blks_read1,
         sum(st1.local_blks_written) as local_blks_written1,
         sum(st1.statements) as statements1,
+        sum(st1.wal_bytes) as wal_bytes1,
         sum(st2.calls) as calls2,
-        sum(st2.total_time) as total_time2,
+        sum(st2.total_exec_time) as total_exec_time2,
+        sum(st2.total_plan_time) as total_plan_time2,
+        sum(st2.blk_read_time) as blk_read_time2,
+        sum(st2.blk_write_time) as blk_write_time2,
+        sum(st2.trg_fn_total_time) as trg_fn_total_time2,
         sum(st2.shared_gets) as shared_gets2,
         sum(st2.local_gets) as local_gets2,
         sum(st2.shared_blks_dirtied) as shared_blks_dirtied2,
@@ -176,17 +264,123 @@ DECLARE
         sum(st2.temp_blks_written) as temp_blks_written2,
         sum(st2.local_blks_read) as local_blks_read2,
         sum(st2.local_blks_written) as local_blks_written2,
-        sum(st2.statements) as statements2
-    FROM statements_stats(snode_id,start1_id,end1_id,topn) st1
-        FULL OUTER JOIN statements_stats(snode_id,start2_id,end2_id,topn) st2 USING (datid);
+        sum(st2.statements) as statements2,
+        sum(st2.wal_bytes) as wal_bytes2
+    FROM statements_stats(sserver_id,start1_id,end1_id,topn) st1
+        FULL OUTER JOIN statements_stats(sserver_id,start2_id,end2_id,topn) st2 USING (datid)
+    GROUP BY ROLLUP(COALESCE(st1.dbname,st2.dbname))
+    ORDER BY COALESCE(st1.dbname,st2.dbname) NULLS LAST;
 
     r_result RECORD;
 BEGIN
     -- Statements stats per database TPLs
     jtab_tpl := jsonb_build_object(
-      'tab_hdr','<table {difftbl}><tr><th>Database</th><th>I</th><th>Calls</th><th>Total time(s)</th><th>Shared gets</th><th>Local gets</th><th>Shared dirtied</th><th>Local dirtied</th><th>Work_r (blk)</th><th>Work_w (blk)</th><th>Local_r (blk)</th><th>Local_w (blk)</th><th>Statements</th></tr>{rows}</table>',
-      'stdb_tpl','<tr {interval1}><td {rowtdspanhdr}>%s</td><td {label} {title1}>1</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td></tr>'||
-        '<tr {interval2}><td {label} {title2}>2</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td><td {value}>%s</td></tr><tr style="visibility:collapse"></tr>');
+      'tab_hdr',
+        '<table {difftbl}>'
+          '<tr>'
+            '<th rowspan="2">Database</th>'
+            '<th rowspan="2">I</th>'
+            '<th rowspan="2" title="Number of query executions">Calls</th>'
+            '{time_hdr}'
+            '<th colspan="2" title="Number of blocks fetched (hit + read)">Fetched (blk)</th>'
+            '<th colspan="2" title="Number of blocks dirtied">Dirtied (blk)</th>'
+            '<th colspan="2" title="Number of blocks, used in operations (like sorts and joins)">Temp (blk)</th>'
+            '<th colspan="2" title="Number of blocks, used for temporary tables">Local (blk)</th>'
+            '<th rowspan="2">Statements</th>'
+            '{wal_bytes_hdr}'
+          '</tr>'
+          '<tr>'
+            '{plan_time_hdr}'
+            '<th title="Time spent executing queries">Exec</th>'
+            '<th title="Time spent reading blocks">Read</th>'   -- I/O time
+            '<th title="Time spent writing blocks">Write</th>'
+            '<th title="Time spent in trigger functions">Trg</th>'    -- Triger functions time
+            '<th>Shared</th>' -- Fetched (blk)
+            '<th>Local</th>'
+            '<th>Shared</th>' -- Dirtied (blk)
+            '<th>Local</th>'
+            '<th>Read</th>'   -- Work area  blocks
+            '<th>Write</th>'
+            '<th>Read</th>'   -- Local blocks
+            '<th>Write</th>'
+          '</tr>'
+          '{rows}'
+        '</table>',
+      'stdb_tpl',
+        '<tr {interval1}>'
+          '<td {rowtdspanhdr}>%1$s</td>'
+          '<td {label} {title1}>1</td>'
+          '<td {value}>%2$s</td>'
+          '{plan_time_cell1}'
+          '<td {value}>%4$s</td>'
+          '<td {value}>%5$s</td>'
+          '<td {value}>%6$s</td>'
+          '<td {value}>%7$s</td>'
+          '<td {value}>%8$s</td>'
+          '<td {value}>%9$s</td>'
+          '<td {value}>%10$s</td>'
+          '<td {value}>%11$s</td>'
+          '<td {value}>%12$s</td>'
+          '<td {value}>%13$s</td>'
+          '<td {value}>%14$s</td>'
+          '<td {value}>%15$s</td>'
+          '<td {value}>%16$s</td>'
+          '{wal_bytes_cell1}'
+        '</tr>'
+        '<tr {interval2}>'
+          '<td {label} {title2}>2</td>'
+          '<td {value}>%18$s</td>'
+          '{plan_time_cell2}'
+          '<td {value}>%20$s</td>'
+          '<td {value}>%21$s</td>'
+          '<td {value}>%22$s</td>'
+          '<td {value}>%23$s</td>'
+          '<td {value}>%24$s</td>'
+          '<td {value}>%25$s</td>'
+          '<td {value}>%26$s</td>'
+          '<td {value}>%27$s</td>'
+          '<td {value}>%28$s</td>'
+          '<td {value}>%29$s</td>'
+          '<td {value}>%30$s</td>'
+          '<td {value}>%31$s</td>'
+          '<td {value}>%32$s</td>'
+          '{wal_bytes_cell2}'
+        '</tr>'
+        '<tr style="visibility:collapse"></tr>',
+      'time_hdr', -- Time header for stat_statements less then v1.8
+        '<th colspan="4">Time (s)</th>',
+      'time_hdr_plan_time', -- Time header for stat_statements v1.8 - added plan time field
+        '<th colspan="5">Time (s)</th>',
+      'plan_time_hdr',
+        '<th title="Time spent planning queries">Plan</th>',
+      'plan_time_cell1',
+        '<td {value}>%3$s</td>',
+      'plan_time_cell2',
+        '<td {value}>%19$s</td>',
+      'wal_bytes_hdr',
+        '<th rowspan="2">WAL size</th>',
+      'wal_bytes_cell1',
+        '<td {value}>%17$s</td>',
+      'wal_bytes_cell2',
+        '<td {value}>%33$s</td>');
+    -- Conditional template
+    IF jsonb_extract_path_text(jreportset, 'report_features', 'statstatements_v1.8')::boolean THEN
+      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{time_hdr}',jtab_tpl->>'time_hdr_plan_time')));
+      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{wal_bytes_hdr}',jtab_tpl->>'wal_bytes_hdr')));
+      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{plan_time_hdr}',jtab_tpl->>'plan_time_hdr')));
+      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{plan_time_cell1}',jtab_tpl->>'plan_time_cell1')));
+      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{wal_bytes_cell1}',jtab_tpl->>'wal_bytes_cell1')));
+      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{plan_time_cell2}',jtab_tpl->>'plan_time_cell2')));
+      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{wal_bytes_cell2}',jtab_tpl->>'wal_bytes_cell2')));
+    ELSE
+      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{time_hdr}',jtab_tpl->>'time_hdr')));
+      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{wal_bytes_hdr}','')));
+      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{plan_time_hdr}','')));
+      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{plan_time_cell1}','')));
+      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{wal_bytes_cell1}','')));
+      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{plan_time_cell2}','')));
+      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{wal_bytes_cell2}','')));
+    END IF;
     -- apply settings to templates
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
 
@@ -196,7 +390,11 @@ BEGIN
             jtab_tpl #>> ARRAY['stdb_tpl'],
             r_result.dbname,
             r_result.calls1,
-            round(CAST(r_result.total_time1 AS numeric),2),
+            round(CAST(r_result.total_plan_time1 AS numeric),2),
+            round(CAST(r_result.total_exec_time1 AS numeric),2),
+            round(CAST(r_result.blk_read_time1 AS numeric),2),
+            round(CAST(r_result.blk_write_time1 AS numeric),2),
+            round(CAST(r_result.trg_fn_total_time1 AS numeric),2),
             r_result.shared_gets1,
             r_result.local_gets1,
             r_result.shared_blks_dirtied1,
@@ -206,8 +404,13 @@ BEGIN
             r_result.local_blks_read1,
             r_result.local_blks_written1,
             r_result.statements1,
+            pg_size_pretty(r_result.wal_bytes1),
             r_result.calls2,
-            round(CAST(r_result.total_time2 AS numeric),2),
+            round(CAST(r_result.total_plan_time2 AS numeric),2),
+            round(CAST(r_result.total_exec_time2 AS numeric),2),
+            round(CAST(r_result.blk_read_time2 AS numeric),2),
+            round(CAST(r_result.blk_write_time2 AS numeric),2),
+            round(CAST(r_result.trg_fn_total_time2 AS numeric),2),
             r_result.shared_gets2,
             r_result.local_gets2,
             r_result.shared_blks_dirtied2,
@@ -216,35 +419,8 @@ BEGIN
             r_result.temp_blks_written2,
             r_result.local_blks_read2,
             r_result.local_blks_written2,
-            r_result.statements2
-        );
-    END LOOP;
-    FOR r_result IN c_dbstats_total LOOP
-        report := report||format(
-            jtab_tpl #>> ARRAY['stdb_tpl'],
-            r_result.dbname,
-            r_result.calls1,
-            round(CAST(r_result.total_time1 AS numeric),2),
-            r_result.shared_gets1,
-            r_result.local_gets1,
-            r_result.shared_blks_dirtied1,
-            r_result.local_blks_dirtied1,
-            r_result.temp_blks_read1,
-            r_result.temp_blks_written1,
-            r_result.local_blks_read1,
-            r_result.local_blks_written1,
-            r_result.statements1,
-            r_result.calls2,
-            round(CAST(r_result.total_time2 AS numeric),2),
-            r_result.shared_gets2,
-            r_result.local_gets2,
-            r_result.shared_blks_dirtied2,
-            r_result.local_blks_dirtied2,
-            r_result.temp_blks_read2,
-            r_result.temp_blks_written2,
-            r_result.local_blks_read2,
-            r_result.local_blks_written2,
-            r_result.statements2
+            r_result.statements2,
+            pg_size_pretty(r_result.wal_bytes2)
         );
     END LOOP;
 

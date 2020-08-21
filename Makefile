@@ -1,8 +1,10 @@
-PGPROFILE_VERSION = 0.1.1
+PGPROFILE_VERSION = 0.1.2
 EXTENSION = pg_profile
-DATA_built = pg_profile--$(PGPROFILE_VERSION).sql pg_profile.control
+MIGRATION = $(EXTENSION)--0.1.1--0.1.2
+DATA_built = $(EXTENSION)--$(PGPROFILE_VERSION).sql $(EXTENSION).control $(MIGRATION).sql
 
-REGRESS = pg_profile
+REGRESS = pg_profile \
+	pg_profile_kcache
 
 PG_CONFIG = /usr/local/pgsql/bin/pg_config
 
@@ -17,22 +19,39 @@ include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
 
-schema = schema.sql internal.sql
-adm_funcs = baseline.sql node.sql
-snapshot = snapshot.sql
-report = dbstat.sql statementstat_dbagg.sql clusterstat.sql tablespacestat.sql tablestat.sql indexstat.sql \
-	dead_mods_ix_unused.sql top_io_stat.sql functionstat.sql settings.sql statements_checks.sql \
-	statementstat.sql report.sql reportdiff.sql
+include migration/Makefile
 
-script = $(schema) $(adm_funcs) $(snapshot) $(report)
+schema = schema.sql
+common = internal.sql
+adm_funcs = baseline.sql \
+	server.sql
+sample = sample.sql \
+	compat.sql
+report = dbstat.sql \
+	statementstat_dbagg.sql \
+	clusterstat.sql kcachestat.sql \
+	tablespacestat.sql tablestat.sql \
+	indexstat.sql \
+	kcachestat_checks.sql \
+	dead_mods_ix_unused.sql \
+	top_io_stat.sql \
+	functionstat.sql \
+	statements_checks.sql \
+	settings.sql \
+	statementstat.sql \
+	report.sql \
+	reportdiff.sql
+functions = $(common) $(adm_funcs) $(sample) $(report)
+script = $(schema) $(functions)
 
-sqlfile:
+sqlfile: $(script)
 	cat $(script) | sed -e 's/SET search_path=@extschema@,public //' \
-	> pg_profile--$(PGPROFILE_VERSION).sql
+	-e "s/{pg_profile}/$(EXTENSION)/" \
+	> $(EXTENSION)--$(PGPROFILE_VERSION).sql
 
-pg_profile.control: pg_profile.control.tpl
-	sed -e 's/{version}/$(PGPROFILE_VERSION)/' pg_profile.control.tpl > pg_profile.control
+$(EXTENSION).control: $(EXTENSION).control.tpl
+	sed -e 's/{version}/$(PGPROFILE_VERSION)/' $(EXTENSION).control.tpl > $(EXTENSION).control
 
-pg_profile--$(PGPROFILE_VERSION).sql: $(script)
-	echo '\echo Use "CREATE EXTENSION pg_profile" to load this file. \quit' > pg_profile--$(PGPROFILE_VERSION).sql
-	cat $(script) >> pg_profile--$(PGPROFILE_VERSION).sql
+$(EXTENSION)--$(PGPROFILE_VERSION).sql: $(script)
+	echo '\echo Use "CREATE EXTENSION $(EXTENSION)" to load this file. \quit' > $(EXTENSION)--$(PGPROFILE_VERSION).sql
+	cat $(script) | sed -e "s/{pg_profile}/$(EXTENSION)/" >> $(EXTENSION)--$(PGPROFILE_VERSION).sql

@@ -1,30 +1,30 @@
 
 /* ========= Tables ========= */
-CREATE TABLE nodes (
-    node_id         SERIAL PRIMARY KEY,
-    node_name       name UNIQUE NOT NULL,
+CREATE TABLE servers (
+    server_id       SERIAL PRIMARY KEY,
+    server_name     name UNIQUE NOT NULL,
     db_exclude      name[] DEFAULT NULL,
     enabled         boolean DEFAULT TRUE,
     connstr         text,
-    retention       integer NULL,
-    last_snap_id    integer DEFAULT 0 NOT NULL
+    max_sample_age  integer NULL,
+    last_sample_id  integer DEFAULT 0 NOT NULL
 );
-COMMENT ON TABLE nodes IS 'Monitored nodes (Postgres clusters) list';
+COMMENT ON TABLE servers IS 'Monitored servers (Postgres clusters) list';
 
-INSERT INTO nodes (node_name,enabled,connstr) VALUES ('local',true,'dbname='||current_database()||' port='||current_setting('port'));
+INSERT INTO servers (server_name,enabled,connstr) VALUES ('local',true,'dbname='||current_database()||' port='||current_setting('port'));
 
-CREATE TABLE snapshots (
-    node_id integer NOT NULL REFERENCES nodes(node_id) ON DELETE CASCADE,
-    snap_id integer NOT NULL,
-    snap_time timestamp (0) with time zone,
-    CONSTRAINT pk_snapshots PRIMARY KEY (node_id, snap_id)
+CREATE TABLE samples (
+    server_id integer NOT NULL REFERENCES servers(server_id) ON DELETE CASCADE,
+    sample_id integer NOT NULL,
+    sample_time timestamp (0) with time zone,
+    CONSTRAINT pk_samples PRIMARY KEY (server_id, sample_id)
 );
 
-CREATE INDEX ix_snap_time ON snapshots(node_id, snap_time);
-COMMENT ON TABLE snapshots IS 'Snapshot times list';
+CREATE INDEX ix_sample_time ON samples(server_id, sample_time);
+COMMENT ON TABLE samples IS 'Sample times list';
 
-CREATE TABLE snap_settings (
-    node_id             integer,
+CREATE TABLE sample_settings (
+    server_id           integer,
     first_seen          timestamp (0) with time zone,
     setting_scope       smallint, -- Scope of setting. Currently may be 1 for pg_settings and 2 for other adm functions (like version)
     name                text,
@@ -35,16 +35,16 @@ CREATE TABLE snap_settings (
     sourcefile          text,
     sourceline          integer,
     pending_restart     boolean,
-    CONSTRAINT pk_snap_settings PRIMARY KEY (node_id, first_seen, setting_scope, name),
-    CONSTRAINT fk_snap_settings_nodes FOREIGN KEY (node_id)
-      REFERENCES nodes(node_id) ON DELETE CASCADE
+    CONSTRAINT pk_sample_settings PRIMARY KEY (server_id, first_seen, setting_scope, name),
+    CONSTRAINT fk_sample_settings_servers FOREIGN KEY (server_id)
+      REFERENCES servers(server_id) ON DELETE CASCADE
 );
-COMMENT ON TABLE snap_settings IS 'pg_settings values changes detected at time of snapshot';
+COMMENT ON TABLE sample_settings IS 'pg_settings values changes detected at time of sample';
 
-CREATE OR REPLACE VIEW v_snap_settings AS
+CREATE OR REPLACE VIEW v_sample_settings AS
   SELECT
-    node_id,
-    snap_id,
+    server_id,
+    sample_id,
     first_seen,
     setting_scope,
     name,
@@ -55,126 +55,142 @@ CREATE OR REPLACE VIEW v_snap_settings AS
     sourcefile,
     sourceline,
     pending_restart
-  FROM snapshots s
-    JOIN snap_settings ss USING (node_id)
+  FROM samples s
+    JOIN sample_settings ss USING (server_id)
     JOIN LATERAL
-      (SELECT node_id, name, max(first_seen) as first_seen
-        FROM snap_settings WHERE node_id = s.node_id AND first_seen <= s.snap_time
-        GROUP BY node_id, name) lst
-      USING (node_id, name, first_seen);
+      (SELECT server_id, name, max(first_seen) as first_seen
+        FROM sample_settings WHERE server_id = s.server_id AND first_seen <= s.sample_time
+        GROUP BY server_id, name) lst
+      USING (server_id, name, first_seen);
 
-COMMENT ON VIEW v_snap_settings IS 'Provides postgres settings for snapshots';
+COMMENT ON VIEW v_sample_settings IS 'Provides postgres settings for samples';
 
 CREATE TABLE baselines (
-    node_id integer NOT NULL REFERENCES nodes(node_id) ON DELETE CASCADE,
-    bl_id SERIAL,
-    bl_name varchar (25) NOT NULL,
-    keep_until timestamp (0) with time zone,
-    CONSTRAINT pk_baselines PRIMARY KEY (node_id, bl_id),
-    CONSTRAINT uk_baselines UNIQUE (node_id,bl_name)
+    server_id   integer NOT NULL REFERENCES servers(server_id) ON DELETE CASCADE,
+    bl_id       SERIAL,
+    bl_name     varchar (25) NOT NULL,
+    keep_until  timestamp (0) with time zone,
+    CONSTRAINT pk_baselines PRIMARY KEY (server_id, bl_id),
+    CONSTRAINT uk_baselines UNIQUE (server_id,bl_name)
 );
 COMMENT ON TABLE baselines IS 'Baselines list';
 
-CREATE TABLE bl_snaps (
-    node_id integer NOT NULL,
-    snap_id integer NOT NULL,
-    bl_id integer NOT NULL,
-    CONSTRAINT fk_bl_snaps_snapshots FOREIGN KEY (node_id, snap_id) REFERENCES snapshots(node_id, snap_id) ON DELETE RESTRICT,
-    CONSTRAINT fk_bl_snaps_baselines FOREIGN KEY (node_id, bl_id) REFERENCES baselines(node_id, bl_id) ON DELETE CASCADE,
-    CONSTRAINT bl_snaps_pk PRIMARY KEY (node_id, bl_id, snap_id)
+CREATE TABLE bl_samples (
+    server_id   integer NOT NULL,
+    sample_id   integer NOT NULL,
+    bl_id       integer NOT NULL,
+    CONSTRAINT fk_bl_samples_samples FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT,
+    CONSTRAINT fk_bl_samples_baselines FOREIGN KEY (server_id, bl_id) REFERENCES baselines(server_id, bl_id) ON DELETE CASCADE,
+    CONSTRAINT pk_bl_samples PRIMARY KEY (server_id, bl_id, sample_id)
 );
-CREATE INDEX ix_bl_snaps_blid ON bl_snaps(bl_id);
-COMMENT ON TABLE bl_snaps IS 'Snapshots in baselines';
+CREATE INDEX ix_bl_samples_blid ON bl_samples(bl_id);
+COMMENT ON TABLE bl_samples IS 'Samples in baselines';
 
 CREATE TABLE stmt_list(
     queryid_md5    char(10) PRIMARY KEY,
     query          text
 );
-COMMENT ON TABLE stmt_list IS 'Statements, captured in snapshots';
+COMMENT ON TABLE stmt_list IS 'Statements, captured in samples';
 
-CREATE TABLE snap_stat_database
+CREATE TABLE sample_stat_database
 (
-    node_id             integer,
-    snap_id             integer,
+    server_id           integer,
+    sample_id           integer,
     datid               oid,
     datname             name NOT NULL,
-    xact_commit         bigint NOT NULL,
-    xact_rollback       bigint NOT NULL,
-    blks_read           bigint NOT NULL,
-    blks_hit            bigint NOT NULL,
-    tup_returned        bigint NOT NULL,
-    tup_fetched         bigint NOT NULL,
-    tup_inserted        bigint NOT NULL,
-    tup_updated         bigint NOT NULL,
-    tup_deleted         bigint NOT NULL,
-    conflicts           bigint NOT NULL,
-    temp_files          bigint NOT NULL,
-    temp_bytes          bigint NOT NULL,
-    deadlocks           bigint NOT NULL,
-    blk_read_time       double precision NOT NULL,
-    blk_write_time      double precision NOT NULL,
+    xact_commit         bigint,
+    xact_rollback       bigint,
+    blks_read           bigint,
+    blks_hit            bigint,
+    tup_returned        bigint,
+    tup_fetched         bigint,
+    tup_inserted        bigint,
+    tup_updated         bigint,
+    tup_deleted         bigint,
+    conflicts           bigint,
+    temp_files          bigint,
+    temp_bytes          bigint,
+    deadlocks           bigint,
+    blk_read_time       double precision,
+    blk_write_time      double precision,
     stats_reset         timestamp with time zone,
-    datsize             bigint NOT NULL,
-    datsize_delta       bigint NOT NULL,
-    CONSTRAINT fk_statdb_snapshots FOREIGN KEY (node_id, snap_id)
-      REFERENCES snapshots (node_id, snap_id) ON DELETE CASCADE,
-    CONSTRAINT pk_snap_stat_database PRIMARY KEY (node_id,snap_id,datid)
+    datsize             bigint,
+    datsize_delta       bigint,
+    CONSTRAINT fk_statdb_samples FOREIGN KEY (server_id, sample_id)
+      REFERENCES samples (server_id, sample_id) ON DELETE CASCADE,
+    CONSTRAINT pk_sample_stat_database PRIMARY KEY (server_id,sample_id,datid)
 );
-COMMENT ON TABLE snap_stat_database IS 'Snapshot database statistics table (fields from pg_stat_database)';
+COMMENT ON TABLE sample_stat_database IS 'Sample database statistics table (fields from pg_stat_database)';
 
-CREATE TABLE last_stat_database AS SELECT * FROM snap_stat_database WHERE 0=1;
-ALTER TABLE last_stat_database  ADD CONSTRAINT pk_last_stat_database PRIMARY KEY (node_id, snap_id, datid);
-ALTER TABLE last_stat_database ADD CONSTRAINT fk_last_stat_database_snapshots
-  FOREIGN KEY (node_id, snap_id) REFERENCES snapshots(node_id, snap_id) ON DELETE RESTRICT;
-COMMENT ON TABLE last_stat_database IS 'Last snapshot data for calculating diffs in next snapshot';
+CREATE TABLE last_stat_database AS SELECT * FROM sample_stat_database WHERE 0=1;
+ALTER TABLE last_stat_database  ADD CONSTRAINT pk_last_stat_database PRIMARY KEY (server_id, sample_id, datid);
+ALTER TABLE last_stat_database ADD CONSTRAINT fk_last_stat_database_samples
+  FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT;
+COMMENT ON TABLE last_stat_database IS 'Last sample data for calculating diffs in next sample';
 
-CREATE TABLE snap_statements (
-    node_id             integer,
-    snap_id             integer,
+
+CREATE TABLE sample_statements (
+    server_id           integer,
+    sample_id           integer,
     userid              oid,
     datid               oid,
     queryid             bigint,
     queryid_md5         char(10) REFERENCES stmt_list (queryid_md5) ON DELETE RESTRICT ON UPDATE CASCADE,
-    calls               bigint NOT NULL,
-    total_time          double precision NOT NULL,
-    min_time            double precision NOT NULL,
-    max_time            double precision NOT NULL,
-    mean_time           double precision NOT NULL,
-    stddev_time         double precision NOT NULL,
-    rows                bigint NOT NULL,
-    shared_blks_hit     bigint NOT NULL,
-    shared_blks_read    bigint NOT NULL,
-    shared_blks_dirtied bigint NOT NULL,
-    shared_blks_written bigint NOT NULL,
-    local_blks_hit      bigint NOT NULL,
-    local_blks_read     bigint NOT NULL,
-    local_blks_dirtied  bigint NOT NULL,
-    local_blks_written  bigint NOT NULL,
-    temp_blks_read      bigint NOT NULL,
-    temp_blks_written   bigint NOT NULL,
-    blk_read_time       double precision NOT NULL,
-    blk_write_time      double precision NOT NULL,
-    CONSTRAINT pk_snap_statements_n PRIMARY KEY (node_id,snap_id,datid,userid,queryid),
-    CONSTRAINT fk_statments_dat FOREIGN KEY (node_id, snap_id, datid)
-      REFERENCES snap_stat_database(node_id, snap_id, datid) ON DELETE CASCADE
+    plans               bigint,
+    total_plan_time     double precision,
+    min_plan_time       double precision,
+    max_plan_time       double precision,
+    mean_plan_time      double precision,
+    stddev_plan_time    double precision,
+    calls               bigint,
+    total_exec_time     double precision,
+    min_exec_time       double precision,
+    max_exec_time       double precision,
+    mean_exec_time      double precision,
+    stddev_exec_time    double precision,
+    rows                bigint,
+    shared_blks_hit     bigint,
+    shared_blks_read    bigint,
+    shared_blks_dirtied bigint,
+    shared_blks_written bigint,
+    local_blks_hit      bigint,
+    local_blks_read     bigint,
+    local_blks_dirtied  bigint,
+    local_blks_written  bigint,
+    temp_blks_read      bigint,
+    temp_blks_written   bigint,
+    blk_read_time       double precision,
+    blk_write_time      double precision,
+    wal_records         bigint,
+    wal_fpi             bigint,
+    wal_bytes           numeric,
+    CONSTRAINT pk_sample_statements_n PRIMARY KEY (server_id,sample_id,datid,userid,queryid),
+    CONSTRAINT fk_statments_dat FOREIGN KEY (server_id, sample_id, datid)
+      REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE CASCADE
 );
-CREATE INDEX ix_snap_stmts_qid ON snap_statements (queryid_md5);
-COMMENT ON TABLE snap_statements IS 'Snapshot statement statistics table (fields from pg_stat_statements)';
+CREATE INDEX ix_sample_stmts_qid ON sample_statements (queryid_md5);
+COMMENT ON TABLE sample_statements IS 'Sample statement statistics table (fields from pg_stat_statements)';
 
-CREATE VIEW v_snap_statements AS
+CREATE VIEW v_sample_statements AS
 SELECT
-    st.node_id as node_id,
-    st.snap_id as snap_id,
+    st.server_id as server_id,
+    st.sample_id as sample_id,
     st.userid as userid,
     st.datid as datid,
     st.queryid as queryid,
     queryid_md5 as queryid_md5,
+    st.plans as plans,
+    st.total_plan_time as total_plan_time,
+    st.min_plan_time as min_plan_time,
+    st.max_plan_time as max_plan_time,
+    st.mean_plan_time as mean_plan_time,
+    st.stddev_plan_time as stddev_plan_time,
     st.calls as calls,
-    st.total_time as total_time,
-    st.min_time as min_time,
-    st.max_time as max_time,
-    st.mean_time as mean_time,
-    st.stddev_time as stddev_time,
+    st.total_exec_time as total_exec_time,
+    st.min_exec_time as min_exec_time,
+    st.max_exec_time as max_exec_time,
+    st.mean_exec_time as mean_exec_time,
+    st.stddev_exec_time as stddev_exec_time,
     st.rows as rows,
     st.shared_blks_hit as shared_blks_hit,
     st.shared_blks_read as shared_blks_read,
@@ -188,141 +204,231 @@ SELECT
     st.temp_blks_written as temp_blks_written,
     st.blk_read_time as blk_read_time,
     st.blk_write_time as blk_write_time,
+    st.wal_records as wal_records,
+    st.wal_fpi as wal_fpi,
+    st.wal_bytes as wal_bytes,
     l.query as query
 FROM
-    snap_statements st
+    sample_statements st
     JOIN stmt_list l USING (queryid_md5);
 
-CREATE TABLE snap_statements_total (
-    node_id             integer,
-    snap_id             integer,
+CREATE TABLE sample_statements_total (
+    server_id           integer,
+    sample_id           integer,
     datid               oid,
-    calls               bigint NOT NULL,
-    total_time          double precision NOT NULL,
-    rows                bigint NOT NULL,
-    shared_blks_hit     bigint NOT NULL,
-    shared_blks_read    bigint NOT NULL,
-    shared_blks_dirtied bigint NOT NULL,
-    shared_blks_written bigint NOT NULL,
-    local_blks_hit      bigint NOT NULL,
-    local_blks_read     bigint NOT NULL,
-    local_blks_dirtied  bigint NOT NULL,
-    local_blks_written  bigint NOT NULL,
-    temp_blks_read      bigint NOT NULL,
-    temp_blks_written   bigint NOT NULL,
-    blk_read_time       double precision NOT NULL,
-    blk_write_time      double precision NOT NULL,
-    statements          bigint NOT NULL,
-    CONSTRAINT pk_snap_statements_total PRIMARY KEY (node_id, snap_id, datid),
-    CONSTRAINT fk_statments_t_dat FOREIGN KEY (node_id, snap_id, datid)
-      REFERENCES snap_stat_database(node_id, snap_id, datid) ON DELETE CASCADE
+    plans               bigint,
+    total_plan_time     double precision,
+    calls               bigint,
+    total_exec_time     double precision,
+    rows                bigint,
+    shared_blks_hit     bigint,
+    shared_blks_read    bigint,
+    shared_blks_dirtied bigint,
+    shared_blks_written bigint,
+    local_blks_hit      bigint,
+    local_blks_read     bigint,
+    local_blks_dirtied  bigint,
+    local_blks_written  bigint,
+    temp_blks_read      bigint,
+    temp_blks_written   bigint,
+    blk_read_time       double precision,
+    blk_write_time      double precision,
+    wal_records         bigint,
+    wal_fpi             bigint,
+    wal_bytes           numeric,
+    statements          bigint,
+    CONSTRAINT pk_sample_statements_total PRIMARY KEY (server_id, sample_id, datid),
+    CONSTRAINT fk_statments_t_dat FOREIGN KEY (server_id, sample_id, datid)
+      REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE CASCADE
 );
-COMMENT ON TABLE snap_statements_total IS 'Aggregated stats for snapshot, based on pg_stat_statements';
+COMMENT ON TABLE sample_statements_total IS 'Aggregated stats for sample, based on pg_stat_statements';
+
+CREATE TABLE sample_kcache (
+    server_id           integer,
+    sample_id           integer,
+    userid              oid,
+    datid               oid,
+    queryid             bigint,
+    queryid_md5         char(10),
+    user_time           double precision, --  User CPU time used
+    system_time         double precision, --  System CPU time used
+    minflts             bigint, -- Number of page reclaims (soft page faults)
+    majflts             bigint, -- Number of page faults (hard page faults)
+    nswaps              bigint, -- Number of swaps
+    reads               bigint, -- Number of bytes read by the filesystem layer
+    writes              bigint, -- Number of bytes written by the filesystem layer
+    msgsnds             bigint, -- Number of IPC messages sent
+    msgrcvs             bigint, -- Number of IPC messages received
+    nsignals            bigint, -- Number of signals received
+    nvcsws              bigint, -- Number of voluntary context switches
+    nivcsws             bigint,
+    CONSTRAINT pk_sample_kcache_n PRIMARY KEY (server_id,sample_id,datid,userid,queryid),
+    CONSTRAINT fk_kcache_st FOREIGN KEY (server_id, sample_id, datid,userid,queryid)
+      REFERENCES sample_statements(server_id, sample_id, datid,userid,queryid) ON DELETE CASCADE
+);
+CREATE INDEX ix_sample_kcache_qid ON sample_kcache (queryid_md5);
+COMMENT ON TABLE sample_kcache IS 'Sample sample_kcache statistics table (fields from pg_stat_kcache)';
+
+CREATE VIEW v_sample_kcache AS
+SELECT
+    st.server_id as server_id,
+    st.sample_id as sample_id,
+    st.userid as userid,
+    st.datid as datid,
+    st.queryid as queryid,
+    queryid_md5 as queryid_md5,
+    st.user_time as user_time,
+    st.system_time as system_time,
+    st.minflts as minflts,
+    st.majflts as majflts,
+    st.nswaps as nswaps,
+    st.reads as reads,
+    --reads_blks
+    st.writes  as writes,
+    --writes_blks
+    st.msgsnds as msgsnds,
+    st.msgrcvs as msgrcvs,
+    st.nsignals as nsignals,
+    st.nvcsws as nvcsws,
+    st.nivcsws as nivcsws,
+    l.query as query
+FROM
+    sample_kcache st
+    JOIN stmt_list l USING (queryid_md5);
+
+CREATE TABLE sample_kcache_total (
+    server_id           integer,
+    sample_id           integer,
+    datid               oid,
+    user_time           double precision, --  User CPU time used
+    system_time         double precision, --  System CPU time used
+    minflts             bigint, -- Number of page reclaims (soft page faults)
+    majflts             bigint, -- Number of page faults (hard page faults)
+    nswaps              bigint, -- Number of swaps
+    reads               bigint, -- Number of bytes read by the filesystem layer
+    --reads_blks          bigint, -- Number of 8K blocks read by the filesystem layer
+    writes              bigint, -- Number of bytes written by the filesystem layer
+    --writes_blks         bigint, -- Number of 8K blocks written by the filesystem layer
+    msgsnds             bigint, -- Number of IPC messages sent
+    msgrcvs             bigint, -- Number of IPC messages received
+    nsignals            bigint, -- Number of signals received
+    nvcsws              bigint, -- Number of voluntary context switches
+    nivcsws             bigint,
+    statements          bigint NOT NULL,
+    CONSTRAINT pk_sample_kcache_total PRIMARY KEY (server_id, sample_id, datid),
+    CONSTRAINT fk_kcache_t_st FOREIGN KEY (server_id, sample_id, datid)
+      REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE CASCADE
+);
+COMMENT ON TABLE sample_kcache_total IS 'Aggregated stats for kcache, based on pg_stat_kcache';
 
 CREATE TABLE tablespaces_list(
-    node_id             integer REFERENCES nodes(node_id) ON DELETE CASCADE,
+    server_id           integer REFERENCES servers(server_id) ON DELETE CASCADE,
     tablespaceid        oid,
     tablespacename      name NOT NULL,
     tablespacepath      text NOT NULL, -- cannot be changed without changing oid
-    CONSTRAINT pk_tablespace_list PRIMARY KEY (node_id, tablespaceid)
+    CONSTRAINT pk_tablespace_list PRIMARY KEY (server_id, tablespaceid)
 );
-COMMENT ON TABLE tablespaces_list IS 'Tablespaces, captured in snapshots';
+COMMENT ON TABLE tablespaces_list IS 'Tablespaces, captured in samples';
 
-CREATE TABLE snap_stat_tablespaces
+CREATE TABLE sample_stat_tablespaces
 (
-    node_id             integer,
-    snap_id             integer,
+    server_id           integer,
+    sample_id           integer,
     tablespaceid        oid,
-    size             bigint NOT NULL,
-    size_delta        bigint NOT NULL,
-    CONSTRAINT fk_stattbs_snapshots FOREIGN KEY (node_id, snap_id)
-        REFERENCES snapshots (node_id, snap_id) ON DELETE CASCADE,
-    CONSTRAINT fk_st_tablespaces_tablespaces FOREIGN KEY (node_id, tablespaceid)
-        REFERENCES tablespaces_list(node_id, tablespaceid) ON DELETE RESTRICT ON UPDATE RESTRICT,
-    CONSTRAINT pk_snap_stat_tablespaces PRIMARY KEY (node_id,snap_id,tablespaceid)
+    size                bigint NOT NULL,
+    size_delta          bigint NOT NULL,
+    CONSTRAINT fk_stattbs_samples FOREIGN KEY (server_id, sample_id)
+        REFERENCES samples (server_id, sample_id) ON DELETE CASCADE,
+    CONSTRAINT fk_st_tablespaces_tablespaces FOREIGN KEY (server_id, tablespaceid)
+        REFERENCES tablespaces_list(server_id, tablespaceid) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    CONSTRAINT pk_sample_stat_tablespaces PRIMARY KEY (server_id,sample_id,tablespaceid)
 );
-COMMENT ON TABLE snap_stat_tablespaces IS 'Snapshot tablespaces statistics (fields from pg_tablespace)';
+COMMENT ON TABLE sample_stat_tablespaces IS 'Sample tablespaces statistics (fields from pg_tablespace)';
 
-CREATE VIEW v_snap_stat_tablespaces AS
+CREATE VIEW v_sample_stat_tablespaces AS
     SELECT
-        node_id,
-        snap_id,
+        server_id,
+        sample_id,
         tablespaceid,
         tablespacename,
         tablespacepath,
         size,
         size_delta
-    FROM snap_stat_tablespaces JOIN tablespaces_list USING (node_id, tablespaceid);
-COMMENT ON VIEW v_snap_stat_tablespaces IS 'Tablespaces stats view with tablespace names';
+    FROM sample_stat_tablespaces JOIN tablespaces_list USING (server_id, tablespaceid);
+COMMENT ON VIEW v_sample_stat_tablespaces IS 'Tablespaces stats view with tablespace names';
 
-CREATE TABLE last_stat_tablespaces AS SELECT * FROM v_snap_stat_tablespaces WHERE 0=1;
-ALTER TABLE last_stat_tablespaces ADD CONSTRAINT pk_last_stat_tablespaces PRIMARY KEY (node_id, snap_id, tablespaceid);
-ALTER TABLE last_stat_tablespaces ADD CONSTRAINT fk_last_stat_tablespaces_snapshots
-  FOREIGN KEY (node_id, snap_id) REFERENCES snapshots(node_id, snap_id) ON DELETE RESTRICT;
-COMMENT ON TABLE last_stat_tablespaces IS 'Last snapshot data for calculating diffs in next snapshot';
+CREATE TABLE last_stat_tablespaces AS SELECT * FROM v_sample_stat_tablespaces WHERE 0=1;
+ALTER TABLE last_stat_tablespaces ADD CONSTRAINT pk_last_stat_tablespaces PRIMARY KEY (server_id, sample_id, tablespaceid);
+ALTER TABLE last_stat_tablespaces ADD CONSTRAINT fk_last_stat_tablespaces_samples
+  FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT;
+COMMENT ON TABLE last_stat_tablespaces IS 'Last sample data for calculating diffs in next sample';
 
 CREATE TABLE tables_list(
-    node_id             integer REFERENCES nodes(node_id) ON DELETE CASCADE,
+    server_id           integer REFERENCES servers(server_id) ON DELETE CASCADE,
     datid               oid,
     relid               oid,
     relkind             char(1) NOT NULL,
     reltoastrelid       oid,
     schemaname          name NOT NULL,
     relname             name NOT NULL,
-    CONSTRAINT pk_tables_list PRIMARY KEY (node_id, datid, relid),
-    CONSTRAINT fk_toast_table FOREIGN KEY (node_id, datid, reltoastrelid)
-      REFERENCES tables_list (node_id, datid, relid) ON DELETE RESTRICT ON UPDATE RESTRICT,
-    CONSTRAINT uk_toast_table UNIQUE (node_id, datid, reltoastrelid)
+    CONSTRAINT pk_tables_list PRIMARY KEY (server_id, datid, relid),
+    CONSTRAINT fk_toast_table FOREIGN KEY (server_id, datid, reltoastrelid)
+      REFERENCES tables_list (server_id, datid, relid) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    CONSTRAINT uk_toast_table UNIQUE (server_id, datid, reltoastrelid)
 );
-CREATE UNIQUE INDEX ix_tables_list_reltoast ON tables_list(node_id, datid, reltoastrelid);
-COMMENT ON TABLE tables_list IS 'Table names and scheams, captured in snapshots';
+CREATE UNIQUE INDEX ix_tables_list_reltoast ON tables_list(server_id, datid, reltoastrelid);
+COMMENT ON TABLE tables_list IS 'Table names and scheams, captured in samples';
 
-CREATE TABLE snap_stat_tables (
-    node_id             integer,
-    snap_id             integer,
+CREATE TABLE sample_stat_tables (
+    server_id           integer,
+    sample_id           integer,
     datid               oid,
     relid               oid,
     tablespaceid        oid,
-    seq_scan            bigint NOT NULL,
-    seq_tup_read        bigint NOT NULL,
-    idx_scan            bigint NOT NULL,
-    idx_tup_fetch       bigint NOT NULL,
-    n_tup_ins           bigint NOT NULL,
-    n_tup_upd           bigint NOT NULL,
-    n_tup_del           bigint NOT NULL,
-    n_tup_hot_upd       bigint NOT NULL,
-    n_live_tup          bigint NOT NULL,
-    n_dead_tup          bigint NOT NULL,
-    n_mod_since_analyze bigint NOT NULL,
+    seq_scan            bigint,
+    seq_tup_read        bigint,
+    idx_scan            bigint,
+    idx_tup_fetch       bigint,
+    n_tup_ins           bigint,
+    n_tup_upd           bigint,
+    n_tup_del           bigint,
+    n_tup_hot_upd       bigint,
+    n_live_tup          bigint,
+    n_dead_tup          bigint,
+    n_mod_since_analyze bigint,
+    n_ins_since_vacuum  bigint,
     last_vacuum         timestamp with time zone,
     last_autovacuum     timestamp with time zone,
     last_analyze        timestamp with time zone,
     last_autoanalyze    timestamp with time zone,
-    vacuum_count        bigint NOT NULL,
-    autovacuum_count    bigint NOT NULL,
-    analyze_count       bigint NOT NULL,
-    autoanalyze_count   bigint NOT NULL,
-    heap_blks_read      bigint NOT NULL,
-    heap_blks_hit       bigint NOT NULL,
-    idx_blks_read       bigint NOT NULL,
-    idx_blks_hit        bigint NOT NULL,
-    toast_blks_read     bigint NOT NULL,
-    toast_blks_hit      bigint NOT NULL,
-    tidx_blks_read      bigint NOT NULL,
-    tidx_blks_hit       bigint NOT NULL,
-    relsize             bigint NOT NULL,
-    relsize_diff        bigint NOT NULL,
-    CONSTRAINT pk_snap_stat_tables PRIMARY KEY (node_id, snap_id, datid, relid),
-    CONSTRAINT fk_st_tables_dat FOREIGN KEY (node_id, snap_id, datid) REFERENCES snap_stat_database(node_id, snap_id, datid) ON DELETE CASCADE,
-    CONSTRAINT fk_st_tables_tablespace FOREIGN KEY (node_id, snap_id, tablespaceid) REFERENCES snap_stat_tablespaces(node_id, snap_id, tablespaceid) ON DELETE CASCADE,
-    CONSTRAINT fk_st_tables_tables FOREIGN KEY (node_id, datid, relid) REFERENCES tables_list(node_id, datid, relid) ON DELETE RESTRICT ON UPDATE RESTRICT
+    vacuum_count        bigint,
+    autovacuum_count    bigint,
+    analyze_count       bigint,
+    autoanalyze_count   bigint,
+    heap_blks_read      bigint,
+    heap_blks_hit       bigint,
+    idx_blks_read       bigint,
+    idx_blks_hit        bigint,
+    toast_blks_read     bigint,
+    toast_blks_hit      bigint,
+    tidx_blks_read      bigint,
+    tidx_blks_hit       bigint,
+    relsize             bigint,
+    relsize_diff        bigint,
+    CONSTRAINT pk_sample_stat_tables PRIMARY KEY (server_id, sample_id, datid, relid),
+    CONSTRAINT fk_st_tables_dat FOREIGN KEY (server_id, sample_id, datid)
+      REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE CASCADE,
+    CONSTRAINT fk_st_tables_tablespace FOREIGN KEY (server_id, sample_id, tablespaceid)
+      REFERENCES sample_stat_tablespaces(server_id, sample_id, tablespaceid) ON DELETE CASCADE,
+    CONSTRAINT fk_st_tables_tables FOREIGN KEY (server_id, datid, relid)
+      REFERENCES tables_list(server_id, datid, relid) ON DELETE RESTRICT ON UPDATE RESTRICT
 );
-COMMENT ON TABLE snap_stat_tables IS 'Stats increments for user tables in all databases by snapshots';
+COMMENT ON TABLE sample_stat_tables IS 'Stats increments for user tables in all databases by samples';
 
-CREATE VIEW v_snap_stat_tables AS
+CREATE VIEW v_sample_stat_tables AS
     SELECT
-        node_id,
-        snap_id,
+        server_id,
+        sample_id,
         datid,
         relid,
         schemaname,
@@ -338,6 +444,7 @@ CREATE VIEW v_snap_stat_tables AS
         n_live_tup,
         n_dead_tup,
         n_mod_since_analyze,
+        n_ins_since_vacuum,
         last_vacuum,
         last_autovacuum,
         last_analyze,
@@ -359,94 +466,96 @@ CREATE VIEW v_snap_stat_tables AS
         tablespaceid,
         reltoastrelid,
         relkind
-    FROM snap_stat_tables JOIN tables_list USING (node_id, datid, relid);
-COMMENT ON VIEW v_snap_stat_tables IS 'Tables stats view with table names and schemas';
+    FROM sample_stat_tables JOIN tables_list USING (server_id, datid, relid);
+COMMENT ON VIEW v_sample_stat_tables IS 'Tables stats view with table names and schemas';
 
-CREATE TABLE last_stat_tables AS SELECT * FROM v_snap_stat_tables WHERE 0=1;
+CREATE TABLE last_stat_tables AS SELECT * FROM v_sample_stat_tables WHERE 0=1;
 ALTER TABLE last_stat_tables ADD CONSTRAINT pk_last_stat_tables
-  PRIMARY KEY (node_id, snap_id, datid, relid);
+  PRIMARY KEY (server_id, sample_id, datid, relid);
 ALTER TABLE last_stat_tables ADD CONSTRAINT fk_last_stat_tables_dat
-  FOREIGN KEY (node_id, snap_id, datid)
-  REFERENCES last_stat_database(node_id, snap_id, datid) ON DELETE RESTRICT;
+  FOREIGN KEY (server_id, sample_id, datid)
+  REFERENCES last_stat_database(server_id, sample_id, datid) ON DELETE RESTRICT;
 ALTER TABLE last_stat_tables ADD CONSTRAINT fk_last_stat_tablespaces
-  FOREIGN KEY (node_id, snap_id, tablespaceid)
-  REFERENCES last_stat_tablespaces(node_id, snap_id, tablespaceid) ON DELETE RESTRICT;
-COMMENT ON TABLE last_stat_tables IS 'Last snapshot data for calculating diffs in next snapshot';
+  FOREIGN KEY (server_id, sample_id, tablespaceid)
+  REFERENCES last_stat_tablespaces(server_id, sample_id, tablespaceid) ON DELETE RESTRICT;
+COMMENT ON TABLE last_stat_tables IS 'Last sample data for calculating diffs in next sample';
 
-CREATE TABLE snap_stat_tables_total (
-    node_id             integer,
-    snap_id             integer,
+CREATE TABLE sample_stat_tables_total (
+    server_id           integer,
+    sample_id           integer,
     datid               oid,
     tablespaceid        oid,
     relkind             char(1) NOT NULL,
-    seq_scan            bigint NOT NULL,
-    seq_tup_read        bigint NOT NULL,
-    idx_scan            bigint NOT NULL,
-    idx_tup_fetch       bigint NOT NULL,
-    n_tup_ins           bigint NOT NULL,
-    n_tup_upd           bigint NOT NULL,
-    n_tup_del           bigint NOT NULL,
-    n_tup_hot_upd       bigint NOT NULL,
-    vacuum_count        bigint NOT NULL,
-    autovacuum_count    bigint NOT NULL,
-    analyze_count       bigint NOT NULL,
-    autoanalyze_count   bigint NOT NULL,
-    heap_blks_read      bigint NOT NULL,
-    heap_blks_hit       bigint NOT NULL,
-    idx_blks_read       bigint NOT NULL,
-    idx_blks_hit        bigint NOT NULL,
-    toast_blks_read     bigint NOT NULL,
-    toast_blks_hit      bigint NOT NULL,
-    tidx_blks_read      bigint NOT NULL,
-    tidx_blks_hit       bigint NOT NULL,
-    relsize_diff        bigint NOT NULL,
-    CONSTRAINT pk_snap_stat_tables_tot PRIMARY KEY (node_id, snap_id, datid, relkind, tablespaceid),
-    CONSTRAINT fk_st_tables_tot_dat FOREIGN KEY (node_id, snap_id, datid) REFERENCES snap_stat_database(node_id, snap_id, datid) ON DELETE CASCADE,
-    CONSTRAINT fk_st_tablespaces_tot_dat FOREIGN KEY (node_id, snap_id, tablespaceid) REFERENCES snap_stat_tablespaces(node_id, snap_id, tablespaceid) ON DELETE CASCADE
+    seq_scan            bigint,
+    seq_tup_read        bigint,
+    idx_scan            bigint,
+    idx_tup_fetch       bigint,
+    n_tup_ins           bigint,
+    n_tup_upd           bigint,
+    n_tup_del           bigint,
+    n_tup_hot_upd       bigint,
+    vacuum_count        bigint,
+    autovacuum_count    bigint,
+    analyze_count       bigint,
+    autoanalyze_count   bigint,
+    heap_blks_read      bigint,
+    heap_blks_hit       bigint,
+    idx_blks_read       bigint,
+    idx_blks_hit        bigint,
+    toast_blks_read     bigint,
+    toast_blks_hit      bigint,
+    tidx_blks_read      bigint,
+    tidx_blks_hit       bigint,
+    relsize_diff        bigint,
+    CONSTRAINT pk_sample_stat_tables_tot PRIMARY KEY (server_id, sample_id, datid, relkind, tablespaceid),
+    CONSTRAINT fk_st_tables_tot_dat FOREIGN KEY (server_id, sample_id, datid)
+      REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE CASCADE,
+    CONSTRAINT fk_st_tablespaces_tot_dat FOREIGN KEY (server_id, sample_id, tablespaceid)
+      REFERENCES sample_stat_tablespaces(server_id, sample_id, tablespaceid) ON DELETE CASCADE
 );
-COMMENT ON TABLE snap_stat_tables_total IS 'Total stats for all tables in all databases by snapshots';
+COMMENT ON TABLE sample_stat_tables_total IS 'Total stats for all tables in all databases by samples';
 
 CREATE TABLE indexes_list(
-    node_id         integer NOT NULL REFERENCES nodes(node_id) ON DELETE CASCADE,
+    server_id       integer NOT NULL REFERENCES servers(server_id) ON DELETE CASCADE,
     datid           oid NOT NULL,
     indexrelid      oid NOT NULL,
     relid           oid NOT NULL,
     schemaname      name NOT NULL,
     indexrelname    name NOT NULL,
-    CONSTRAINT pk_indexes_list PRIMARY KEY (node_id, datid, indexrelid),
-    CONSTRAINT fk_indexes_tables FOREIGN KEY (node_id, datid, relid)
-      REFERENCES tables_list(node_id, datid, relid)
+    CONSTRAINT pk_indexes_list PRIMARY KEY (server_id, datid, indexrelid),
+    CONSTRAINT fk_indexes_tables FOREIGN KEY (server_id, datid, relid)
+      REFERENCES tables_list(server_id, datid, relid)
 );
-COMMENT ON TABLE indexes_list IS 'Index names and scheams, captured in snapshots';
+COMMENT ON TABLE indexes_list IS 'Index names and scheams, captured in samples';
 
-CREATE TABLE snap_stat_indexes (
-    node_id             integer,
-    snap_id             integer,
+CREATE TABLE sample_stat_indexes (
+    server_id           integer,
+    sample_id           integer,
     datid               oid,
     indexrelid          oid,
     tablespaceid        oid,
-    idx_scan            bigint NOT NULL,
-    idx_tup_read        bigint NOT NULL,
-    idx_tup_fetch       bigint NOT NULL,
-    idx_blks_read       bigint NOT NULL,
-    idx_blks_hit        bigint NOT NULL,
-    relsize             bigint NOT NULL,
-    relsize_diff        bigint NOT NULL,
-    indisunique         bool NOT NULL,
-    CONSTRAINT fk_stat_indexes_indexes FOREIGN KEY (node_id, datid, indexrelid)
-      REFERENCES indexes_list(node_id, datid, indexrelid) ON DELETE RESTRICT ON UPDATE RESTRICT,
-    CONSTRAINT fk_stat_indexes_dat FOREIGN KEY (node_id, snap_id, datid)
-      REFERENCES snap_stat_database(node_id, snap_id, datid) ON DELETE CASCADE,
-    CONSTRAINT fk_stat_indexes_tablespaces FOREIGN KEY (node_id, snap_id, tablespaceid)
-      REFERENCES snap_stat_tablespaces(node_id, snap_id, tablespaceid) ON DELETE CASCADE,
-    CONSTRAINT pk_snap_stat_indexes PRIMARY KEY (node_id, snap_id, datid, indexrelid)
+    idx_scan            bigint,
+    idx_tup_read        bigint,
+    idx_tup_fetch       bigint,
+    idx_blks_read       bigint,
+    idx_blks_hit        bigint,
+    relsize             bigint,
+    relsize_diff        bigint,
+    indisunique         bool,
+    CONSTRAINT fk_stat_indexes_indexes FOREIGN KEY (server_id, datid, indexrelid)
+      REFERENCES indexes_list(server_id, datid, indexrelid) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    CONSTRAINT fk_stat_indexes_dat FOREIGN KEY (server_id, sample_id, datid)
+      REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE CASCADE,
+    CONSTRAINT fk_stat_indexes_tablespaces FOREIGN KEY (server_id, sample_id, tablespaceid)
+      REFERENCES sample_stat_tablespaces(server_id, sample_id, tablespaceid) ON DELETE CASCADE,
+    CONSTRAINT pk_sample_stat_indexes PRIMARY KEY (server_id, sample_id, datid, indexrelid)
 );
-COMMENT ON TABLE snap_stat_indexes IS 'Stats increments for user indexes in all databases by snapshots';
+COMMENT ON TABLE sample_stat_indexes IS 'Stats increments for user indexes in all databases by samples';
 
-CREATE VIEW v_snap_stat_indexes AS
+CREATE VIEW v_sample_stat_indexes AS
     SELECT
-        node_id,
-        snap_id,
+        server_id,
+        sample_id,
         datid,
         relid,
         indexrelid,
@@ -463,68 +572,69 @@ CREATE VIEW v_snap_stat_indexes AS
         tablespaceid,
         indisunique
     FROM
-        snap_stat_indexes s
-        JOIN indexes_list il USING (datid, indexrelid, node_id)
-        JOIN tables_list tl USING (datid, relid, node_id);
-COMMENT ON VIEW v_snap_stat_indexes IS 'Reconstructed stats view with table and index names and schemas';
+        sample_stat_indexes s
+        JOIN indexes_list il USING (datid, indexrelid, server_id)
+        JOIN tables_list tl USING (datid, relid, server_id);
+COMMENT ON VIEW v_sample_stat_indexes IS 'Reconstructed stats view with table and index names and schemas';
 
-CREATE TABLE last_stat_indexes AS SELECT * FROM v_snap_stat_indexes WHERE 0=1;
-ALTER TABLE last_stat_indexes ADD CONSTRAINT pk_last_stat_indexes PRIMARY KEY (node_id, snap_id, datid, relid, indexrelid);
-ALTER TABLE last_stat_indexes ADD CONSTRAINT fk_last_stat_indexes_dat FOREIGN KEY (node_id, snap_id, datid)
--- Restrict deleting last data snapshot
-  REFERENCES last_stat_database(node_id, snap_id, datid) ON DELETE RESTRICT;
-COMMENT ON TABLE last_stat_indexes IS 'Last snapshot data for calculating diffs in next snapshot';
+CREATE TABLE last_stat_indexes AS SELECT * FROM v_sample_stat_indexes WHERE 0=1;
+ALTER TABLE last_stat_indexes ADD CONSTRAINT pk_last_stat_indexes PRIMARY KEY (server_id, sample_id, datid, relid, indexrelid);
+ALTER TABLE last_stat_indexes ADD CONSTRAINT fk_last_stat_indexes_dat FOREIGN KEY (server_id, sample_id, datid)
+-- Restrict deleting last data sample
+  REFERENCES last_stat_database(server_id, sample_id, datid) ON DELETE RESTRICT;
+COMMENT ON TABLE last_stat_indexes IS 'Last sample data for calculating diffs in next sample';
 
-CREATE TABLE snap_stat_indexes_total (
-    node_id             integer,
-    snap_id             integer,
+CREATE TABLE sample_stat_indexes_total (
+    server_id           integer,
+    sample_id           integer,
     datid               oid,
     tablespaceid        oid,
-    idx_scan            bigint NOT NULL,
-    idx_tup_read        bigint NOT NULL,
-    idx_tup_fetch       bigint NOT NULL,
-    idx_blks_read       bigint NOT NULL,
-    idx_blks_hit        bigint NOT NULL,
-    relsize_diff        bigint NOT NULL,
-    CONSTRAINT fk_stat_indexes_tot_dat FOREIGN KEY (node_id, snap_id, datid)
-      REFERENCES snap_stat_database(node_id, snap_id, datid) ON DELETE CASCADE,
-    CONSTRAINT fk_stat_tablespaces_tot_dat FOREIGN KEY (node_id, snap_id, tablespaceid)
-      REFERENCES snap_stat_tablespaces(node_id, snap_id, tablespaceid) ON DELETE CASCADE,
-    CONSTRAINT pk_snap_stat_indexes_tot PRIMARY KEY (node_id, snap_id, datid, tablespaceid)
+    idx_scan            bigint,
+    idx_tup_read        bigint,
+    idx_tup_fetch       bigint,
+    idx_blks_read       bigint,
+    idx_blks_hit        bigint,
+    relsize_diff        bigint,
+    CONSTRAINT fk_stat_indexes_tot_dat FOREIGN KEY (server_id, sample_id, datid)
+      REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE CASCADE,
+    CONSTRAINT fk_stat_tablespaces_tot_dat FOREIGN KEY (server_id, sample_id, tablespaceid)
+      REFERENCES sample_stat_tablespaces(server_id, sample_id, tablespaceid) ON DELETE CASCADE,
+    CONSTRAINT pk_sample_stat_indexes_tot PRIMARY KEY (server_id, sample_id, datid, tablespaceid)
 );
-COMMENT ON TABLE snap_stat_indexes_total IS 'Total stats for indexes in all databases by snapshots';
+COMMENT ON TABLE sample_stat_indexes_total IS 'Total stats for indexes in all databases by samples';
 
 CREATE TABLE funcs_list(
-    node_id integer NOT NULL REFERENCES nodes(node_id) ON DELETE CASCADE,
+    server_id   integer NOT NULL REFERENCES servers(server_id) ON DELETE CASCADE,
     datid       oid,
     funcid      oid,
     schemaname  name NOT NULL,
     funcname    name NOT NULL,
     funcargs    text NOT NULL,
-    CONSTRAINT pk_funcs_list PRIMARY KEY (node_id, datid, funcid)
+    CONSTRAINT pk_funcs_list PRIMARY KEY (server_id, datid, funcid)
 );
-COMMENT ON TABLE funcs_list IS 'Function names and scheams, captured in snapshots';
+COMMENT ON TABLE funcs_list IS 'Function names and scheams, captured in samples';
 
-CREATE TABLE snap_stat_user_functions (
-    node_id     integer,
-    snap_id     integer,
+CREATE TABLE sample_stat_user_functions (
+    server_id   integer,
+    sample_id   integer,
     datid       oid,
     funcid      oid,
-    calls       bigint NOT NULL,
-    total_time  double precision NOT NULL,
-    self_time   double precision NOT NULL,
-    CONSTRAINT fk_user_functions_functions FOREIGN KEY (node_id, datid, funcid)
-      REFERENCES funcs_list (node_id, datid, funcid) ON DELETE RESTRICT,
-    CONSTRAINT fk_user_functions_dat FOREIGN KEY (node_id, snap_id, datid)
-      REFERENCES snap_stat_database (node_id, snap_id, datid) ON DELETE CASCADE,
-    CONSTRAINT pk_snap_stat_user_functions PRIMARY KEY (node_id, snap_id, datid, funcid)
+    calls       bigint,
+    total_time  double precision,
+    self_time   double precision,
+    trg_fn      boolean,
+    CONSTRAINT fk_user_functions_functions FOREIGN KEY (server_id, datid, funcid)
+      REFERENCES funcs_list (server_id, datid, funcid) ON DELETE RESTRICT,
+    CONSTRAINT fk_user_functions_dat FOREIGN KEY (server_id, sample_id, datid)
+      REFERENCES sample_stat_database (server_id, sample_id, datid) ON DELETE CASCADE,
+    CONSTRAINT pk_sample_stat_user_functions PRIMARY KEY (server_id, sample_id, datid, funcid)
 );
-COMMENT ON TABLE snap_stat_user_functions IS 'Stats increments for user functions in all databases by snapshots';
+COMMENT ON TABLE sample_stat_user_functions IS 'Stats increments for user functions in all databases by samples';
 
-CREATE VIEW v_snap_stat_user_functions AS
+CREATE VIEW v_sample_stat_user_functions AS
     SELECT
-        node_id,
-        snap_id,
+        server_id,
+        sample_id,
         datid,
         funcid,
         schemaname,
@@ -532,51 +642,76 @@ CREATE VIEW v_snap_stat_user_functions AS
         funcargs,
         calls,
         total_time,
-        self_time
-    FROM snap_stat_user_functions JOIN funcs_list USING (node_id, datid, funcid);
-COMMENT ON VIEW v_snap_stat_indexes IS 'Reconstructed stats view with function names and schemas';
+        self_time,
+        trg_fn
+    FROM sample_stat_user_functions JOIN funcs_list USING (server_id, datid, funcid);
+COMMENT ON VIEW v_sample_stat_indexes IS 'Reconstructed stats view with function names and schemas';
 
-CREATE TABLE last_stat_user_functions AS SELECT * FROM v_snap_stat_user_functions WHERE 0=1;
+CREATE TABLE last_stat_user_functions AS SELECT * FROM v_sample_stat_user_functions WHERE 0=1;
 ALTER TABLE last_stat_user_functions ADD CONSTRAINT fk_last_stat_user_functions_dat
-  FOREIGN KEY (node_id, snap_id, datid)
-  -- Restrict deleting last data snapshot
-  REFERENCES last_stat_database(node_id, snap_id, datid) ON DELETE RESTRICT;
-COMMENT ON TABLE last_stat_user_functions IS 'Last snapshot data for calculating diffs in next snapshot';
+  FOREIGN KEY (server_id, sample_id, datid)
+  -- Restrict deleting last data sample
+  REFERENCES last_stat_database(server_id, sample_id, datid) ON DELETE RESTRICT;
+COMMENT ON TABLE last_stat_user_functions IS 'Last sample data for calculating diffs in next sample';
 
-CREATE TABLE snap_stat_user_func_total (
-    node_id     integer,
-    snap_id     integer,
+CREATE TABLE sample_stat_user_func_total (
+    server_id   integer,
+    sample_id   integer,
     datid       oid,
-    calls       bigint NOT NULL,
-    self_time   double precision NOT NULL,
-    CONSTRAINT fk_user_func_tot_dat FOREIGN KEY (node_id, snap_id, datid)
-      REFERENCES snap_stat_database (node_id, snap_id, datid) ON DELETE CASCADE,
-    CONSTRAINT pk_snap_stat_user_func_total PRIMARY KEY (node_id, snap_id, datid)
+    calls       bigint,
+    total_time  double precision,
+    trg_fn      boolean,
+    CONSTRAINT fk_user_func_tot_dat FOREIGN KEY (server_id, sample_id, datid)
+      REFERENCES sample_stat_database (server_id, sample_id, datid) ON DELETE CASCADE,
+    CONSTRAINT pk_sample_stat_user_func_total PRIMARY KEY (server_id, sample_id, datid, trg_fn)
 );
-COMMENT ON TABLE snap_stat_user_func_total IS 'Total stats for user functions in all databases by snapshots';
+COMMENT ON TABLE sample_stat_user_func_total IS 'Total stats for user functions in all databases by samples';
 
-CREATE TABLE snap_stat_cluster
+CREATE TABLE sample_stat_cluster
 (
-    node_id                     integer,
-    snap_id                     integer,
-    checkpoints_timed           bigint NOT NULL,
-    checkpoints_req             bigint NOT NULL,
-    checkpoint_write_time       double precision NOT NULL,
-    checkpoint_sync_time        double precision NOT NULL,
-    buffers_checkpoint          bigint NOT NULL,
-    buffers_clean               bigint NOT NULL,
-    maxwritten_clean            bigint NOT NULL,
-    buffers_backend             bigint NOT NULL,
-    buffers_backend_fsync       bigint NOT NULL,
-    buffers_alloc               bigint NOT NULL,
+    server_id                   integer,
+    sample_id                   integer,
+    checkpoints_timed           bigint,
+    checkpoints_req             bigint,
+    checkpoint_write_time       double precision,
+    checkpoint_sync_time        double precision,
+    buffers_checkpoint          bigint,
+    buffers_clean               bigint,
+    maxwritten_clean            bigint,
+    buffers_backend             bigint,
+    buffers_backend_fsync       bigint,
+    buffers_alloc               bigint,
     stats_reset                 timestamp with time zone,
-    wal_size                    bigint NOT NULL,
-    CONSTRAINT fk_statcluster_snapshots FOREIGN KEY (node_id, snap_id)
-      REFERENCES snapshots (node_id, snap_id) ON DELETE CASCADE,
-    CONSTRAINT pk_snap_stat_cluster PRIMARY KEY (node_id, snap_id)
+    wal_size                    bigint,
+    CONSTRAINT fk_statcluster_samples FOREIGN KEY (server_id, sample_id)
+      REFERENCES samples (server_id, sample_id) ON DELETE CASCADE,
+    CONSTRAINT pk_sample_stat_cluster PRIMARY KEY (server_id, sample_id)
 );
-COMMENT ON TABLE snap_stat_cluster IS 'Snapshot cluster statistics table (fields from pg_stat_bgwriter, etc.)';
+COMMENT ON TABLE sample_stat_cluster IS 'Sample cluster statistics table (fields from pg_stat_bgwriter, etc.)';
 
-CREATE TABLE last_stat_cluster AS SELECT * FROM snap_stat_cluster WHERE 0=1;
-ALTER TABLE last_stat_cluster ADD CONSTRAINT fk_last_stat_cluster_snapshots FOREIGN KEY (node_id, snap_id) REFERENCES snapshots(node_id, snap_id) ON DELETE RESTRICT;
-COMMENT ON TABLE last_stat_cluster IS 'Last snapshot data for calculating diffs in next snapshot';
+CREATE TABLE last_stat_cluster AS SELECT * FROM sample_stat_cluster WHERE 0=1;
+ALTER TABLE last_stat_cluster ADD CONSTRAINT fk_last_stat_cluster_samples
+  FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT;
+COMMENT ON TABLE last_stat_cluster IS 'Last sample data for calculating diffs in next sample';
+
+CREATE TABLE sample_stat_archiver
+(
+    server_id                   integer,
+    sample_id                   integer,
+    archived_count              bigint,
+    last_archived_wal           text,
+    last_archived_time          timestamp with time zone,
+    failed_count                bigint,
+    last_failed_wal             text,
+    last_failed_time            timestamp with time zone,
+    stats_reset                 timestamp with time zone,
+    CONSTRAINT fk_sample_stat_archiver_samples FOREIGN KEY (server_id, sample_id)
+      REFERENCES samples (server_id, sample_id) ON DELETE CASCADE,
+    CONSTRAINT pk_sample_stat_archiver PRIMARY KEY (server_id, sample_id)
+);
+COMMENT ON TABLE sample_stat_archiver IS 'Sample archiver statistics table (fields from pg_stat_archiver)';
+
+CREATE TABLE last_stat_archiver AS SELECT * FROM sample_stat_archiver WHERE 0=1;
+ALTER TABLE last_stat_archiver ADD CONSTRAINT fk_last_stat_archiver_samples
+  FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT;
+COMMENT ON TABLE last_stat_archiver IS 'Last sample data for calculating diffs in next sample';
