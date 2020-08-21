@@ -1,5 +1,28 @@
 # pg_profile changelog
 
+## 0.1.2
+
+- pg_stat_statements version 1.8 support:
+  - Statement planning time
+  - Statement WAL generation
+- fix: "Hit(%)" field was incorrectly calculated
+- Baseline creation on time range is now supported
+- CPU timings are now shown in "Top SQL by elapsed time" if kcache extension was available
+- I/O timing statistics added to "Statements statistics by database" section
+- "WAL segments archived" and "WAL segments archive failed" statistics added to "Cluster statistics" section
+- Workaround for pg_table_size and AccessExclusiveLocks. Now in many cases snapshot will be taken successifuly without size of locked relation.
+- Top vacuum and analyze count tables in reports
+- Implicit index vacuum I/O load estimation
+- Added trigger functions timing statistics
+- Many pg_profile functions renamed to be more standard-compatible (see [doc/pg_profile.md](https://github.com/zubkov-andrei/pg_profile/blob/0.1.2/doc/pg_profile.md) file)
+  - *gets* renamed to *fetches*
+  - *snapshots* renamed to *samples*, and *snapshot()* function renamed to *take_sample()*, but for backward compatibility *snapshot()* call is possible.
+  - *retention* renamed to *max_sample_age*
+  - *node* renamed to *server*
+  - *pages* renamed to *blocks*
+- fixed issue #7 reported by @kayform
+- Added a lot of table header hints
+
 ## 0.1.1
 
 Due to total refactoring done in this release, migration from 0.0.7 is very difficult, so right now migration from 0.0.7 is not supported.
