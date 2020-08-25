@@ -1,5 +1,8 @@
 # pg_profile changelog
 
+## 0.1.3
+- Hotfix of #8 reported by @cuprumtan
+
 ## 0.1.2
 
 - pg_stat_statements version 1.8 support:
