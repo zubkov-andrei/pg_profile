@@ -1,7 +1,8 @@
-PGPROFILE_VERSION = 0.1.2
+PGPROFILE_VERSION = 0.1.3
 EXTENSION = pg_profile
-MIGRATION = $(EXTENSION)--0.1.1--0.1.2
-DATA_built = $(EXTENSION)--$(PGPROFILE_VERSION).sql $(EXTENSION).control $(MIGRATION).sql
+MIGRATION = $(EXTENSION)--0.1.1--0.1.3.sql \
+	$(EXTENSION)--0.1.2--0.1.3.sql
+DATA_built = $(EXTENSION)--$(PGPROFILE_VERSION).sql $(EXTENSION).control $(MIGRATION)
 
 REGRESS = pg_profile \
 	pg_profile_kcache

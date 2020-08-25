@@ -6,7 +6,7 @@ DECLARE
     s_id            integer;
     topn            integer;
     ret             integer;
-    server_prorerties jsonb = '{"extensions":[],"settings":[]}'; -- version, extensions, etc.
+    server_properties jsonb = '{"extensions":[],"settings":[]}'; -- version, extensions, etc.
     qres            record;
     server_connstr    text;
     settings_refresh    boolean = true;
@@ -70,7 +70,7 @@ BEGIN
           ')')
         AS dbl(name text, reset_val text, unit text, pending_restart boolean)
     LOOP
-      server_prorerties := jsonb_insert(server_prorerties,'{"settings",0}',to_jsonb(qres));
+      server_properties := jsonb_insert(server_properties,'{"settings",0}',to_jsonb(qres));
     END LOOP;
 
     -- Get extensions, that we need to perform statements stats collection
@@ -86,9 +86,8 @@ BEGIN
           ')')
         AS dbl(extname name, extnamespace name, extversion text)
     LOOP
-      server_prorerties := jsonb_insert(server_prorerties,'{"extensions",0}',to_jsonb(qres));
+      server_properties := jsonb_insert(server_properties,'{"extensions",0}',to_jsonb(qres));
     END LOOP;
-
 
     -- Collecting postgres parameters
     -- We will refresh all parameters if version() was changed
@@ -386,11 +385,17 @@ BEGIN
     );
 
     -- collect pg_stat_statements stats if available
-    PERFORM collect_statements_stats(server_prorerties, sserver_id, s_id, topn);
+    PERFORM collect_statements_stats(server_properties, sserver_id, s_id, topn);
 
     -- pg_stat_bgwriter data
     CASE
-      WHEN (jsonb_path_query_first(server_prorerties,'$.settings[*] ? (@.name == "server_version_num")') #>> '{reset_val}')::integer < 100000 THEN
+      WHEN (
+        SELECT count(*) = 1 FROM jsonb_to_recordset(server_properties #> '{settings}')
+          AS x(name text, reset_val text)
+        WHERE name = 'server_version_num'
+          AND reset_val::integer < 100000
+      )
+      THEN
         server_query := 'SELECT '
           'checkpoints_timed,'
           'checkpoints_req,'
@@ -407,7 +412,13 @@ BEGIN
             'ELSE pg_xlog_location_diff(pg_current_xlog_location(),''0/00000000'') '
           'END AS wal_size '
           'FROM pg_catalog.pg_stat_bgwriter';
-      WHEN (jsonb_path_query_first(server_prorerties,'$.settings[*] ? (@.name == "server_version_num")') #>> '{reset_val}')::integer >= 100000 THEN
+      WHEN (
+        SELECT count(*) = 1 FROM jsonb_to_recordset(server_properties #> '{settings}')
+          AS x(name text, reset_val text)
+        WHERE name = 'server_version_num'
+          AND reset_val::integer >= 100000
+      )
+      THEN
         server_query := 'SELECT '
           'checkpoints_timed,'
           'checkpoints_req,'
@@ -474,7 +485,13 @@ BEGIN
 
     -- pg_stat_archiver data
     CASE
-      WHEN (jsonb_path_query_first(server_prorerties,'$.settings[*] ? (@.name == "server_version_num")') #>> '{reset_val}')::integer > 90500 THEN
+      WHEN (
+        SELECT count(*) = 1 FROM jsonb_to_recordset(server_properties #> '{settings}')
+          AS x(name text, reset_val text)
+        WHERE name = 'server_version_num'
+          AND reset_val::integer > 90500
+      )
+      THEN
         server_query := 'SELECT '
           'archived_count,'
           'last_archived_wal,'
@@ -519,7 +536,7 @@ BEGIN
     END IF;
 
     -- Collecting stat info for objects of all databases
-    PERFORM collect_obj_stats(server_prorerties, sserver_id, s_id);
+    PERFORM collect_obj_stats(server_properties, sserver_id, s_id);
     PERFORM dblink_disconnect('server_connection');
 
     -- analyze last_* tables will help with more accurate plans
@@ -834,7 +851,13 @@ BEGIN
     END IF;
 
     -- Check if mandatory extensions exists
-    IF NOT (properties @? '$.extensions[*] ? (@.extname == "pg_stat_statements")') THEN
+    IF NOT
+      (
+        SELECT count(*) = 1
+        FROM jsonb_to_recordset(properties #> '{extensions}') AS ext(extname text)
+        WHERE extname = 'pg_stat_statements'
+      )
+    THEN
       RETURN;
     END IF;
 
@@ -863,7 +886,12 @@ BEGIN
       topn);
 
     -- pg_stat_kcache placeholders processing if extension is available
-    CASE jsonb_path_query_first(properties,'$.extensions[*] ? (@.extname == "pg_stat_kcache")') #>> '{extversion}'
+    CASE
+      (
+        SELECT extversion FROM jsonb_to_recordset(properties #> '{extensions}')
+          AS x(extname text, extversion text)
+        WHERE extname = 'pg_stat_kcache'
+      )
       WHEN '2.1.0','2.1.1','2.1.2' THEN
         st_query := replace(st_query, '{kcache_fields}',
           ',true as kcache_avail,'
@@ -891,7 +919,13 @@ BEGIN
             'JOIN {statements_view} s ON (s.queryid=k.queryid) '
             'GROUP BY k.userid, k.dbid, md5(s.query)) rank_kc '
           'ON (kc.userid=rank_kc.userid AND kc.dbid=rank_kc.dbid AND md5(st.query)=rank_kc.q_md5)',
-          jsonb_path_query_first(properties,'$.extensions[*] ? (@.extname == "pg_stat_kcache")') #>> '{extnamespace}'));
+            (
+              SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
+                AS x(extname text, extnamespace text)
+              WHERE extname = 'pg_stat_kcache'
+            )
+          )
+        );
         st_query := replace(st_query, '{kcache_rank}',
           ',cpu_time_rank,'
           'io_rank'
@@ -917,8 +951,14 @@ BEGIN
 
     -- pg_stat_statements placeholders processing
     CASE
-      WHEN jsonb_path_query_first(properties,'$.extensions[*] ? (@.extname == "pg_stat_statements")') #>> '{extversion}' IN
-          ('1.3','1.4','1.5','1.6','1.7') THEN
+      WHEN (
+        SELECT count(*) = 1
+        FROM jsonb_to_recordset(properties #> '{extensions}')
+          AS ext(extname text, extversion text)
+        WHERE extname = 'pg_stat_statements'
+          AND extversion IN ('1.3','1.4','1.5','1.6','1.7')
+      )
+      THEN
         st_query := replace(st_query, '{statements_join}',
           'JOIN '
           '(SELECT '
@@ -982,9 +1022,21 @@ BEGIN
         );
         st_query := replace(st_query, '{statements_view}',
           format('%1$I.pg_stat_statements',
-          jsonb_path_query_first(properties,'$.extensions[*] ? (@.extname == "pg_stat_statements")') #>> '{extnamespace}'));
-      WHEN jsonb_path_query_first(properties,'$.extensions[*] ? (@.extname == "pg_stat_statements")') #>> '{extversion}' IN
-          ('1.8') THEN
+            (
+              SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
+                AS x(extname text, extnamespace text)
+              WHERE extname = 'pg_stat_statements'
+            )
+          )
+        );
+      WHEN (
+        SELECT count(*) = 1
+        FROM jsonb_to_recordset(properties #> '{extensions}')
+          AS ext(extname text, extversion text)
+        WHERE extname = 'pg_stat_statements'
+          AND extversion IN ('1.8')
+      )
+      THEN
         st_query := replace(st_query, '{statements_join}',
           'JOIN '
           '(SELECT '
@@ -1054,7 +1106,13 @@ BEGIN
         );
         st_query := replace(st_query, '{statements_view}',
           format('%1$I.pg_stat_statements',
-          jsonb_path_query_first(properties,'$.extensions[*] ? (@.extname == "pg_stat_statements")') #>> '{extnamespace}'));
+            (
+              SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
+                AS x(extname text, extnamespace text)
+              WHERE extname = 'pg_stat_statements'
+            )
+          )
+        );
       ELSE
         RAISE 'Unsupported pg_stat_statements version. Supported versions are 1.3 - 1.8';
     END CASE;
@@ -1289,7 +1347,11 @@ BEGIN
     END LOOP;
 
     -- Aggregeted pg_stat_kcache data
-    CASE jsonb_path_query_first(properties,'$.extensions[*] ? (@.extname == "pg_stat_kcache")') #>> '{extversion}'
+    CASE (
+        SELECT extversion FROM jsonb_to_recordset(properties #> '{extensions}')
+          AS x(extname text, extversion text)
+        WHERE extname = 'pg_stat_kcache'
+    )
       WHEN '2.1.0','2.1.1','2.1.2' THEN
         INSERT INTO sample_kcache_total(
           server_id,
@@ -1329,7 +1391,12 @@ BEGIN
               count(*)
             FROM %1$I.pg_stat_kcache()
             GROUP BY dbid',
-            jsonb_path_query_first(properties,'$.extensions[*] ? (@.extname == "pg_stat_kcache")') #>> '{extnamespace}')
+              (
+                SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
+                  AS x(extname text, extnamespace text)
+                WHERE extname = 'pg_stat_kcache'
+              )
+            )
           ) AS dbl (
             datid               oid,
             user_time           double precision,
@@ -1351,7 +1418,11 @@ BEGIN
         -- Flushing pg_stat_kcache
         SELECT * INTO qres FROM dblink('server_connection',
           format('SELECT %1$I.pg_stat_kcache_reset()',
-            jsonb_path_query_first(properties,'$.extensions[*] ? (@.extname == "pg_stat_kcache")') #>> '{extnamespace}'
+            (
+              SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
+                AS x(extname text, extnamespace text)
+              WHERE extname = 'pg_stat_kcache'
+            )
           )
         ) AS t(res char(1));
       ELSE
@@ -1360,8 +1431,14 @@ BEGIN
 
     -- Aggregeted statistics data
     CASE
-      WHEN jsonb_path_query_first(properties,'$.extensions[*] ? (@.extname == "pg_stat_statements")') #>> '{extversion}' IN
-          ('1.3','1.4','1.5','1.6','1.7') THEN
+      WHEN (
+        SELECT count(*) = 1
+        FROM jsonb_to_recordset(properties #> '{extensions}')
+          AS ext(extname text, extversion text)
+        WHERE extname = 'pg_stat_statements'
+          AND extversion IN ('1.3','1.4','1.5','1.6','1.7')
+      )
+      THEN
         st_query := format('SELECT '
             'dbid as datid,'
             'NULL,' -- plans
@@ -1387,9 +1464,20 @@ BEGIN
             'count(*) '
         'FROM %1$I.pg_stat_statements '
         'GROUP BY dbid',
-          jsonb_path_query_first(properties,'$.extensions[*] ? (@.extname == "pg_stat_statements")') #>> '{extnamespace}');
-      WHEN jsonb_path_query_first(properties,'$.extensions[*] ? (@.extname == "pg_stat_statements")') #>> '{extversion}' IN
-          ('1.8') THEN
+          (
+            SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
+              AS x(extname text, extnamespace text)
+            WHERE extname = 'pg_stat_statements'
+          )
+        );
+      WHEN (
+        SELECT count(*) = 1
+        FROM jsonb_to_recordset(properties #> '{extensions}')
+          AS ext(extname text, extversion text)
+        WHERE extname = 'pg_stat_statements'
+          AND extversion IN ('1.8')
+      )
+      THEN
         st_query := format('SELECT '
             'dbid as datid,'
             'sum(plans),'
@@ -1415,7 +1503,12 @@ BEGIN
             'count(*) '
         'FROM %1$I.pg_stat_statements '
         'GROUP BY dbid',
-          jsonb_path_query_first(properties,'$.extensions[*] ? (@.extname == "pg_stat_statements")') #>> '{extnamespace}');
+          (
+            SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
+              AS x(extname text, extnamespace text)
+            WHERE extname = 'pg_stat_statements'
+          )
+        );
       ELSE
         RAISE 'Unsupported pg_stat_statements version. Supported versions are 1.3, 1.4, 1.5, 1.6, 1.7, 1.8';
     END CASE;
@@ -1477,11 +1570,21 @@ BEGIN
 
     -- Flushing pg_stat_statements
     CASE
-      WHEN jsonb_path_query_first(properties,'$.extensions[*] ? (@.extname == "pg_stat_statements")') #>> '{extversion}' IN
-          ('1.3','1.4','1.5','1.6','1.7','1.8') THEN
+      WHEN (
+        SELECT count(*) = 1
+        FROM jsonb_to_recordset(properties #> '{extensions}')
+          AS ext(extname text, extversion text)
+        WHERE extname = 'pg_stat_statements'
+          AND extversion IN ('1.3','1.4','1.5','1.6','1.7','1.8')
+      )
+      THEN
         SELECT * INTO qres FROM dblink('server_connection',
           format('SELECT %1$I.pg_stat_statements_reset()',
-            jsonb_path_query_first(properties,'$.extensions[*] ? (@.extname == "pg_stat_statements")') #>> '{extnamespace}'
+            (
+              SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
+                AS x(extname text, extnamespace text)
+              WHERE extname = 'pg_stat_statements'
+            )
           )
         ) AS t(res char(1));
       ELSE
@@ -1527,7 +1630,13 @@ BEGIN
 
       -- Generate Table stats query
       CASE
-        WHEN (jsonb_path_query_first(properties,'$.settings[*] ? (@.name == "server_version_num")') #>> '{reset_val}')::integer < 130000 THEN
+        WHEN (
+          SELECT count(*) = 1 FROM jsonb_to_recordset(properties #> '{settings}')
+            AS x(name text, reset_val text)
+          WHERE name = 'server_version_num'
+            AND reset_val::integer < 130000
+        )
+        THEN
           t_query := 'SELECT '
             'st.relid,'
             'st.schemaname,'
@@ -1578,7 +1687,13 @@ BEGIN
             ') '
             'SELECT objid FROM deps) AS locked ON (st.relid = locked.objid)';
 
-        WHEN (jsonb_path_query_first(properties,'$.settings[*] ? (@.name == "server_version_num")') #>> '{reset_val}')::integer >= 130000 THEN
+        WHEN (
+          SELECT count(*) = 1 FROM jsonb_to_recordset(properties #> '{settings}')
+            AS x(name text, reset_val text)
+          WHERE name = 'server_version_num'
+            AND reset_val::integer >= 130000
+        )
+        THEN
           t_query := 'SELECT '
             'st.relid,'
             'st.schemaname,'
