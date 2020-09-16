@@ -82,13 +82,13 @@ SELECT * FROM profile.drop_server('srvtestrenamed');
 (1 row)
 
 /* Testing sample creation */
-SELECT * FROM profile.take_sample();
+SELECT server,result FROM profile.take_sample();
  server | result 
 --------+--------
  local  | OK
 (1 row)
 
-SELECT * FROM profile.take_sample();
+SELECT server,result FROM profile.take_sample();
  server | result 
 --------+--------
  local  | OK
@@ -102,7 +102,7 @@ SELECT count(1) FROM profile.get_report(1,2);
 (1 row)
 
 /* Testing diffreport */
-SELECT * FROM profile.take_sample();
+SELECT server,result FROM profile.take_sample();
  server | result 
 --------+--------
  local  | OK
@@ -115,13 +115,13 @@ NOTICE:  relation "queries_list" already exists, skipping
      1
 (1 row)
 
-SELECT * FROM profile.take_sample();
+SELECT server,result FROM profile.take_sample();
  server | result 
 --------+--------
  local  | OK
 (1 row)
 
-SELECT * FROM profile.take_sample();
+SELECT server,result FROM profile.take_sample();
  server | result 
 --------+--------
  local  | OK
@@ -132,7 +132,7 @@ UPDATE profile.samples SET sample_time = now() - '3 days'::interval - '10 minute
 UPDATE profile.samples SET sample_time = now() - '2 days'::interval - '10 minutes'::interval WHERE server_id = 1 AND sample_id = 3;
 UPDATE profile.samples SET sample_time = now() - '1 days'::interval - '10 minutes'::interval WHERE server_id = 1 AND sample_id = 4;
 UPDATE profile.samples SET sample_time = now() - '23 hours'::interval - '10 minutes'::interval WHERE server_id = 1 AND sample_id = 5;
-SELECT * FROM profile.take_sample();
+SELECT server,result FROM profile.take_sample();
  server | result 
 --------+--------
  local  | OK
@@ -183,7 +183,7 @@ SELECT count(*) FROM profile.show_baselines();
 (1 row)
 
 /* Testing baseline deletion */
-SELECT * FROM profile.take_sample();
+SELECT server,result FROM profile.take_sample();
  server | result 
 --------+--------
  local  | OK
@@ -209,7 +209,7 @@ SELECT * FROM profile.drop_baseline('testline1');
 (1 row)
 
 /* Testing samples deletion after baseline removed */
-SELECT * FROM profile.take_sample();
+SELECT server,result FROM profile.take_sample();
  server | result 
 --------+--------
  local  | OK

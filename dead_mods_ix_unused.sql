@@ -117,7 +117,7 @@ BEGIN
             '<th>Table</th>'
             '<th title="Estimated number of live rows">Live</th>'
             '<th title="Estimated number of dead rows">Dead</th>'
-            '<th title="Estimated number of rows modified since this table was last analyzed">Mods</th>'
+            '<th title="Estimated number of rows modified since this table was last analyzed">Mod</th>'
             '<th title="Modified rows count as a percentage of total rows count">%Mod</th>'
             '<th title="Last autoanalyze ran time">Last AA</th>'
             '<th title="Table size without indexes and TOAST">Size</th>'

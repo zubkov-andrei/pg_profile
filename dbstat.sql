@@ -4,8 +4,9 @@
 
 CREATE OR REPLACE FUNCTION dbstats(IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
 RETURNS TABLE(
-    datid oid,
-    dbname name,
+    server_id         integer,
+    datid             oid,
+    dbname            name,
     xact_commit       bigint,
     xact_rollback     bigint,
     blks_read         bigint,
@@ -17,11 +18,11 @@ RETURNS TABLE(
     tup_deleted       bigint,
     temp_files        bigint,
     temp_bytes        bigint,
-    datsize           bigint,
     datsize_delta     bigint,
     deadlocks         bigint)
 SET search_path=@extschema@,public AS $$
     SELECT
+        st.server_id AS server_id,
         st.datid AS datid,
         st.datname AS dbname,
         sum(xact_commit)::bigint AS xact_commit,
@@ -35,7 +36,6 @@ SET search_path=@extschema@,public AS $$
         sum(tup_deleted)::bigint AS tup_deleted,
         sum(temp_files)::bigint AS temp_files,
         sum(temp_bytes)::bigint AS temp_bytes,
-        sum(datsize)::bigint AS datsize,
         sum(datsize_delta)::bigint AS datsize_delta,
         sum(deadlocks)::bigint AS deadlocks
     FROM sample_stat_database st
@@ -49,7 +49,7 @@ SET search_path=@extschema@,public AS $$
         */
         JOIN samples sample_e ON (st.server_id = sample_e.server_id AND sample_e.sample_id = end_id)
     WHERE st.server_id = sserver_id AND datname NOT LIKE 'template_' AND st.sample_id BETWEEN sample_s.sample_id + 1 AND sample_e.sample_id
-    GROUP BY st.datid,st.datname
+    GROUP BY st.server_id, st.datid, st.datname
 $$ LANGUAGE sql;
 
 CREATE OR REPLACE FUNCTION dbstats_reset(IN sserver_id integer, IN start_id integer, IN end_id integer)
@@ -213,24 +213,26 @@ DECLARE
     --Cursor for db stats
     c_dbstats CURSOR FOR
     SELECT
-        COALESCE(dbname,'Total') as dbname,
-        sum(xact_commit) as xact_commit,
-        sum(xact_rollback) as xact_rollback,
-        sum(blks_read) as blks_read,
-        sum(blks_hit) as blks_hit,
-        sum(tup_returned) as tup_returned,
-        sum(tup_fetched) as tup_fetched,
-        sum(tup_inserted) as tup_inserted,
-        sum(tup_updated) as tup_updated,
-        sum(tup_deleted) as tup_deleted,
-        sum(temp_files) as temp_files,
-        pg_size_pretty(sum(temp_bytes)) AS temp_bytes,
-        pg_size_pretty(sum(datsize)) AS datsize,
-        pg_size_pretty(sum(datsize_delta)) AS datsize_delta,
-        sum(deadlocks) as deadlocks,
-        (sum(blks_hit)*100/NULLIF(sum(blks_hit)+sum(blks_read),0))::double precision AS blks_hit_pct
+        COALESCE(st.dbname,'Total') as dbname,
+        sum(st.xact_commit) as xact_commit,
+        sum(st.xact_rollback) as xact_rollback,
+        sum(st.blks_read) as blks_read,
+        sum(st.blks_hit) as blks_hit,
+        sum(st.tup_returned) as tup_returned,
+        sum(st.tup_fetched) as tup_fetched,
+        sum(st.tup_inserted) as tup_inserted,
+        sum(st.tup_updated) as tup_updated,
+        sum(st.tup_deleted) as tup_deleted,
+        sum(st.temp_files) as temp_files,
+        pg_size_pretty(sum(st.temp_bytes)) AS temp_bytes,
+        pg_size_pretty(sum(st_last.datsize)) AS datsize,
+        pg_size_pretty(sum(st.datsize_delta)) AS datsize_delta,
+        sum(st.deadlocks) as deadlocks,
+        (sum(st.blks_hit)*100/NULLIF(sum(st.blks_hit)+sum(st.blks_read),0))::double precision AS blks_hit_pct
     FROM dbstats(sserver_id,start_id,end_id,topn) st
-    GROUP BY ROLLUP(dbname)
+      LEFT OUTER JOIN sample_stat_database st_last ON
+        (st_last.server_id = st.server_id AND st_last.datid = st.datid AND st_last.sample_id = end_id)
+    GROUP BY ROLLUP(st.dbname)
     ORDER BY st.dbname NULLS LAST;
 
     r_result RECORD;
@@ -340,7 +342,7 @@ DECLARE
         sum(dbs1.tup_deleted) AS tup_deleted1,
         sum(dbs1.temp_files) AS temp_files1,
         pg_size_pretty(sum(dbs1.temp_bytes)) AS temp_bytes1,
-        pg_size_pretty(sum(dbs1.datsize)) AS datsize1,
+        pg_size_pretty(sum(st_last1.datsize)) AS datsize1,
         pg_size_pretty(sum(dbs1.datsize_delta)) AS datsize_delta1,
         sum(dbs1.deadlocks) AS deadlocks1,
         (sum(dbs1.blks_hit)*100/NULLIF(sum(dbs1.blks_hit)+sum(dbs1.blks_read),0))::double precision AS blks_hit_pct1,
@@ -355,12 +357,16 @@ DECLARE
         sum(dbs2.tup_deleted) AS tup_deleted2,
         sum(dbs2.temp_files) AS temp_files2,
         pg_size_pretty(sum(dbs2.temp_bytes)) AS temp_bytes2,
-        pg_size_pretty(sum(dbs2.datsize)) AS datsize2,
+        pg_size_pretty(sum(st_last2.datsize)) AS datsize2,
         pg_size_pretty(sum(dbs2.datsize_delta)) AS datsize_delta2,
         sum(dbs2.deadlocks) AS deadlocks2,
         (sum(dbs2.blks_hit)*100/NULLIF(sum(dbs2.blks_hit)+sum(dbs2.blks_read),0))::double precision AS blks_hit_pct2
     FROM dbstats(sserver_id,start1_id,end1_id,topn) dbs1 FULL OUTER JOIN dbstats(sserver_id,start2_id,end2_id,topn) dbs2
-        USING (datid)
+        USING (server_id, datid)
+      LEFT OUTER JOIN sample_stat_database st_last1 ON
+        (st_last1.server_id = dbs1.server_id AND st_last1.datid = dbs1.datid AND st_last1.sample_id = end1_id)
+      LEFT OUTER JOIN sample_stat_database st_last2 ON
+        (st_last2.server_id = dbs2.server_id AND st_last2.datid = dbs2.datid AND st_last2.sample_id = end2_id)
     GROUP BY ROLLUP(COALESCE(dbs1.dbname,dbs2.dbname))
     ORDER BY COALESCE(dbs1.dbname,dbs2.dbname) NULLS LAST;
 

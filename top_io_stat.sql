@@ -94,6 +94,7 @@ RETURNS TABLE(
     relname             name,
     indexrelid          oid,
     indexrelname        name,
+    idx_scan            bigint,
     idx_blks_read       bigint,
     idx_blks_read_pct   numeric,
     idx_blks_hit_pct    numeric,
@@ -116,6 +117,7 @@ RETURNS TABLE(
         COALESCE(mtbl.relname||'(TOAST)',st.relname)::name AS relname,
         st.indexrelid,
         st.indexrelname,
+        sum(st.idx_scan)::bigint AS idx_scan,
         sum(st.idx_blks_read)::bigint AS idx_blks_read,
         sum(st.idx_blks_read) * 100 / NULLIF(min(total.total_blks_read), 0) AS idx_blks_read_pct,
         sum(st.idx_blks_hit) * 100 / NULLIF(COALESCE(sum(st.idx_blks_hit), 0) + COALESCE(sum(st.idx_blks_read), 0), 0) AS idx_blks_hit_pct,
@@ -611,6 +613,7 @@ DECLARE
         schemaname,
         relname,
         indexrelname,
+        idx_scan,
         idx_blks_read,
         idx_blks_read_pct,
         idx_blks_hit_pct
@@ -630,6 +633,7 @@ BEGIN
             '<th>Schema</th>'
             '<th>Table</th>'
             '<th>Index</th>'
+            '<th title="Number of scans performed on index">Scans</th>'
             '<th title="Number of disk blocks read from this index">Blk Reads</th>'
             '<th title="Disk blocks read from this index as a percentage of all blocks read in a cluster">%Total</th>'
             '<th title="Index blocks buffer cache hit percentage">Hits(%)</th>'
@@ -646,6 +650,7 @@ BEGIN
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
@@ -658,6 +663,7 @@ BEGIN
         r_result.schemaname,
         r_result.relname,
         r_result.indexrelname,
+        r_result.idx_scan,
         r_result.idx_blks_read,
         round(r_result.idx_blks_read_pct,2),
         round(r_result.idx_blks_hit_pct,2)
@@ -687,9 +693,11 @@ DECLARE
         COALESCE(st1.schemaname,st2.schemaname) as schemaname,
         COALESCE(st1.relname,st2.relname) as relname,
         COALESCE(st1.indexrelname,st2.indexrelname) as indexrelname,
+        st1.idx_scan as idx_scan1,
         st1.idx_blks_read as idx_blks_read1,
         st1.idx_blks_read_pct as idx_blks_read_pct1,
         st1.idx_blks_hit_pct as idx_blks_hit_pct1,
+        st2.idx_scan as idx_scan2,
         st2.idx_blks_read as idx_blks_read2,
         st2.idx_blks_read_pct as idx_blks_read_pct2,
         st2.idx_blks_hit_pct as idx_blks_hit_pct2,
@@ -714,6 +722,7 @@ BEGIN
             '<th>Table</th>'
             '<th>Index</th>'
             '<th>I</th>'
+            '<th title="Number of scans performed on index">Scans</th>'
             '<th title="Number of disk blocks read from this index">Blk Reads</th>'
             '<th title="Disk blocks read from this index as a percentage of all blocks read in a cluster">%Total</th>'
             '<th title="Index blocks buffer cache hit percentage">Hits(%)</th>'
@@ -731,9 +740,11 @@ BEGIN
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
         '</tr>'
         '<tr {interval2}>'
           '<td {label} {title2}>2</td>'
+          '<td {value}>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
@@ -750,9 +761,11 @@ BEGIN
         r_result.schemaname,
         r_result.relname,
         r_result.indexrelname,
+        r_result.idx_scan1,
         r_result.idx_blks_read1,
         round(r_result.idx_blks_read_pct1,2),
         round(r_result.idx_blks_hit_pct1,2),
+        r_result.idx_scan2,
         r_result.idx_blks_read2,
         round(r_result.idx_blks_read_pct2,2),
         round(r_result.idx_blks_hit_pct2,2)
@@ -779,6 +792,7 @@ DECLARE
         schemaname,
         relname,
         indexrelname,
+        idx_scan,
         idx_blks_fetch,
         idx_blks_proc_pct
     FROM top_io_indexes(sserver_id,start_id,end_id)
@@ -797,6 +811,7 @@ BEGIN
             '<th>Schema</th>'
             '<th>Table</th>'
             '<th>Index</th>'
+            '<th title="Number of scans performed on index">Scans</th>'
             '<th title="Number of blocks fetched (read+hit) from this index">Blks</th>'
             '<th title="Blocks fetched from this index as a percentage of all blocks fetched in a cluster">%Total</th>'
           '</tr>'
@@ -811,6 +826,7 @@ BEGIN
           '<td>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
@@ -823,6 +839,7 @@ BEGIN
         r_result.schemaname,
         r_result.relname,
         r_result.indexrelname,
+        r_result.idx_scan,
         r_result.idx_blks_fetch,
         round(r_result.idx_blks_proc_pct,2)
     );
@@ -851,8 +868,10 @@ DECLARE
         COALESCE(st1.schemaname,st2.schemaname) as schemaname,
         COALESCE(st1.relname,st2.relname) as relname,
         COALESCE(st1.indexrelname,st2.indexrelname) as indexrelname,
+        st1.idx_scan as idx_scan1,
         st1.idx_blks_fetch as idx_blks_fetch1,
         st1.idx_blks_proc_pct as idx_blks_proc_pct1,
+        st2.idx_scan as idx_scan2,
         st2.idx_blks_fetch as idx_blks_fetch2,
         st2.idx_blks_proc_pct as idx_blks_proc_pct2,
         row_number() OVER (ORDER BY st1.idx_blks_fetch DESC NULLS LAST) as rn_fetched1,
@@ -876,6 +895,7 @@ BEGIN
             '<th>Table</th>'
             '<th>Index</th>'
             '<th>I</th>'
+            '<th title="Number of scans performed on index">Scans</th>'
             '<th title="Number of blocks fetched (read+hit) from this index">Blks</th>'
             '<th title="Blocks fetched from this index as a percentage of all blocks fetched in a cluster">%Total</th>'
           '</tr>'
@@ -891,9 +911,11 @@ BEGIN
           '<td {label} {title1}>1</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
         '</tr>'
         '<tr {interval2}>'
           '<td {label} {title2}>2</td>'
+          '<td {value}>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
         '</tr>'
@@ -910,8 +932,10 @@ BEGIN
         r_result.schemaname,
         r_result.relname,
         r_result.indexrelname,
+        r_result.idx_scan1,
         r_result.idx_blks_fetch1,
         round(r_result.idx_blks_proc_pct1,2),
+        r_result.idx_scan2,
         r_result.idx_blks_fetch2,
         round(r_result.idx_blks_proc_pct2,2)
     );

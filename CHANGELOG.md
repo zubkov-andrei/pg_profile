@@ -1,5 +1,11 @@
 # pg_profile changelog
 
+## 0.1.4
+- snapshot() function now tracks time elapsed taking sample on each server
+- Top indexes by blocks fetched/read report section now conains indecs scan count field
+- New _take_subset_sample()_ function can be used in parallel samples collection in case of many servers.
+- fix of #9 reported by @Guzya - incorrect database and tablespace size in report
+
 ## 0.1.3
 - Hotfix of #8 reported by @cuprumtan
 

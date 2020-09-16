@@ -47,7 +47,7 @@ If you need statement statistics in reports, then database, mentioned in server 
 * _pg_stat_statements.track = 'top'_ - _all_ value will affect accuracy of _%Total_ fields for statements-related sections of a report.
 ## Installation
 ### Step 1 Installation of extension files
-Copy files of extension (pg_profile*) to PostgreSQL extensions location, which is
+Extract extension files (see [Releases](https://github.com/zubkov-andrei/pg_profile/releases) page) to PostgreSQL extensions location, which is
 
 ```
 # tar xzf pg_profile-<version>.tar.gz --directory $(pg_config --sharedir)/extension
@@ -166,12 +166,26 @@ Every sample contains statistic information about database workload since previo
   Function *take_sample()* will collect a sample for all *enabled* servers. Servers samples will be taken serially one by one. Function returns a table:
   ```
   server      name,
-  result      text
+  result      text,
+  elapsed     interval
   ```
   Where:
   * *server* is a server name
   * *result* is a result of taken sample. It can be 'OK' if sample was taken successively, and will contain error text in case of exception
+  * *elapsed* is a time elapsed taking a sample for *server*
   Such return makes it easy to control samples creation using SQL query.
+* **take_subset_sample([sets_cnt integer], [current_set integer])**
+  Due to serial samples processing *take_sample()* function can take considerable amount of time. Function *take_subset_sample()* will take samples for a subset of enabled servers. It is convenient for parallel samples collection. *sets_cnt* is number of servers subsets. *current_set* is a subset to process, taking values between 0 and *sets_cnt - 1* inclusive.
+  Function returns a table:
+  ```
+  server      name,
+  result      text,
+  elapsed     interval
+  ```
+  Where:
+  * *server* is a server name
+  * *result* is a result of taken sample. It can be 'OK' if sample was taken successively, and will contain error text in case of exception
+  * *elapsed* is a time elapsed taking a sample for *server*
 * **take_sample(server name)**
   Will collect a sample for specified server. Use it, for example, when you want to use different sampling frequencies, or if you want to take samples in parallel using several sessions.
 * **show_samples([server name,] [days integer])**
@@ -747,6 +761,7 @@ Fetched block is a block being processed from disk (read), or from shared buffer
 * *Schema* - schema name of the index
 * *Table* - table name
 * *Index* - index name
+* *Scans* - number of scans, performed on index (*idx_scan* field)
 * *Blks* - blocks fetched from this index (*idx_blks_read* + *idx_blks_hit*)
 * *%Total* - blocks fetched for this index as a percentage of all blocks fetched in a whole cluster
 
@@ -759,6 +774,7 @@ Top indexes sorted by block reads. Based on data of *pg_statio_all_indexes* view
 * *Schema* - schema name of the index
 * *Table* - table name
 * *Index* - index name
+* *Scans* - number of scans, performed on index (*idx_scan* field)
 * *Blk Reads* - number of disk blocks read from this index (*idx_blks_read*)
 * *%Total* - block reads from this index as a percentage of all block reads in a whole cluster
 * *Hits(%)* - percentage of index blocks got from buffer cache within all index blocks fetched for this index
@@ -909,7 +925,7 @@ Top tables, sized 5 MB and more, sorted by modified tuples ratio.
 * *Table* - table name
 * *Live* - estimated number of live rows (*n_live_tup*)
 * *Dead* - estimated number of dead rows (*n_dead_tup*)
-* *Mods* - estimated number of rows modified since this table was last analyzed (*n_mod_since_analyze*)
+* *Mod* - estimated number of rows modified since this table was last analyzed (*n_mod_since_analyze*)
 * *%Mod* - modified rows of the table as a percentage of all rows in the table
 * *Last AA* - last time when this table was analyzed by the autovacuum daemon
 * *Size* - table size, as it was at the moment of last report sample.
@@ -927,4 +943,4 @@ This section of a report contains PostgreSQL GUC parameters, and values of funct
 ### What you need to remember...
 1. PostgreSQL collects execution statistics __after__ execution is complete. If single execution of a statement lasts for several samples, it will affect statistics of only last sample (when it was completed). And you can't get statistics on still running statements. Also, maintenance processes like vacuum and checkpointer will update statistics only on completion.
 1. Resetting any PostgreSQL statistics may affect accuracy of a next sample.
-1. Exclusive locks on relations conflicts with calculating relation size. Snapshot won't collect relation sizes of relations with AccessExclusiveLock held by any session. However, a session can aquire AccessExclusiveLock on relation during sample processing. To workaround this problem, _lock_timeout_ is set to 3s, so if _take_sample()_ function will be unable to acquire a lock for 3 seconds, it will fail, and no sample will be generated.
+1. Exclusive locks on relations conflicts with calculating relation size. Sample won't collect relation sizes of relations with AccessExclusiveLock held by any session. However, a session can aquire AccessExclusiveLock on relation during sample processing. To workaround this problem, _lock_timeout_ is set to 3s, so if _take_sample()_ function will be unable to acquire a lock for 3 seconds, it will fail, and no sample will be generated.

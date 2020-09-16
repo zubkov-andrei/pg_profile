@@ -1,7 +1,8 @@
 /* ==== Backward compatibility functions ====*/
 CREATE OR REPLACE FUNCTION snapshot() RETURNS TABLE (
     server      name,
-    result      text
+    result      text,
+    elapsed     interval day to second (2)
 )
 SET search_path=@extschema@,public AS $$
 SELECT * FROM take_sample()

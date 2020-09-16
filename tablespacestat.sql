@@ -6,7 +6,6 @@ RETURNS TABLE(
     tablespaceid oid,
     tablespacename name,
     tablespacepath text,
-    size bigint,
     size_delta bigint
 ) SET search_path=@extschema@,public AS $$
     SELECT
@@ -14,10 +13,8 @@ RETURNS TABLE(
         st.tablespaceid,
         st.tablespacename,
         st.tablespacepath,
-        sum(st.size)::bigint AS size,
         sum(st.size_delta)::bigint AS size_delta
     FROM v_sample_stat_tablespaces st
-
         /* Start sample existance condition
         Start sample stats does not account in report, but we must be sure
         that start sample exists, as it is reference point of next sample
@@ -40,11 +37,13 @@ DECLARE
     --Cursor for stats
     c_tbl_stats CURSOR FOR
     SELECT
-        tablespacename,
-        tablespacepath,
-        pg_size_pretty(size) as size,
-        pg_size_pretty(size_delta) as size_delta
-    FROM tablespace_stats(sserver_id,start_id,end_id);
+        st.tablespacename,
+        st.tablespacepath,
+        pg_size_pretty(st_last.size) as size,
+        pg_size_pretty(st.size_delta) as size_delta
+    FROM tablespace_stats(sserver_id,start_id,end_id) st
+      LEFT OUTER JOIN v_sample_stat_tablespaces st_last ON
+        (st_last.server_id = st.server_id AND st_last.sample_id = end_id AND st_last.tablespaceid = st.tablespaceid);
 
     r_result RECORD;
 BEGIN
@@ -103,12 +102,16 @@ DECLARE
     SELECT
         COALESCE(stat1.tablespacename,stat2.tablespacename) AS tablespacename,
         COALESCE(stat1.tablespacepath,stat2.tablespacepath) AS tablespacepath,
-        pg_size_pretty(stat1.size) as size1,
-        pg_size_pretty(stat2.size) as size2,
+        pg_size_pretty(st_last1.size) as size1,
+        pg_size_pretty(st_last2.size) as size2,
         pg_size_pretty(stat1.size_delta) as size_delta1,
         pg_size_pretty(stat2.size_delta) as size_delta2
     FROM tablespace_stats(sserver_id,start1_id,end1_id) stat1
-        FULL OUTER JOIN tablespace_stats(sserver_id,start2_id,end2_id) stat2 USING (server_id,tablespaceid);
+        FULL OUTER JOIN tablespace_stats(sserver_id,start2_id,end2_id) stat2 USING (server_id,tablespaceid)
+        LEFT OUTER JOIN v_sample_stat_tablespaces st_last1 ON
+        (st_last1.server_id = stat1.server_id AND st_last1.sample_id = end1_id AND st_last1.tablespaceid = stat1.tablespaceid)
+        LEFT OUTER JOIN v_sample_stat_tablespaces st_last2 ON
+        (st_last2.server_id = stat2.server_id AND st_last2.sample_id = end2_id AND st_last2.tablespaceid = stat2.tablespaceid);
 
     r_result RECORD;
 BEGIN

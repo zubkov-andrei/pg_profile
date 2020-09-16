@@ -13,6 +13,10 @@ Any time you take a sample, _pg_stat_statements_reset()_ will be called, ensurin
 
 *pg_profile*, installed in one cluster is able to collect statistics from other clusters, called *servers*. You just need to define some servers, providing names and connection strings and make sure connection can be established to all databases of all defined servers. Now you can track statistics on your standbys from master, or from any other server. Once extension is installed, a *local* server is automatically created - this is a *server* for cluster where *pg_profile* resides.
 
+Report examples:
+* [Regular report from Postgres 13 database](https://zubkov-andrei.github.io/pg_profile/report_examples/pg13.html)
+* [Differential report from Postgres 13 database](https://zubkov-andrei.github.io/pg_profile/report_examples/pg13_diff.html)
+
 ## Prerequisites
 
 Although pg_profile is usually installed in the target cluster, it also can collect performance data from other clusters. Hence, we have prerequisites for *pg_profile* database, and for *servers*.
@@ -45,7 +49,7 @@ If CPU and filesystem statistics is needed, consider installing *pg_stat_kcache*
 
 ### Step 1 Installation of extension files
 
-* Copy files of extension (pg_profile*) to PostgreSQL extensions location, which is
+Extract extension files (see [Releases](https://github.com/zubkov-andrei/pg_profile/releases) page) to PostgreSQL extensions location, which is
 
 ```
 # tar xzf pg_profile-<version>.tar.gz --directory $(pg_config --sharedir)/extension

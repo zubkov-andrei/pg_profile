@@ -1,13 +1,15 @@
-PGPROFILE_VERSION = 0.1.3
+PGPROFILE_VERSION = 0.1.4
 EXTENSION = pg_profile
-MIGRATION = $(EXTENSION)--0.1.1--0.1.3.sql \
-	$(EXTENSION)--0.1.2--0.1.3.sql
+MIGRATION = \
+	$(EXTENSION)--0.1.2--$(PGPROFILE_VERSION).sql \
+	$(EXTENSION)--0.1.3--$(PGPROFILE_VERSION).sql
 DATA_built = $(EXTENSION)--$(PGPROFILE_VERSION).sql $(EXTENSION).control $(MIGRATION)
 
-REGRESS = pg_profile \
+REGRESS = \
+	pg_profile \
 	pg_profile_kcache
 
-PG_CONFIG = /usr/local/pgsql/bin/pg_config
+PG_CONFIG ?= /usr/local/pgsql/bin/pg_config
 
 ifdef USE_PGXS
 PG_CONFIG ?= pg_config
@@ -50,8 +52,8 @@ sqlfile: $(script)
 	-e "s/{pg_profile}/$(EXTENSION)/" \
 	> $(EXTENSION)--$(PGPROFILE_VERSION).sql
 
-$(EXTENSION).control: $(EXTENSION).control.tpl
-	sed -e 's/{version}/$(PGPROFILE_VERSION)/' $(EXTENSION).control.tpl > $(EXTENSION).control
+$(EXTENSION).control: control.tpl
+	sed -e 's/{version}/$(PGPROFILE_VERSION)/' control.tpl > $(EXTENSION).control
 
 $(EXTENSION)--$(PGPROFILE_VERSION).sql: $(script)
 	echo '\echo Use "CREATE EXTENSION $(EXTENSION)" to load this file. \quit' > $(EXTENSION)--$(PGPROFILE_VERSION).sql

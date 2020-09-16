@@ -6,13 +6,13 @@ CREATE EXTENSION dblink SCHEMA dblink;
 CREATE EXTENSION pg_stat_statements SCHEMA statements;
 CREATE EXTENSION pg_stat_kcache SCHEMA kcache;
 CREATE EXTENSION pg_profile SCHEMA profile;
-SELECT * FROM profile.take_sample();
+SELECT server,result FROM profile.take_sample();
  server | result 
 --------+--------
  local  | OK
 (1 row)
 
-SELECT * FROM profile.take_sample();
+SELECT server,result FROM profile.take_sample();
  server | result 
 --------+--------
  local  | OK
@@ -24,7 +24,7 @@ SELECT count(1) FROM profile.get_report(1,2);
      1
 (1 row)
 
-SELECT * FROM profile.take_sample();
+SELECT server,result FROM profile.take_sample();
  server | result 
 --------+--------
  local  | OK
@@ -37,13 +37,13 @@ NOTICE:  relation "queries_list" already exists, skipping
      1
 (1 row)
 
-SELECT * FROM profile.take_sample();
+SELECT server,result FROM profile.take_sample();
  server | result 
 --------+--------
  local  | OK
 (1 row)
 
-SELECT * FROM profile.take_sample();
+SELECT server,result FROM profile.take_sample();
  server | result 
 --------+--------
  local  | OK
@@ -54,7 +54,7 @@ UPDATE profile.samples SET sample_time = now() - '3 days'::interval - '10 minute
 UPDATE profile.samples SET sample_time = now() - '2 days'::interval - '10 minutes'::interval WHERE server_id = 1 AND sample_id = 3;
 UPDATE profile.samples SET sample_time = now() - '1 days'::interval - '10 minutes'::interval WHERE server_id = 1 AND sample_id = 4;
 UPDATE profile.samples SET sample_time = now() - '23 hours'::interval - '10 minutes'::interval WHERE server_id = 1 AND sample_id = 5;
-SELECT * FROM profile.take_sample();
+SELECT server,result FROM profile.take_sample();
  server | result 
 --------+--------
  local  | OK
@@ -72,7 +72,7 @@ SELECT * FROM profile.set_server_max_sample_age('local',1);
                          1
 (1 row)
 
-SELECT * FROM profile.take_sample();
+SELECT server,result FROM profile.take_sample();
  server | result 
 --------+--------
  local  | OK
