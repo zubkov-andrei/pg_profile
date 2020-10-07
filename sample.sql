@@ -911,7 +911,7 @@ BEGIN
           AS x(extname text, extversion text)
         WHERE extname = 'pg_stat_kcache'
       )
-      WHEN '2.1.0','2.1.1','2.1.2' THEN
+      WHEN '2.1.0','2.1.1','2.1.2','2.1.3' THEN
         st_query := replace(st_query, '{kcache_fields}',
           ',true as kcache_avail,'
           'kc.user_time as user_time,'
@@ -1373,7 +1373,7 @@ BEGIN
           AS x(extname text, extversion text)
         WHERE extname = 'pg_stat_kcache'
     )
-      WHEN '2.1.0','2.1.1','2.1.2' THEN
+      WHEN '2.1.0','2.1.1','2.1.2','2.1.3' THEN
         INSERT INTO sample_kcache_total(
           server_id,
           sample_id,
