@@ -1,6 +1,6 @@
 /* ===== Top IO objects ===== */
 
-CREATE OR REPLACE FUNCTION top_io_tables(IN sserver_id integer, IN start_id integer, IN end_id integer)
+CREATE FUNCTION top_io_tables(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS TABLE(
     server_id                     integer,
     datid                       oid,
@@ -29,8 +29,9 @@ RETURNS TABLE(
     idx_scan                    bigint
 ) SET search_path=@extschema@,public AS $$
     WITH total AS (SELECT
-      sum(heap_blks_read + idx_blks_read) AS total_blks_read,
-      sum(heap_blks_read + idx_blks_read + heap_blks_hit + idx_blks_hit) AS total_blks_fetch
+      COALESCE(sum(heap_blks_read), 0) + COALESCE(sum(idx_blks_read), 0) AS total_blks_read,
+      COALESCE(sum(heap_blks_read), 0) + COALESCE(sum(idx_blks_read), 0) +
+      COALESCE(sum(heap_blks_hit), 0) + COALESCE(sum(idx_blks_hit), 0) AS total_blks_fetch
     FROM sample_stat_tables_total
     WHERE server_id = sserver_id AND sample_id BETWEEN start_id + 1 AND end_id
     )
@@ -44,20 +45,20 @@ RETURNS TABLE(
         st.relname,
         sum(st.heap_blks_read)::bigint AS heap_blks_read,
         sum(st.heap_blks_read) * 100 / NULLIF(min(total.total_blks_read), 0) AS heap_blks_read_pct,
-        sum(st.heap_blks_read + st.heap_blks_hit)::bigint AS heap_blks_fetch,
-        sum(st.heap_blks_read + st.heap_blks_hit) * 100 / NULLIF(min(total.total_blks_fetch), 0) AS heap_blks_proc_pct,
+        COALESCE(sum(st.heap_blks_read), 0)::bigint + COALESCE(sum(st.heap_blks_hit), 0)::bigint AS heap_blks_fetch,
+        (COALESCE(sum(st.heap_blks_read), 0) + COALESCE(sum(st.heap_blks_hit), 0)) * 100 / NULLIF(min(total.total_blks_fetch), 0) AS heap_blks_proc_pct,
         sum(st.idx_blks_read)::bigint AS idx_blks_read,
         sum(st.idx_blks_read) * 100 / NULLIF(min(total.total_blks_read), 0) AS idx_blks_read_pct,
-        sum(st.idx_blks_read + st.idx_blks_hit)::bigint AS idx_blks_fetch,
-        sum(st.idx_blks_read + st.idx_blks_hit) * 100 / NULLIF(min(total.total_blks_fetch), 0) AS idx_blks_proc_pct,
+        COALESCE(sum(st.idx_blks_read), 0)::bigint + COALESCE(sum(st.idx_blks_hit), 0)::bigint AS idx_blks_fetch,
+        (COALESCE(sum(st.idx_blks_read), 0) + COALESCE(sum(st.idx_blks_hit), 0)) * 100 / NULLIF(min(total.total_blks_fetch), 0) AS idx_blks_proc_pct,
         sum(st.toast_blks_read)::bigint AS toast_blks_read,
         sum(st.toast_blks_read) * 100 / NULLIF(min(total.total_blks_read), 0) AS toast_blks_read_pct,
-        sum(st.toast_blks_read + st.toast_blks_hit)::bigint AS toast_blks_fetch,
-        sum(st.toast_blks_read + st.toast_blks_hit) * 100 / NULLIF(min(total.total_blks_fetch), 0) AS toast_blks_proc_pct,
+        COALESCE(sum(st.toast_blks_read), 0)::bigint + COALESCE(sum(st.toast_blks_hit), 0)::bigint AS toast_blks_fetch,
+        (COALESCE(sum(st.toast_blks_read), 0) + COALESCE(sum(st.toast_blks_hit), 0)) * 100 / NULLIF(min(total.total_blks_fetch), 0) AS toast_blks_proc_pct,
         sum(st.tidx_blks_read)::bigint AS tidx_blks_read,
         sum(st.tidx_blks_read) * 100 / NULLIF(min(total.total_blks_read), 0) AS tidx_blks_read_pct,
-        sum(st.tidx_blks_read + st.tidx_blks_hit)::bigint AS tidx_blks_fetch,
-        sum(st.tidx_blks_read + st.tidx_blks_hit) * 100 / NULLIF(min(total.total_blks_fetch), 0) AS tidx_blks_proc_pct,
+        COALESCE(sum(st.tidx_blks_read), 0)::bigint + COALESCE(sum(st.tidx_blks_hit), 0)::bigint AS tidx_blks_fetch,
+        (COALESCE(sum(st.tidx_blks_read), 0) + COALESCE(sum(st.tidx_blks_hit), 0)) * 100 / NULLIF(min(total.total_blks_fetch), 0) AS tidx_blks_proc_pct,
         sum(st.seq_scan)::bigint AS seq_scan,
         sum(st.idx_scan)::bigint AS idx_scan
     FROM v_sample_stat_tables st
@@ -83,7 +84,7 @@ RETURNS TABLE(
     HAVING min(sample_db.stats_reset) = max(sample_db.stats_reset)
 $$ LANGUAGE sql;
 
-CREATE OR REPLACE FUNCTION top_io_indexes(IN sserver_id integer, IN start_id integer, IN end_id integer)
+CREATE FUNCTION top_io_indexes(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS TABLE(
     server_id             integer,
     datid               oid,
@@ -121,8 +122,8 @@ RETURNS TABLE(
         sum(st.idx_blks_read)::bigint AS idx_blks_read,
         sum(st.idx_blks_read) * 100 / NULLIF(min(total.total_blks_read), 0) AS idx_blks_read_pct,
         sum(st.idx_blks_hit) * 100 / NULLIF(COALESCE(sum(st.idx_blks_hit), 0) + COALESCE(sum(st.idx_blks_read), 0), 0) AS idx_blks_hit_pct,
-        sum(st.idx_blks_read + st.idx_blks_hit)::bigint AS idx_blks_fetch,
-        sum(st.idx_blks_read + st.idx_blks_hit) * 100 / NULLIF(min(total_blks_fetch), 0) AS idx_blks_proc_pct
+        COALESCE(sum(st.idx_blks_read), 0)::bigint + COALESCE(sum(st.idx_blks_hit), 0)::bigint AS idx_blks_fetch,
+        (COALESCE(sum(st.idx_blks_read), 0) + COALESCE(sum(st.idx_blks_hit), 0)) * 100 / NULLIF(min(total_blks_fetch), 0) AS idx_blks_proc_pct
     FROM v_sample_stat_indexes st
         -- Database name
         JOIN sample_stat_database sample_db
@@ -146,7 +147,7 @@ RETURNS TABLE(
     HAVING min(sample_db.stats_reset) = max(sample_db.stats_reset)
 $$ LANGUAGE sql;
 
-CREATE OR REPLACE FUNCTION tbl_top_io_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION tbl_top_io_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -157,17 +158,17 @@ DECLARE
         tablespacename,
         schemaname,
         relname,
-        heap_blks_read,
-        heap_blks_read_pct,
-        idx_blks_read,
-        idx_blks_read_pct,
-        toast_blks_read,
-        toast_blks_read_pct,
-        tidx_blks_read,
-        tidx_blks_read_pct
+        NULLIF(heap_blks_read, 0) as heap_blks_read,
+        NULLIF(heap_blks_read_pct, 0.0) as heap_blks_read_pct,
+        NULLIF(idx_blks_read, 0) as idx_blks_read,
+        NULLIF(idx_blks_read_pct, 0.0) as idx_blks_read_pct,
+        NULLIF(toast_blks_read, 0) as toast_blks_read,
+        NULLIF(toast_blks_read_pct, 0.0) as toast_blks_read_pct,
+        NULLIF(tidx_blks_read, 0) as tidx_blks_read,
+        NULLIF(tidx_blks_read_pct, 0.0) as tidx_blks_read_pct
     FROM top_io_tables(sserver_id,start_id,end_id)
-    WHERE COALESCE(heap_blks_read,0) + COALESCE(idx_blks_read,0) + COALESCE(toast_blks_read,0) + COALESCE(tidx_blks_read,0) > 0
-    ORDER BY COALESCE(heap_blks_read,0) + COALESCE(idx_blks_read,0) + COALESCE(toast_blks_read,0) + COALESCE(tidx_blks_read,0) DESC
+    WHERE COALESCE(heap_blks_read, 0) + COALESCE(idx_blks_read, 0) + COALESCE(toast_blks_read, 0) + COALESCE(tidx_blks_read, 0) > 0
+    ORDER BY COALESCE(heap_blks_read, 0) + COALESCE(idx_blks_read, 0) + COALESCE(toast_blks_read, 0) + COALESCE(tidx_blks_read, 0) DESC
     LIMIT topn;
 
     r_result RECORD;
@@ -241,7 +242,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION tbl_top_io_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION tbl_top_io_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -254,31 +255,40 @@ DECLARE
         COALESCE(st1.dbname,st2.dbname) AS dbname,
         COALESCE(st1.schemaname,st2.schemaname) AS schemaname,
         COALESCE(st1.relname,st2.relname) AS relname,
-        st1.heap_blks_read AS heap_blks_read1,
-        st1.heap_blks_read_pct AS heap_blks_read_pct1,
-        st1.idx_blks_read AS idx_blks_read1,
-        st1.idx_blks_read_pct AS idx_blks_read_pct1,
-        st1.toast_blks_read AS toast_blks_read1,
-        st1.toast_blks_read_pct AS toast_blks_read_pct1,
-        st1.tidx_blks_read AS tidx_blks_read1,
-        st1.tidx_blks_read_pct AS tidx_blks_read_pct1,
-        st2.heap_blks_read AS heap_blks_read2,
-        st2.heap_blks_read_pct AS heap_blks_read_pct2,
-        st2.idx_blks_read AS idx_blks_read2,
-        st2.idx_blks_read_pct AS idx_blks_read_pct2,
-        st2.toast_blks_read AS toast_blks_read2,
-        st2.toast_blks_read_pct AS toast_blks_read_pct2,
-        st2.tidx_blks_read AS tidx_blks_read2,
-        st2.tidx_blks_read_pct AS tidx_blks_read_pct2,
-        row_number() OVER (ORDER BY st1.heap_blks_read + st1.idx_blks_read + st1.toast_blks_read + st1.tidx_blks_read DESC NULLS LAST) rn_read1,
-        row_number() OVER (ORDER BY st2.heap_blks_read + st2.idx_blks_read + st2.toast_blks_read + st2.tidx_blks_read DESC NULLS LAST) rn_read2
+        NULLIF(st1.heap_blks_read, 0) AS heap_blks_read1,
+        NULLIF(st1.heap_blks_read_pct, 0.0) AS heap_blks_read_pct1,
+        NULLIF(st1.idx_blks_read, 0) AS idx_blks_read1,
+        NULLIF(st1.idx_blks_read_pct, 0.0) AS idx_blks_read_pct1,
+        NULLIF(st1.toast_blks_read, 0) AS toast_blks_read1,
+        NULLIF(st1.toast_blks_read_pct, 0.0) AS toast_blks_read_pct1,
+        NULLIF(st1.tidx_blks_read, 0) AS tidx_blks_read1,
+        NULLIF(st1.tidx_blks_read_pct, 0.0) AS tidx_blks_read_pct1,
+        NULLIF(st2.heap_blks_read, 0) AS heap_blks_read2,
+        NULLIF(st2.heap_blks_read_pct, 0.0) AS heap_blks_read_pct2,
+        NULLIF(st2.idx_blks_read, 0) AS idx_blks_read2,
+        NULLIF(st2.idx_blks_read_pct, 0.0) AS idx_blks_read_pct2,
+        NULLIF(st2.toast_blks_read, 0) AS toast_blks_read2,
+        NULLIF(st2.toast_blks_read_pct, 0.0) AS toast_blks_read_pct2,
+        NULLIF(st2.tidx_blks_read, 0) AS tidx_blks_read2,
+        NULLIF(st2.tidx_blks_read_pct, 0.0) AS tidx_blks_read_pct2,
+        row_number() OVER (ORDER BY COALESCE(st1.heap_blks_read, 0) + COALESCE(st1.idx_blks_read, 0) +
+          COALESCE(st1.toast_blks_read, 0) + COALESCE(st1.tidx_blks_read, 0) DESC NULLS LAST) rn_read1,
+        row_number() OVER (ORDER BY COALESCE(st2.heap_blks_read, 0) + COALESCE(st2.idx_blks_read, 0) +
+          COALESCE(st2.toast_blks_read, 0) + COALESCE(st2.tidx_blks_read, 0) DESC NULLS LAST) rn_read2
     FROM top_io_tables(sserver_id,start1_id,end1_id) st1
         FULL OUTER JOIN top_io_tables(sserver_id,start2_id,end2_id) st2 USING (server_id, datid, relid)
-    WHERE COALESCE(st1.heap_blks_read + st1.idx_blks_read + st1.toast_blks_read + st1.tidx_blks_read,
-        st2.heap_blks_read + st2.idx_blks_read + st2.toast_blks_read + st2.tidx_blks_read) > 0
-    ORDER BY COALESCE(st1.heap_blks_read + st1.idx_blks_read + st1.toast_blks_read + st1.tidx_blks_read,0) +
-        COALESCE(st2.heap_blks_read + st2.idx_blks_read + st2.toast_blks_read + st2.tidx_blks_read,0) DESC) t1
-    WHERE rn_read1 <= topn OR rn_read2 <= topn;
+    WHERE COALESCE(st1.heap_blks_read, 0) + COALESCE(st1.idx_blks_read, 0) +
+          COALESCE(st1.toast_blks_read, 0) + COALESCE(st1.tidx_blks_read, 0) +
+          COALESCE(st2.heap_blks_read, 0) + COALESCE(st2.idx_blks_read, 0) +
+          COALESCE(st2.toast_blks_read, 0) + COALESCE(st2.tidx_blks_read, 0) > 0
+    ORDER BY COALESCE(st1.heap_blks_read, 0) + COALESCE(st1.idx_blks_read, 0) +
+          COALESCE(st1.toast_blks_read, 0) + COALESCE(st1.tidx_blks_read, 0) +
+          COALESCE(st2.heap_blks_read, 0) + COALESCE(st2.idx_blks_read, 0) +
+          COALESCE(st2.toast_blks_read, 0) + COALESCE(st2.tidx_blks_read, 0) DESC) t1
+    WHERE least(
+        rn_read1,
+        rn_read2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN
@@ -371,7 +381,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION tbl_top_fetch_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer,
+CREATE FUNCTION tbl_top_fetch_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer,
   IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -383,17 +393,17 @@ DECLARE
         tablespacename,
         schemaname,
         relname,
-        heap_blks_fetch,
-        heap_blks_proc_pct,
-        idx_blks_fetch,
-        idx_blks_proc_pct,
-        toast_blks_fetch,
-        toast_blks_proc_pct,
-        tidx_blks_fetch,
-        tidx_blks_proc_pct
+        NULLIF(heap_blks_fetch, 0) as heap_blks_fetch,
+        NULLIF(heap_blks_proc_pct, 0.0) as heap_blks_proc_pct,
+        NULLIF(idx_blks_fetch, 0) as idx_blks_fetch,
+        NULLIF(idx_blks_proc_pct, 0.0) as idx_blks_proc_pct,
+        NULLIF(toast_blks_fetch, 0) as toast_blks_fetch,
+        NULLIF(toast_blks_proc_pct, 0.0) as toast_blks_proc_pct,
+        NULLIF(tidx_blks_fetch, 0) as tidx_blks_fetch,
+        NULLIF(tidx_blks_proc_pct, 0.0) as tidx_blks_proc_pct
     FROM top_io_tables(sserver_id,start_id,end_id)
-    WHERE COALESCE(heap_blks_fetch,0) + COALESCE(idx_blks_fetch,0) + COALESCE(toast_blks_fetch,0) + COALESCE(tidx_blks_fetch,0) > 0
-    ORDER BY COALESCE(heap_blks_fetch,0) + COALESCE(idx_blks_fetch,0) + COALESCE(toast_blks_fetch,0) + COALESCE(tidx_blks_fetch,0) DESC
+    WHERE COALESCE(heap_blks_fetch, 0) + COALESCE(idx_blks_fetch, 0) + COALESCE(toast_blks_fetch, 0) + COALESCE(tidx_blks_fetch, 0) > 0
+    ORDER BY COALESCE(heap_blks_fetch, 0) + COALESCE(idx_blks_fetch, 0) + COALESCE(toast_blks_fetch, 0) + COALESCE(tidx_blks_fetch, 0) DESC
     LIMIT topn;
 
     r_result RECORD;
@@ -467,7 +477,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION tbl_top_fetch_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION tbl_top_fetch_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -481,31 +491,36 @@ DECLARE
         COALESCE(st1.tablespacename,st2.tablespacename) AS tablespacename,
         COALESCE(st1.schemaname,st2.schemaname) AS schemaname,
         COALESCE(st1.relname,st2.relname) AS relname,
-        st1.heap_blks_fetch AS heap_blks_fetch1,
-        st1.heap_blks_proc_pct AS heap_blks_proc_pct1,
-        st1.idx_blks_fetch AS idx_blks_fetch1,
-        st1.idx_blks_proc_pct AS idx_blks_proc_pct1,
-        st1.toast_blks_fetch AS toast_blks_fetch1,
-        st1.toast_blks_proc_pct AS toast_blks_proc_pct1,
-        st1.tidx_blks_fetch AS tidx_blks_fetch1,
-        st1.tidx_blks_proc_pct AS tidx_blks_proc_pct1,
-        st2.heap_blks_fetch AS heap_blks_fetch2,
-        st2.heap_blks_proc_pct AS heap_blks_proc_pct2,
-        st2.idx_blks_fetch AS idx_blks_fetch2,
-        st2.idx_blks_proc_pct AS idx_blks_proc_pct2,
-        st2.toast_blks_fetch AS toast_blks_fetch2,
-        st2.toast_blks_proc_pct AS toast_blks_proc_pct2,
-        st2.tidx_blks_fetch AS tidx_blks_fetch2,
-        st2.tidx_blks_proc_pct AS tidx_blks_proc_pct2,
-        row_number() OVER (ORDER BY st1.heap_blks_fetch + st1.idx_blks_fetch + st1.toast_blks_fetch + st1.tidx_blks_fetch DESC NULLS LAST) rn_fetched1,
-        row_number() OVER (ORDER BY st2.heap_blks_fetch + st2.idx_blks_fetch + st2.toast_blks_fetch + st2.tidx_blks_fetch DESC NULLS LAST) rn_fetched2
+        NULLIF(st1.heap_blks_fetch, 0) AS heap_blks_fetch1,
+        NULLIF(st1.heap_blks_proc_pct, 0.0) AS heap_blks_proc_pct1,
+        NULLIF(st1.idx_blks_fetch, 0) AS idx_blks_fetch1,
+        NULLIF(st1.idx_blks_proc_pct, 0.0) AS idx_blks_proc_pct1,
+        NULLIF(st1.toast_blks_fetch, 0) AS toast_blks_fetch1,
+        NULLIF(st1.toast_blks_proc_pct, 0.0) AS toast_blks_proc_pct1,
+        NULLIF(st1.tidx_blks_fetch, 0) AS tidx_blks_fetch1,
+        NULLIF(st1.tidx_blks_proc_pct, 0.0) AS tidx_blks_proc_pct1,
+        NULLIF(st2.heap_blks_fetch, 0) AS heap_blks_fetch2,
+        NULLIF(st2.heap_blks_proc_pct, 0.0) AS heap_blks_proc_pct2,
+        NULLIF(st2.idx_blks_fetch, 0) AS idx_blks_fetch2,
+        NULLIF(st2.idx_blks_proc_pct, 0.0) AS idx_blks_proc_pct2,
+        NULLIF(st2.toast_blks_fetch, 0) AS toast_blks_fetch2,
+        NULLIF(st2.toast_blks_proc_pct, 0.0) AS toast_blks_proc_pct2,
+        NULLIF(st2.tidx_blks_fetch, 0) AS tidx_blks_fetch2,
+        NULLIF(st2.tidx_blks_proc_pct, 0.0) AS tidx_blks_proc_pct2,
+        row_number() OVER (ORDER BY COALESCE(st1.heap_blks_fetch, 0) + COALESCE(st1.idx_blks_fetch, 0) +
+          COALESCE(st1.toast_blks_fetch, 0) + COALESCE(st1.tidx_blks_fetch, 0) DESC NULLS LAST) rn_fetched1,
+        row_number() OVER (ORDER BY COALESCE(st2.heap_blks_fetch, 0) + COALESCE(st2.idx_blks_fetch, 0) +
+          COALESCE(st2.toast_blks_fetch, 0) + COALESCE(st2.tidx_blks_fetch, 0) DESC NULLS LAST) rn_fetched2
     FROM top_io_tables(sserver_id,start1_id,end1_id) st1
         FULL OUTER JOIN top_io_tables(sserver_id,start2_id,end2_id) st2 USING (server_id, datid, relid)
-    WHERE COALESCE(st1.heap_blks_fetch + st1.idx_blks_fetch + st1.toast_blks_fetch + st1.tidx_blks_fetch,
-        st2.heap_blks_fetch + st2.idx_blks_fetch + st2.toast_blks_fetch + st2.tidx_blks_fetch) > 0
-    ORDER BY COALESCE(st1.heap_blks_fetch + st1.idx_blks_fetch + st1.toast_blks_fetch + st1.tidx_blks_fetch,0) +
-        COALESCE(st2.heap_blks_fetch + st2.idx_blks_fetch + st2.toast_blks_fetch + st2.tidx_blks_fetch,0) DESC) t1
-    WHERE rn_fetched1 <= topn OR rn_fetched2 <= topn;
+    WHERE COALESCE(st1.heap_blks_fetch, 0) + COALESCE(st1.idx_blks_fetch, 0) + COALESCE(st1.toast_blks_fetch, 0) + COALESCE(st1.tidx_blks_fetch, 0) +
+        COALESCE(st2.heap_blks_fetch, 0) + COALESCE(st2.idx_blks_fetch, 0) + COALESCE(st2.toast_blks_fetch, 0) + COALESCE(st2.tidx_blks_fetch, 0) > 0
+    ORDER BY COALESCE(st1.heap_blks_fetch, 0) + COALESCE(st1.idx_blks_fetch, 0) + COALESCE(st1.toast_blks_fetch, 0) + COALESCE(st1.tidx_blks_fetch, 0) +
+        COALESCE(st2.heap_blks_fetch, 0) + COALESCE(st2.idx_blks_fetch, 0) + COALESCE(st2.toast_blks_fetch, 0) + COALESCE(st2.tidx_blks_fetch, 0) DESC) t1
+    WHERE least(
+        rn_fetched1,
+        rn_fetched2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN
@@ -601,7 +616,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION ix_top_io_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION ix_top_io_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -613,10 +628,10 @@ DECLARE
         schemaname,
         relname,
         indexrelname,
-        idx_scan,
-        idx_blks_read,
-        idx_blks_read_pct,
-        idx_blks_hit_pct
+        NULLIF(idx_scan, 0) as idx_scan,
+        NULLIF(idx_blks_read, 0) as idx_blks_read,
+        NULLIF(idx_blks_read_pct, 0.0) as idx_blks_read_pct,
+        NULLIF(idx_blks_hit_pct, 0.0) as idx_blks_hit_pct
     FROM top_io_indexes(sserver_id,start_id,end_id)
     WHERE idx_blks_read > 0
     ORDER BY idx_blks_read DESC
@@ -678,7 +693,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION ix_top_io_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION ix_top_io_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -693,22 +708,25 @@ DECLARE
         COALESCE(st1.schemaname,st2.schemaname) as schemaname,
         COALESCE(st1.relname,st2.relname) as relname,
         COALESCE(st1.indexrelname,st2.indexrelname) as indexrelname,
-        st1.idx_scan as idx_scan1,
-        st1.idx_blks_read as idx_blks_read1,
-        st1.idx_blks_read_pct as idx_blks_read_pct1,
-        st1.idx_blks_hit_pct as idx_blks_hit_pct1,
-        st2.idx_scan as idx_scan2,
-        st2.idx_blks_read as idx_blks_read2,
-        st2.idx_blks_read_pct as idx_blks_read_pct2,
-        st2.idx_blks_hit_pct as idx_blks_hit_pct2,
+        NULLIF(st1.idx_scan, 0) as idx_scan1,
+        NULLIF(st1.idx_blks_read, 0) as idx_blks_read1,
+        NULLIF(st1.idx_blks_read_pct, 0.0) as idx_blks_read_pct1,
+        NULLIF(st1.idx_blks_hit_pct, 0.0) as idx_blks_hit_pct1,
+        NULLIF(st2.idx_scan, 0) as idx_scan2,
+        NULLIF(st2.idx_blks_read, 0) as idx_blks_read2,
+        NULLIF(st2.idx_blks_read_pct, 0.0) as idx_blks_read_pct2,
+        NULLIF(st2.idx_blks_hit_pct, 0.0) as idx_blks_hit_pct2,
         row_number() OVER (ORDER BY st1.idx_blks_read DESC NULLS LAST) as rn_read1,
         row_number() OVER (ORDER BY st2.idx_blks_read DESC NULLS LAST) as rn_read2
     FROM
         top_io_indexes(sserver_id,start1_id,end1_id) st1
         FULL OUTER JOIN top_io_indexes(sserver_id,start2_id,end2_id) st2 USING (server_id, datid, relid, indexrelid)
-    WHERE COALESCE(st1.idx_blks_read, st2.idx_blks_read) > 0
-    ORDER BY COALESCE(st1.idx_blks_read,0) + COALESCE(st2.idx_blks_read,0) DESC ) t1
-    WHERE rn_read1 <= topn OR rn_read2 <= topn;
+    WHERE COALESCE(st1.idx_blks_read, 0) + COALESCE(st2.idx_blks_read, 0) > 0
+    ORDER BY COALESCE(st1.idx_blks_read, 0) + COALESCE(st2.idx_blks_read, 0) DESC ) t1
+    WHERE least(
+        rn_read1,
+        rn_read2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN
@@ -780,7 +798,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION ix_top_fetch_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION ix_top_fetch_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -792,9 +810,9 @@ DECLARE
         schemaname,
         relname,
         indexrelname,
-        idx_scan,
-        idx_blks_fetch,
-        idx_blks_proc_pct
+        NULLIF(idx_scan, 0) as idx_scan,
+        NULLIF(idx_blks_fetch, 0) as idx_blks_fetch,
+        NULLIF(idx_blks_proc_pct, 0.0) as idx_blks_proc_pct
     FROM top_io_indexes(sserver_id,start_id,end_id)
     WHERE idx_blks_fetch > 0
     ORDER BY idx_blks_fetch DESC
@@ -853,7 +871,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION ix_top_fetch_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION ix_top_fetch_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -868,20 +886,23 @@ DECLARE
         COALESCE(st1.schemaname,st2.schemaname) as schemaname,
         COALESCE(st1.relname,st2.relname) as relname,
         COALESCE(st1.indexrelname,st2.indexrelname) as indexrelname,
-        st1.idx_scan as idx_scan1,
-        st1.idx_blks_fetch as idx_blks_fetch1,
-        st1.idx_blks_proc_pct as idx_blks_proc_pct1,
-        st2.idx_scan as idx_scan2,
-        st2.idx_blks_fetch as idx_blks_fetch2,
-        st2.idx_blks_proc_pct as idx_blks_proc_pct2,
+        NULLIF(st1.idx_scan, 0) as idx_scan1,
+        NULLIF(st1.idx_blks_fetch, 0) as idx_blks_fetch1,
+        NULLIF(st1.idx_blks_proc_pct, 0.0) as idx_blks_proc_pct1,
+        NULLIF(st2.idx_scan, 0) as idx_scan2,
+        NULLIF(st2.idx_blks_fetch, 0) as idx_blks_fetch2,
+        NULLIF(st2.idx_blks_proc_pct, 0.0) as idx_blks_proc_pct2,
         row_number() OVER (ORDER BY st1.idx_blks_fetch DESC NULLS LAST) as rn_fetched1,
         row_number() OVER (ORDER BY st2.idx_blks_fetch DESC NULLS LAST) as rn_fetched2
     FROM
         top_io_indexes(sserver_id,start1_id,end1_id) st1
         FULL OUTER JOIN top_io_indexes(sserver_id,start2_id,end2_id) st2 USING (server_id, datid, relid, indexrelid)
-    WHERE COALESCE(st1.idx_blks_fetch, st2.idx_blks_fetch) > 0
-    ORDER BY COALESCE(st1.idx_blks_fetch,0) + COALESCE(st2.idx_blks_fetch,0) DESC ) t1
-    WHERE rn_fetched1 <= topn OR rn_fetched2 <= topn;
+    WHERE COALESCE(st1.idx_blks_fetch, 0) + COALESCE(st2.idx_blks_fetch, 0) > 0
+    ORDER BY COALESCE(st1.idx_blks_fetch, 0) + COALESCE(st2.idx_blks_fetch, 0) DESC ) t1
+    WHERE least(
+        rn_fetched1,
+        rn_fetched2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN

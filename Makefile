@@ -1,18 +1,17 @@
-PGPROFILE_VERSION = 0.1.4
+PGPROFILE_VERSION = 0.2.1
 EXTENSION = pg_profile
-MIGRATION = \
-	$(EXTENSION)--0.1.2--$(PGPROFILE_VERSION).sql \
-	$(EXTENSION)--0.1.3--$(PGPROFILE_VERSION).sql
+
+include migration/Makefile
+
 DATA_built = $(EXTENSION)--$(PGPROFILE_VERSION).sql $(EXTENSION).control $(MIGRATION)
 
 REGRESS = \
 	pg_profile \
 	pg_profile_kcache
 
-PG_CONFIG ?= /usr/local/pgsql/bin/pg_config
+PG_CONFIG ?= pg_config
 
 ifdef USE_PGXS
-PG_CONFIG ?= pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 else
@@ -22,13 +21,13 @@ include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
 
-include migration/Makefile
-
 schema = schema.sql
 common = internal.sql
 adm_funcs = baseline.sql \
 	server.sql
-sample = sample.sql \
+sample = \
+	sample_pg_stat_statements.sql \
+	sample.sql \
 	compat.sql
 report = dbstat.sql \
 	statementstat_dbagg.sql \
@@ -47,10 +46,12 @@ report = dbstat.sql \
 functions = $(common) $(adm_funcs) $(sample) $(report)
 script = $(schema) $(functions)
 
-sqlfile: $(script)
+sqlfile: $(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql
+
+$(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql: $(script)
 	cat $(script) | sed -e 's/SET search_path=@extschema@,public //' \
 	-e "s/{pg_profile}/$(EXTENSION)/" \
-	> $(EXTENSION)--$(PGPROFILE_VERSION).sql
+	> $(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql
 
 $(EXTENSION).control: control.tpl
 	sed -e 's/{version}/$(PGPROFILE_VERSION)/' control.tpl > $(EXTENSION).control
@@ -58,3 +59,7 @@ $(EXTENSION).control: control.tpl
 $(EXTENSION)--$(PGPROFILE_VERSION).sql: $(script)
 	echo '\echo Use "CREATE EXTENSION $(EXTENSION)" to load this file. \quit' > $(EXTENSION)--$(PGPROFILE_VERSION).sql
 	cat $(script) | sed -e "s/{pg_profile}/$(EXTENSION)/" >> $(EXTENSION)--$(PGPROFILE_VERSION).sql
+
+tarpkg: $(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql $(DATA_built)
+	tar czf $(EXTENSION)--$(PGPROFILE_VERSION).tar.gz $(DATA_built)
+	tar czf $(EXTENSION)--$(PGPROFILE_VERSION)_manual.tar.gz $(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql

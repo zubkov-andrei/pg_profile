@@ -11,7 +11,7 @@ SELECT profile.create_server('srvtest','dbname=postgres host=localhost port=5432
              2
 (1 row)
 
-SELECT * FROM servers;
+SELECT * FROM profile.servers;
  server_id | server_name | db_exclude | enabled |                 connstr                  | max_sample_age | last_sample_id 
 -----------+-------------+------------+---------+------------------------------------------+----------------+----------------
          1 | local       |            | t       | dbname=contrib_regression port=5432      |                |              0
@@ -42,7 +42,7 @@ SELECT profile.set_server_max_sample_age('srvtestrenamed',3);
                          1
 (1 row)
 
-SELECT * FROM servers;
+SELECT * FROM profile.servers;
  server_id |  server_name   |  db_exclude   | enabled |                 connstr                  | max_sample_age | last_sample_id 
 -----------+----------------+---------------+---------+------------------------------------------+----------------+----------------
          1 | local          |               | t       | dbname=contrib_regression port=5432      |                |              0
@@ -55,7 +55,7 @@ SELECT profile.disable_server('srvtestrenamed');
               1
 (1 row)
 
-SELECT * FROM servers;
+SELECT * FROM profile.servers;
  server_id |  server_name   |  db_exclude   | enabled |                 connstr                  | max_sample_age | last_sample_id 
 -----------+----------------+---------------+---------+------------------------------------------+----------------+----------------
          1 | local          |               | t       | dbname=contrib_regression port=5432      |                |              0
@@ -68,7 +68,7 @@ SELECT profile.enable_server('srvtestrenamed');
              1
 (1 row)
 
-SELECT * FROM servers;
+SELECT * FROM profile.servers;
  server_id |  server_name   |  db_exclude   | enabled |                 connstr                  | max_sample_age | last_sample_id 
 -----------+----------------+---------------+---------+------------------------------------------+----------------+----------------
          1 | local          |               | t       | dbname=contrib_regression port=5432      |                |              0
@@ -163,7 +163,7 @@ SELECT * FROM profile.create_baseline('testline2',2,4);
                2
 (1 row)
 
-SELECT count(*) FROM baselines;
+SELECT count(*) FROM profile.baselines;
  count 
 -------
      2
@@ -189,7 +189,7 @@ SELECT server,result FROM profile.take_sample();
  local  | OK
 (1 row)
 
-SELECT count(*) FROM baselines;
+SELECT count(*) FROM profile.baselines;
  count 
 -------
      1

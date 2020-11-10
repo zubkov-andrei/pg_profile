@@ -104,11 +104,11 @@ grant pg_read_all_stats to profile_mon;
 grant execute on function pg_stat_statements_reset TO profile_mon;
 ```
 ### Server setup at pg_profile database
-Non-superusers can't establish connection without a password. Best way is to provide password using a password file.
+Non-superusers can't establish connection without a password. Best way to provide password is using a password file.
 
 N.B. pg_profile will connect to all databases on a server, thus password file must use a wildcard as a database name.
 
-As insecure way, you can provide a password using connection string:
+As an insecure way, you can provide a password in connection string:
 ```
 select server_connstr('local','dbname=postgres port=5432 user=profile_mon password=pwd_mon');
 ```
@@ -118,6 +118,7 @@ select server_connstr('local','dbname=postgres port=5432 user=profile_mon passwo
 You can define extension parameters in _postgresql.conf_. Default values:
 * _pg_profile.topn = 20_ - Number of top objects (statements, relations, etc.), to be reported in each sorted report table. Also, this parameter affects size of a sample - the more objects you want to appear in your report, the more objects we need to keep in a sample.
 * _pg_profile.max_sample_age = 7_ - Retention time of samples in days. Samples, aged _pg_profile.max_sample_age_ days and more will be automatically deleted on next _take_sample()_ call.
+* _pg_profile.track_sample_timings = off_ - when this parameter is on, _pg_profile_ will track detailed sample taking timings.
 ### Managing servers
 Once installed, extension will create one enabled *local* server - this is for cluster, where extension is installed.
 
@@ -163,7 +164,7 @@ Every sample contains statistic information about database workload since previo
 #### Sample functions
 
 * **take_sample()**
-  Function *take_sample()* will collect a sample for all *enabled* servers. Servers samples will be taken serially one by one. Function returns a table:
+  Function *take_sample()* will collect a sample for all *enabled* servers. Server samples will be taken serially one by one. Function returns a table:
   ```
   server      name,
   result      text,
@@ -174,8 +175,8 @@ Every sample contains statistic information about database workload since previo
   * *result* is a result of taken sample. It can be 'OK' if sample was taken successively, and will contain error text in case of exception
   * *elapsed* is a time elapsed taking a sample for *server*
   Such return makes it easy to control samples creation using SQL query.
-* **take_subset_sample([sets_cnt integer], [current_set integer])**
-  Due to serial samples processing *take_sample()* function can take considerable amount of time. Function *take_subset_sample()* will take samples for a subset of enabled servers. It is convenient for parallel samples collection. *sets_cnt* is number of servers subsets. *current_set* is a subset to process, taking values between 0 and *sets_cnt - 1* inclusive.
+* **take_sample_subset([sets_cnt integer], [current_set integer])**
+  Due to serial samples processing *take_sample()* function can take considerable amount of time. Function *take_sample_subset()* will take samples for a subset of enabled servers. It is convenient for parallel samples collection. *sets_cnt* is number of servers subsets. *current_set* is a subset to process, taking values between 0 and *sets_cnt - 1* inclusive.
   Function returns a table:
   ```
   server      name,
@@ -216,14 +217,15 @@ However, such call has no error checking on *take_sample()* function results. Co
 Function will return 'OK' for all servers with successfully taken samples, and show error text for failed servers:
 ```
 select * from take_sample();
-   server   |                                result
-------------+-----------------------------------------------------------------------
- ok_server  | OK
- err_server | could not establish connection                                       +
-            | SQL statement "SELECT dblink_connect('server_connection',server_connstr)"+
-            | PL/pgSQL function take_sample(integer) line 52 at PERFORM               +
-            | PL/pgSQL function take_sample() line 22 at assignment                   +
-            | FATAL:  database "nodb" does not exist
+  server   |                                   result                                    |   elapsed
+-----------+-----------------------------------------------------------------------------+-------------
+ ok_node   | OK                                                                          | 00:00:00.48
+ fail_node | could not establish connection                                             +| 00:00:00
+           | SQL statement "SELECT dblink_connect('server_connection',server_connstr)"  +|
+           | PL/pgSQL function take_sample(integer) line 69 at PERFORM                  +|
+           | PL/pgSQL function take_sample_subset(integer,integer) line 27 at assignment+|
+           | SQL function "take_sample" statement 1                                     +|
+           | FATAL:  database "nodb" does not exist                                      |
 (2 rows)
 ```
 
@@ -238,6 +240,38 @@ We can't store sample data forever, thus we have a retention policy. You can def
 #### Listing samples
 
 Use *show_samples()* function to get list of existing samples in the repository. This function will show detected statistics reset times.
+
+#### Sample taking timings
+_pg_profile_ will collect detailed sample taking timing statistics when parameter _pg_profile.track_sample_timings_ is on. Results can be obtained from _v_sample_timings_ view. _v_sample_timings_ fields description:
+* _server_name_ - sampled server name
+* _sample_id_ - sample identifier
+* _sample_time_ - when the sample was taken
+* _event_ - sample taking stage
+* _time_spent_ - amount of time spent in the event
+
+Event descriptions:
+* **total** - Taking the sample (all stages).
+* **connect** -  Making dblink connection to the server.
+* **get server environment** - Getting server GUC parameters, available extensions, etc.
+* **collect database stats** - Querying the pg_stat_database view for statistics on databases.
+* **calculate database stats** - Calculating differential statistics on databases since the previous sample.
+* **collect tablespace stats** - Querying the pg_tablespace view for statistics on tablespaces.
+* **collect statement stats** - Collecting statistics on statements using the _pg_stat_statements_ and _pg_stat_kcache_ extensions.
+* **query pg_stat_bgwriter** - Collecting cluster statistics using the pg_stat_bgwriter view.
+* **query pg_stat_archiver** - Collecting cluster statistics using the pg_stat_archiver view.
+* **collect object stats** - Collecting statistics on database objects. Includes following events:
+  * **db:_dbname_ collect tables stats** - Collecting statistics on tables for the _dbname_ database.
+  * **db:_dbname_ collect indexes stats** - Collecting statistics on indexes for the _dbname_ database.
+  * **db:_dbname_ collect functions stats** - Collecting statistics on functions for the _dbname_ database.
+* **maintain repository** - Executing support routines.
+* **calculate tablespace stats** - Calculating differential statistics on tablespaces.
+* **calculate object stats** - Calculating differential statistics on database objects. Includes following events:
+  * **calculate tables stats** - Calculating differential statistics on tables of all databases.
+  * **calculate indexes stats** - Calculating differential statistics on indexes of all databases.
+  * **calculate functions stats** - Calculating differential statistics on functions of all databases.
+* **calculate cluster stats** - Calculating cluster differential statistics.
+* **calculate archiver stats** - Calculating archiever differential statistics.
+* **delete obsolete samples** - Deleting obsolete baselines and samples.
 
 ### Baselines
 
@@ -303,6 +337,10 @@ Reports are generated in HTML markup by reporting functions. There are two types
   * *baseline* is a baseline name
   * *description* is a text memo - it will be included in report as report description
 
+* **get_report_latest([server name])** - generate report for two latest samples
+
+  * *server* is server name. *local* server assumed if omitted
+
 #### Differential report functions
 
 You can generate differential report using sample identifiers, baselines and time ranges as interval bounds:
@@ -358,7 +396,7 @@ Now you can view report file using any web browser.
 Report tables and their columns are described in this section.
 ### Server statistics
 
-#### Databases statistics
+#### Database statistics
 
 Contains per-database statistics during report interval, based on *pg_stat_database* view.
 
@@ -383,7 +421,7 @@ Contains per-database statistics during report interval, based on *pg_stat_datab
 * *Size* - database size at the end of report interval (*pg_database_size()*)
 * *Growth* - database growth during report interval (*pg_database_size()* difference)
 
-#### Statements statistics by database
+#### Statement statistics by database
 
 Contains per-database aggregated total statistics of *pg_stat_statements* data (if *pg_stat_statements* extension was available during report interval)
 
@@ -404,7 +442,7 @@ Contains per-database aggregated total statistics of *pg_stat_statements* data (
 * *Temp (blk)* - blocks used for operations (like joins and sorts)
   * *Read* - blocks read (sum of *temp_blks_read*)
   * *Write* - blocks written (sum of *temp_blks_written*)
-* *Local* - blocks used for temporary tables
+* *Local (blk)* - blocks used for temporary tables
   * *Read* - blocks read (sum of *local_blks_read*)
   * *Write* - blocks written (sum of *local_blks_written*)
 * *Statements* - total count of captured statements
@@ -428,7 +466,7 @@ This table contains data from *pg_stat_bgwriter* view
 * *WAL segments archived* - archived WAL segments count (based on *archived_count* of *pg_stat_archiver* view)
 * *WAL segments archive failed*  - WAL segment archive failures count (based on *failed_count* of *pg_stat_archiver* view)
 
-#### Tablespaces statistics
+#### Tablespace statistics
 
 This table contains information about tablespaces sizes and growth:
 
@@ -444,27 +482,27 @@ This report section contains tables of top statements during report interval sor
 
 This table contains top _pg_profile.topn_ statements sorted by elapsed time *total_plan_time* + *total_exec_time* of *pg_stat_statements* view
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
 * *%Total* - total time of this statement as a percentage of total time of all statements in a cluster
 * *Time (s)* - time spent in this statement (in seconds)
   * *Elapsed* - total time, spent in this statement (*total_plan_time* + *total_exec_time*)
   * *Plan* - time spent in planning this statement (*total_plan_time* field)
-  * *Exec* - time spent executing this query (*total_time* or *total_exec_time* field)
+  * *Exec* - time spent executing this query (*total_exec_time* field)
 * *I/O time (s)*:
   * *Read* - time spent reading blocks (*blk_read_time* field)
   * *Write* - time spent writing blocks (*blk_write_time* field)
-* CPU time (s) - time spent on CPU. Based on data of *pg_stat_kcache* extension.
+* CPU time (s) - time spent on CPU. Based on data provided by *pg_stat_kcache* extension.
   * *Usr* - CPU time spent in user space
   * *Sys* - CPU time spent in kernel space
-* *Plans* - number of times the statement was planned (*plans* lield)
+* *Plans* - number of times the statement was planned (*plans* field)
 * *Executions* - number of times the statement was executed (*calls* field)
 
 #### Top SQL by planning time
 
 Top _pg_profile.topn_ statements sorted by *total_plan_time* field of *pg_stat_statements* view
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
 * *Plan elapsed (s)* - time spent in planning this statement (*total_plan_time* field)
 * *%Elapsed* - plan time of this statement as a percentage of statement elapsed time
@@ -480,7 +518,7 @@ Top _pg_profile.topn_ statements sorted by *total_plan_time* field of *pg_stat_s
 
 Top _pg_profile.topn_ statements sorted by *total_time* (or *total_exec_time*) field of *pg_stat_statements* view
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
 * *Exec (s)* - time spent executing this statement (*total_exec_time* field)
 * *%Elapsed* - execution time of this statement as a percentage of statement elapsed time
@@ -500,7 +538,7 @@ Top _pg_profile.topn_ statements sorted by *total_time* (or *total_exec_time*) f
 
 Top _pg_profile.topn_ statements sorted by *calls* field of *pg_stat_statements* view
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
 * *Executions* - count of statement executions (*calls* field)
 * *%Total* - *calls* of this statement as a percentage of total *calls* of all statements in a cluster
@@ -509,15 +547,14 @@ Top _pg_profile.topn_ statements sorted by *calls* field of *pg_stat_statements*
 * *Min(ms)* - minimum time spent in the statement, in milliseconds (*min_time* or *min_exec_time* field)
 * *Max(ms)* - maximum time spent in the statement, in milliseconds (*max_time* or *max_exec_time* field)
 * *StdErr(ms)* - population standard deviation of time spent in the statement, in milliseconds (*stddev_time* or *stddev_exec_time* field)
-* *Exec time (s)* - amount of time spent executing this query, in seconds (*total_time* or *total_exec_time* field)
+* *Elapsed(s)* - amount of time spent executing this query, in seconds (*total_time* or *total_exec_time* field)
 
 #### Top SQL by I/O wait time
 
 Top _pg_profile.topn_ statements sorted by read and write time (*blk_read_time* + *blk_write_time*)
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
-* *Elapsed(s)* - amount of time spent in this statement, in seconds (*total_time* or *total_exec_time+total_plan_time* field)
 * *IO(s)* - amount of time spent on reading and writing (I/O time) by this statement in seconds (*blk_read_time* + *blk_write_time*)
 * *R(s)* - amount of time spent on reading by this statement in seconds (*blk_read_time*)
 * *W(s)* - amount of time spent on writing by this statement in seconds (*blk_write_time*)
@@ -530,69 +567,70 @@ Top _pg_profile.topn_ statements sorted by read and write time (*blk_read_time* 
   * *Shr* - shared writes (*shared_blks_written* field)
   * *Loc* - local writes (*local_blks_written* field)
   * *Tmp* - temp writes (*temp_blks_written* field)
+* *Elapsed(s)* - amount of time spent executing this query, in seconds (*total_time* or *total_exec_time* field)
 * *Executions* - number of executions for this statement (*calls* field)
 
 #### Top SQL by shared blocks fetched
 
 Top _pg_profile.topn_ statements sorted by read and hit blocks, helping to detect the most data processing statements.
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
-* *Elapsed(s)* - amount of time spent in this statement, in seconds (*total_time* or *total_exec_time+total_plan_time* field)
-* *Rows* - number of rows retrieved or affected by the statement (*rows* field)
 * *blks fetched* - number of fetched blocks (expression: *shared_blks_hit* + *shared_blks_read*)
 * *%Total* - blocks fetched for this statement as a percentage of total blocks fetched for all statements in a cluster
 * *Hits(%)* - percentage of blocks got from buffers within all blocks got
+* *Elapsed(s)* - amount of time spent in this statement, in seconds (*total_time* or *total_exec_time+total_plan_time* field)
+* *Rows* - number of rows retrieved or affected by the statement (*rows* field)
 * *Executions* - number of executions for this statement (*calls* field)
 
 #### Top SQL by shared blocks read
 
 Top _pg_profile.topn_ statements sorted by shared reads, helping to detect most read intensive statements.
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
-* *Elapsed(s)* - amount of time spent in this statement, in seconds (*total_time* or *total_exec_time+total_plan_time* field)
-* *Rows* - number of rows retrieved or affected by the statement (*rows* field)
 * *Reads* - number of shared read blocks for this statement (*shared_blks_read* field)
 * *%Total* - shared reads for this statement as a percentage of total shared reads for all statements in a cluster
 * *Hits(%)* - percentage of blocks got from buffers within all blocks got
+* *Elapsed(s)* - amount of time spent in this statement, in seconds (*total_time* or *total_exec_time+total_plan_time* field)
+* *Rows* - number of rows retrieved or affected by the statement (*rows* field)
 * *Executions* - number of executions for this statement (*calls* field)
 
 #### Top SQL by shared blocks dirtied
 
 Top _pg_profile.topn_ statements sorted by shared dirtied buffer count, helping to detect most data changing statements.
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
-* *Elapsed(s)* - amount of time spent in this statement, in seconds (*total_time* or *total_exec_time+total_plan_time* field)
-* *Rows* - number of rows retrieved or affected by the statement (*rows* field)
 * *Dirtied* - number of shared blocks dirtied by this statement (*shared_blks_dirtied* field)
 * *%Total* - shared blocks dirtied by this statement as a percentage of total shared blocks dirtied by all statements in a cluster
 * *Hits(%)* - percentage of blocks got from buffers within all blocks got
+* *Elapsed(s)* - amount of time spent in this statement, in seconds (*total_time* or *total_exec_time+total_plan_time* field)
+* *Rows* - number of rows retrieved or affected by the statement (*rows* field)
 * *Executions* - number of executions for this statement (*calls* field)
 
 #### Top SQL by shared blocks written
 
 Top _pg_profile.topn_ statements, which had to perform writes sorted by written blocks count.
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
-* *Elapsed(s)* - amount of time spent in this statement, in seconds (*total_time* or *total_exec_time+total_plan_time* field)
-* *Rows* - number of rows retrieved or affected by the statement (*rows* field)
 * *Written* - number of blocks written by this statement (*shared_blks_written* field)
 * *%Total* - number of blocks written by this statement as a percentage of total blocks written by all statements in a cluster
 * *%BackendW* - number of blocks written by this statement as a percentage of all blocks written in a cluster by backends (*buffers_backend* field of *pg_stat_bgwriter* view)
 * *Hits(%)* - percentage of blocks got from buffers within all blocks got
+* *Elapsed(s)* - amount of time spent in this statement, in seconds (*total_time* or *total_exec_time+total_plan_time* field)
+* *Rows* - number of rows retrieved or affected by the statement (*rows* field)
 * *Executions* - number of executions for this statement (*calls* field)
 
 #### Top SQL by WAL size
 
 Top _pg_profile.topn_ statements, sorted by WAL generated (available since *pg_stat_statements* v1.8)
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
 * *WAL* - amount of WAL generated by the statement (*wal_bytes* field)
-* *%Total* - amount of WAL generated by the statement as a percentage of total wal generated (as it reported by *pg_current_wal_lsn()*)
+* *%Total* - amount of WAL generated by the statement as a percentage of total WAL generated in cluster (*pg_current_wal_lsn()* increment)
 * *Dirtied* - number of shared blocks dirtied by this statement (*shared_blks_dirtied* field)
 * *WAL FPI* - total number of WAL full page images generated by the statement (*wal_fpi* field)
 * *WAL records* - total amount of WAL bytes generated by the statement (*wal_bytes* field)
@@ -601,10 +639,8 @@ Top _pg_profile.topn_ statements, sorted by WAL generated (available since *pg_s
 
 Top _pg_profile.topn_ statements sorted by temp I/O, calculated as the sum of *temp_blks_read*, *temp_blks_written*, *local_blks_read* and *local_blks_written* fields
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
-* *Elapsed(s)* - amount of time spent in this statement, in seconds (*total_time* or *total_exec_time+total_plan_time* field)
-* *Rows* - number of rows retrieved or affected by the statement (*rows* field)
 * *Local fetched* - number of retrieved local blocks (expression: *local_blks_hit* + *local_blks_read*)
 * *Hits(%)* - percentage of local blocks got from temp buffers within all local blocks got
 * *Local (blk)* - I/O statistics of blocks used in temporary tables
@@ -617,17 +653,19 @@ Top _pg_profile.topn_ statements sorted by temp I/O, calculated as the sum of *t
   * *%Total* - *temp_blks_written* of this statement as a percentage of total *temp_blks_written* for all statements in a cluster
   * *Read* - number of read local blocks (*temp_blks_read*)
   * *%Total* - *temp_blks_read* of this statement as a percentage of total *temp_blks_read* for all statements in a cluster
+* *Elapsed(s)* - amount of time spent in this statement, in seconds (*total_time* or *total_exec_time+total_plan_time* field)
+* *Rows* - number of rows retrieved or affected by the statement (*rows* field)
 * *Executions* - number of executions for this statement (*calls* field)
 
-#### Kcache statistics
+#### rusage statistics
 
-This section is available only if *pg_stat_kcache* statement was available during report interval.
+This section contains resource usage statistics provided by *pg_stat_kcache* extension if it was available during report interval.
 
 ##### Top SQL by system and user time
 
 Top _pg_profile.topn_ statements sorted by sum of fields *user_time* and *system_time* fields of *pg_stat_kcache*.
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
 * *User time(s)* - User CPU time used (*user_time* field)
 * *%Total* - *user_time* of this statement as a percentage of a summary *user_time* for all statements
@@ -638,22 +676,22 @@ Top _pg_profile.topn_ statements sorted by sum of fields *user_time* and *system
 
 Top _pg_profile.topn_ statements sorted by sum of fields *reads* and *writes* fields of *pg_stat_kcache*.
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
 * *Reads* - Number of bytes read by the filesystem layer (*reads* field)
 * *%Total* - *reads* of this statement as a percentage of a summary *reads* for all statements
 * *Writes* - Number of bytes written by the filesystem layer (*writes* field)
 * *%Total* - *writes* of this statement as a percentage of a summary *writes* for all statements
 
-#### Complete List of SQL Text
+#### Complete list of SQL texts
 
 Query texts of all statements mentioned in report. You can use *Query ID* link in any statistic table to get there and see query text.
 
-### Schema objects statistics
+### Schema object statisctics
 
 This section of report contains top database objects, using statistics from Statistics Collector views.
 
-#### Top tables by sequential scanned blocks estimation
+#### Top tables by estimated number of sequentially scanned blocks
 
 Top database tables sorted by estimated count of blocks, read by sequential scans. Based on *pg_stat_all_tables* view. Here you can search for tables, possibly lacks some index on it.
 
@@ -661,8 +699,8 @@ Top database tables sorted by estimated count of blocks, read by sequential scan
 * *Tablespace* - tablespace name, where the table is located
 * *Schema* - schema name of the table
 * *Table* - table name
-* *SeqScan* - number of sequential scans performed on the table (*seq_scan* field)
 * *~SeqBlks* - estimated number of blocks, read by sequential scans. Calculated as a sum of *relation size* multiplied by *seq_scan* for all samples of a report.
+* *SeqScan* - number of sequential scans performed on the table (*seq_scan* field)
 * *IxScan* - number of index scans initiated on this table (*idx_scan* field)
 * *IxFet* - number of live rows fetched by index scans (*idx_tup_fetch* field)
 * *Ins* - number of rows inserted (*n_tup_ins* field)
@@ -721,7 +759,7 @@ Top tables sorted by amount of DML-affected rows, i.e. sum of *n_tup_ins*, *n_tu
 * *IxScan* - number of index scans initiated on this table (*idx_scan* field)
 * *IxFet* - number of live rows fetched by index scans (*idx_tup_fetch* field)
 
-#### Top Delete/Update tables with vacuum run count
+#### Top tables by Delete/Update operations
 
 Top tables sorted by amount of operations, causing autovacuum load, i.e. sum of *n_tup_upd* and *n_tup_del* (including TOAST tables). Consider fine-tune of vacuum-related parameters based on provided vacuum and analyze run statistics.
 
@@ -787,7 +825,7 @@ Top indexes sorted by growth
 * *Tablespace* - tablespace name, where the index is located
 * *Schema* - schema name of the index
 * *Table* - table name
-* *Index name* - index name
+* *Index* - index name
 * *Index* - index statistics
   * *Size* - index size, as it was at the moment of last sample in report interval
   * *Growth* - index growth during report interval
@@ -804,6 +842,7 @@ Non-scanned indexes during report interval sorted by DML operations on underlyin
 * *Tablespace* - tablespace name, where the index is located
 * *Schema* - schema name of the index
 * *Table* - table name
+* *Index* - index name
 * *Index* - index statistics
   * *Size* - index size, as it was at the moment of last sample in report interval
   * *Growth* - index growth during report interval
@@ -858,13 +897,14 @@ Top trigger functions sorted by time elapsed.
   * *Mean* - mean time of single function execution
   * *Mean self* - mean self time of single function execution
 
-### Vacuum related stats
+### Vacuum-related stats
 
-#### Tables ordered by vacuum count
+#### Top tables by vacuum operations
 
 Top tables sorted by vacuums (manual and automatic) processed
 
 * *DB* - database name of the table
+* *Tablespace* - tablespace name, where the table is located
 * *Schema* - schema name of the table
 * *Table* - table name
 * *Vacuum count* - number of times this table has been manually vacuumed (not counting VACUUM FULL) (*vacuum_count* field)
@@ -874,11 +914,12 @@ Top tables sorted by vacuums (manual and automatic) processed
 * *Del* - number of rows deleted (*n_tup_del* field)
 * *Upd(HOT)* - number of rows HOT updated (*n_tup_hot_upd* field)
 
-#### Tables ordered by analyze count
+#### Top tables by analyze operations
 
 Top tables sorted by analyze run (manual and automatic) count
 
 * *DB* - database name of the table
+* *Tablespace* - tablespace name, where the table is located
 * *Schema* - schema name of the table
 * *Table* - table name
 * *Analyze count* - number of times this table has been manually analyzed (*analyze_count* field)
@@ -888,7 +929,7 @@ Top tables sorted by analyze run (manual and automatic) count
 * *Del* - number of rows deleted (*n_tup_del* field)
 * *Upd(HOT)* - number of rows HOT updated (*n_tup_hot_upd* field)
 
-#### Indexes ordered by vacuum I/O load estimation
+#### Top indexes by estimated vacuum I/O load
 
 This table provides estimation of implicit vacuum load caused by table indexes. Here is top indexes sorted by count of vacuums performed on underlying table multiplied by index size.
 
@@ -897,11 +938,11 @@ This table provides estimation of implicit vacuum load caused by table indexes. 
 * *Schema* - schema name of the index
 * *Table* - table name
 * *Index* - index name
+* *~Vacuum bytes* - vacuum load estimation calculated as (*vacuum_count* + *autovacuum_count*) * *index_size*
 * *Vacuum cnt* - number of times this table has been manually vacuumed (not counting VACUUM FULL) (*vacuum_count* field)
 * *Autovacuum cnt* - number of times this table has been vacuumed by the autovacuum daemon (*autovacuum_count* field)
-* *~Vacuum bytes* - vacuum load estimation calculated as (*vacuum_count* + *autovacuum_count*) * *index_size*
 
-#### Tables ordered by dead tuples ratio
+#### Top tables by dead tuples ratio
 This section contains modified tables with last vacuum run. Statistics is valid for last sample in report interval. Based on *pg_stat_all_tables* view.
 
 Top tables, sized 5 MB and more, sorted by dead tuples ratio.
@@ -915,7 +956,7 @@ Top tables, sized 5 MB and more, sorted by dead tuples ratio.
 * *Last AV* - last time when this table was vacuumed by the autovacuum daemon (*last_autovacuum*)
 * *Size* - table size, as it was at the moment of last report sample.
 
-#### Tables ordered by modified tuples ratio
+#### Top tables by modified tuples ratio
 This section contains modified tables with last vacuum run. Statistics is valid for last sample in report interval. Based on *pg_stat_all_tables* view.
 
 Top tables, sized 5 MB and more, sorted by modified tuples ratio.
@@ -930,7 +971,7 @@ Top tables, sized 5 MB and more, sorted by modified tuples ratio.
 * *Last AA* - last time when this table was analyzed by the autovacuum daemon
 * *Size* - table size, as it was at the moment of last report sample.
 
-### Cluster settings during report interval
+### Cluster settings during the report interval
 
 This section of a report contains PostgreSQL GUC parameters, and values of functions *version()*, *pg_postmaster_start_time()*, *pg_conf_load_time()* and field *system_identifier* of *pg_control_system()* function during report interval.
 

@@ -1,6 +1,6 @@
 /* ========= kcache stats functions ========= */
 
-CREATE OR REPLACE FUNCTION profile_checkavail_kcachestatements(IN sserver_id integer, IN start_id integer, IN end_id integer)
+CREATE FUNCTION profile_checkavail_kcachestatements(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS BOOLEAN
 SET search_path=@extschema@,public AS $$
   SELECT count(sn.sample_id) = count(st.sample_id)

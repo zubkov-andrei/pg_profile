@@ -1,6 +1,6 @@
 /* ===== Indexes stats functions ===== */
 
-CREATE OR REPLACE FUNCTION top_indexes(IN sserver_id integer, IN start_id integer, IN end_id integer)
+CREATE FUNCTION top_indexes(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS TABLE(
     server_id             integer,
     datid               oid,
@@ -42,7 +42,7 @@ SET search_path=@extschema@,public AS $$
         sum(tbl.n_tup_hot_upd)::bigint as tbl_n_tup_hot_upd,
         sum(tbl.vacuum_count)::bigint as vacuum_count,
         sum(tbl.autovacuum_count)::bigint as autovacuum_count,
-        sum((coalesce(tbl.vacuum_count,0) + coalesce(tbl.autovacuum_count,0)) * st.relsize)::bigint as vacuum_bytes
+        sum((COALESCE(tbl.vacuum_count,0) + COALESCE(tbl.autovacuum_count,0)) * st.relsize)::bigint as vacuum_bytes
     FROM v_sample_stat_indexes st JOIN v_sample_stat_tables tbl USING (server_id, sample_id, datid, relid)
         -- Database name
         JOIN sample_stat_database sample_db
@@ -65,7 +65,7 @@ SET search_path=@extschema@,public AS $$
     --HAVING min(sample_db.stats_reset) = max(sample_db.stats_reset)
 $$ LANGUAGE sql;
 
-CREATE OR REPLACE FUNCTION top_growth_indexes_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer,
+CREATE FUNCTION top_growth_indexes_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer,
   IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -81,14 +81,15 @@ DECLARE
         st.schemaname,
         st.relname,
         st.indexrelname,
-        pg_size_pretty(st.growth) as growth,
-        pg_size_pretty(st_last.relsize) as relsize,
-        tbl_n_tup_ins,
-        tbl_n_tup_upd - tbl_n_tup_hot_upd as tbl_n_tup_upd,
-        tbl_n_tup_del
+        pg_size_pretty(NULLIF(st.growth, 0)) as growth,
+        pg_size_pretty(NULLIF(st_last.relsize, 0)) as relsize,
+        NULLIF(tbl_n_tup_ins, 0) as tbl_n_tup_ins,
+        NULLIF(tbl_n_tup_upd - COALESCE(tbl_n_tup_hot_upd,0), 0) as tbl_n_tup_upd,
+        NULLIF(tbl_n_tup_del, 0) as tbl_n_tup_del
     FROM top_indexes(sserver_id, start_id, end_id) st
         JOIN v_sample_stat_indexes st_last using (server_id,datid,relid,indexrelid)
-    WHERE st_last.sample_id=end_id AND st.growth > 0
+    WHERE st_last.sample_id = end_id
+      AND st.growth > 0
     ORDER BY st.growth DESC
     LIMIT topn;
 
@@ -102,7 +103,7 @@ BEGIN
             '<th rowspan="2">Tablespace</th>'
             '<th rowspan="2">Schema</th>'
             '<th rowspan="2">Table</th>'
-            '<th rowspan="2">Index name</th>'
+            '<th rowspan="2">Index</th>'
             '<th colspan="2">Index</th>'
             '<th colspan="3">Table</th>'
           '</tr>'
@@ -155,7 +156,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_growth_indexes_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION top_growth_indexes_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -171,16 +172,16 @@ DECLARE
         COALESCE(ix1.schemaname,ix2.schemaname) as schemaname,
         COALESCE(ix1.relname,ix2.relname) as relname,
         COALESCE(ix1.indexrelname,ix2.indexrelname) as indexrelname,
-        pg_size_pretty(ix1.growth) as growth1,
-        pg_size_pretty(ix_last1.relsize) as relsize1,
-        ix1.tbl_n_tup_ins as tbl_n_tup_ins1,
-        ix1.tbl_n_tup_upd - ix1.tbl_n_tup_hot_upd as tbl_n_tup_upd1,
-        ix1.tbl_n_tup_del as tbl_n_tup_del1,
-        pg_size_pretty(ix2.growth) as growth2,
-        pg_size_pretty(ix_last2.relsize) as relsize2,
-        ix2.tbl_n_tup_ins as tbl_n_tup_ins2,
-        ix2.tbl_n_tup_upd - ix2.tbl_n_tup_hot_upd as tbl_n_tup_upd2,
-        ix2.tbl_n_tup_del as tbl_n_tup_del2,
+        pg_size_pretty(NULLIF(ix1.growth, 0)) as growth1,
+        pg_size_pretty(NULLIF(ix_last1.relsize, 0)) as relsize1,
+        NULLIF(ix1.tbl_n_tup_ins, 0) as tbl_n_tup_ins1,
+        NULLIF(ix1.tbl_n_tup_upd - COALESCE(ix1.tbl_n_tup_hot_upd,0), 0) as tbl_n_tup_upd1,
+        NULLIF(ix1.tbl_n_tup_del, 0) as tbl_n_tup_del1,
+        pg_size_pretty(NULLIF(ix2.growth, 0)) as growth2,
+        pg_size_pretty(NULLIF(ix_last2.relsize, 0)) as relsize2,
+        NULLIF(ix2.tbl_n_tup_ins, 0) as tbl_n_tup_ins2,
+        NULLIF(ix2.tbl_n_tup_upd - COALESCE(ix2.tbl_n_tup_hot_upd,0), 0) as tbl_n_tup_upd2,
+        NULLIF(ix2.tbl_n_tup_del, 0) as tbl_n_tup_del2,
         row_number() over (ORDER BY ix1.growth DESC NULLS LAST) as rn_growth1,
         row_number() over (ORDER BY ix2.growth DESC NULLS LAST) as rn_growth2
     FROM top_indexes(sserver_id, start1_id, end1_id) ix1
@@ -189,9 +190,12 @@ DECLARE
             ON (ix_last1.sample_id = end1_id AND ix_last1.server_id=ix1.server_id AND ix_last1.datid = ix1.datid AND ix_last1.indexrelid = ix1.indexrelid AND ix_last1.relid = ix1.relid)
         LEFT OUTER JOIN v_sample_stat_indexes ix_last2
             ON (ix_last2.sample_id = end2_id AND ix_last2.server_id=ix2.server_id AND ix_last2.datid = ix2.datid AND ix_last2.indexrelid = ix2.indexrelid AND ix_last2.relid = ix2.relid)
-    WHERE COALESCE(ix1.growth,ix2.growth) > 0
-    ORDER BY COALESCE(ix1.growth,0) + COALESCE(ix2.growth,0) DESC) t1
-    WHERE rn_growth1 <= topn OR rn_growth2 <= topn;
+    WHERE COALESCE(ix1.growth, 0) + COALESCE(ix2.growth, 0) > 0
+    ORDER BY COALESCE(ix1.growth, 0) + COALESCE(ix2.growth, 0) DESC) t1
+    WHERE least(
+        rn_growth1,
+        rn_growth2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN
@@ -204,7 +208,7 @@ BEGIN
             '<th rowspan="2">Tablespace</th>'
             '<th rowspan="2">Schema</th>'
             '<th rowspan="2">Table</th>'
-            '<th rowspan="2">Index name</th>'
+            '<th rowspan="2">Index</th>'
             '<th rowspan="2">I</th>'
             '<th colspan="2">Index</th>'
             '<th colspan="3">Table</th>'
@@ -273,7 +277,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION ix_unused_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION ix_unused_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
 
@@ -287,16 +291,16 @@ DECLARE
         st.schemaname,
         st.relname,
         st.indexrelname,
-        pg_size_pretty(st.growth) as growth,
-        pg_size_pretty(st_last.relsize) as relsize,
-        tbl_n_tup_ins,
-        tbl_n_tup_upd - tbl_n_tup_hot_upd as tbl_n_ind_upd,
-        tbl_n_tup_del
+        pg_size_pretty(NULLIF(st.growth, 0)) as growth,
+        pg_size_pretty(NULLIF(st_last.relsize, 0)) as relsize,
+        NULLIF(tbl_n_tup_ins, 0) as tbl_n_tup_ins,
+        NULLIF(tbl_n_tup_upd - COALESCE(tbl_n_tup_hot_upd,0), 0) as tbl_n_ind_upd,
+        NULLIF(tbl_n_tup_del, 0) as tbl_n_tup_del
     FROM top_indexes(sserver_id, start_id, end_id) st
         JOIN v_sample_stat_indexes st_last using (server_id,datid,relid,indexrelid)
-    WHERE st_last.sample_id=end_id AND st.idx_scan = 0 AND NOT st.indisunique
-      AND tbl_n_tup_ins + tbl_n_tup_upd + tbl_n_tup_del > 0
-    ORDER BY tbl_n_tup_ins + tbl_n_tup_upd + tbl_n_tup_del DESC
+    WHERE st_last.sample_id=end_id AND COALESCE(st.idx_scan, 0) = 0 AND NOT st.indisunique
+      AND COALESCE(tbl_n_tup_ins, 0) + COALESCE(tbl_n_tup_upd, 0) + COALESCE(tbl_n_tup_del, 0) > 0
+    ORDER BY COALESCE(tbl_n_tup_ins, 0) + COALESCE(tbl_n_tup_upd, 0) + COALESCE(tbl_n_tup_del, 0) DESC
     LIMIT topn;
 
     r_result RECORD;
@@ -363,7 +367,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 
-CREATE OR REPLACE FUNCTION top_vacuumed_indexes_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer,
+CREATE FUNCTION top_vacuumed_indexes_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer,
   IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -379,9 +383,9 @@ DECLARE
         st.schemaname,
         st.relname,
         st.indexrelname,
-        st.vacuum_count,
-        st.autovacuum_count,
-        st.vacuum_bytes
+        NULLIF(st.vacuum_count, 0) as vacuum_count,
+        NULLIF(st.autovacuum_count, 0) as autovacuum_count,
+        NULLIF(st.vacuum_bytes, 0) as vacuum_bytes
     FROM top_indexes(sserver_id, start_id, end_id) st
     WHERE st.vacuum_bytes > 0
     ORDER BY vacuum_bytes DESC
@@ -440,7 +444,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_vacuumed_indexes_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION top_vacuumed_indexes_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -456,18 +460,18 @@ DECLARE
         COALESCE(ix1.schemaname,ix2.schemaname) as schemaname,
         COALESCE(ix1.relname,ix2.relname) as relname,
         COALESCE(ix1.indexrelname,ix2.indexrelname) as indexrelname,
-        ix1.vacuum_count as vacuum_count1,
-        ix1.autovacuum_count as autovacuum_count1,
-        ix1.vacuum_bytes as vacuum_bytes1,
-        ix2.vacuum_count as vacuum_count2,
-        ix2.autovacuum_count as autovacuum_count2,
-        ix2.vacuum_bytes as vacuum_bytes2,
+        NULLIF(ix1.vacuum_count, 0) as vacuum_count1,
+        NULLIF(ix1.autovacuum_count, 0) as autovacuum_count1,
+        NULLIF(ix1.vacuum_bytes, 0) as vacuum_bytes1,
+        NULLIF(ix2.vacuum_count, 0) as vacuum_count2,
+        NULLIF(ix2.autovacuum_count, 0) as autovacuum_count2,
+        NULLIF(ix2.vacuum_bytes, 0) as vacuum_bytes2,
         row_number() over (ORDER BY ix1.vacuum_bytes DESC NULLS LAST) as rn_vacuum_bytes1,
         row_number() over (ORDER BY ix2.vacuum_bytes DESC NULLS LAST) as rn_vacuum_bytes2
     FROM top_indexes(sserver_id, start1_id, end1_id) ix1
         FULL OUTER JOIN top_indexes(sserver_id, start2_id, end2_id) ix2 USING (server_id, datid, indexrelid)
-    WHERE COALESCE(ix1.vacuum_bytes,ix2.vacuum_bytes) > 0
-    ORDER BY COALESCE(ix1.vacuum_bytes,0) + COALESCE(ix2.vacuum_bytes,0) DESC) t1
+    WHERE COALESCE(ix1.vacuum_bytes, 0) + COALESCE(ix2.vacuum_bytes, 0) > 0
+    ORDER BY COALESCE(ix1.vacuum_bytes, 0) + COALESCE(ix2.vacuum_bytes, 0) DESC) t1
     WHERE least(
         rn_vacuum_bytes1,
         rn_vacuum_bytes2

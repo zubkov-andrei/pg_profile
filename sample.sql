@@ -1,20 +1,30 @@
 
 /* ========= Sample functions ========= */
 
-CREATE OR REPLACE FUNCTION take_sample(IN sserver_id integer) RETURNS integer SET search_path=@extschema@,public AS $$
+CREATE FUNCTION take_sample(IN sserver_id integer) RETURNS integer SET search_path=@extschema@,public AS $$
 DECLARE
-    s_id            integer;
-    topn            integer;
-    ret             integer;
-    server_properties jsonb = '{"extensions":[],"settings":[]}'; -- version, extensions, etc.
-    qres            record;
+    s_id              integer;
+    topn              integer;
+    ret               integer;
+    server_properties jsonb = '{"extensions":[],"settings":[],"timings":{}}'; -- version, extensions, etc.
+    qres              record;
     server_connstr    text;
-    settings_refresh    boolean = true;
+    settings_refresh  boolean = true;
+    collect_timings   boolean = false;
 
     server_query      text;
 BEGIN
     -- Get server connstr
     server_connstr := get_connstr(sserver_id);
+
+    -- Getting timing collection setting
+    BEGIN
+        collect_timings := current_setting('{pg_profile}.track_sample_timings')::boolean;
+    EXCEPTION
+        WHEN OTHERS THEN collect_timings := false;
+    END;
+
+    server_properties := jsonb_set(server_properties,'{collect_timings}',to_jsonb(collect_timings));
 
     -- Getting TopN setting
     BEGIN
@@ -22,6 +32,7 @@ BEGIN
     EXCEPTION
         WHEN OTHERS THEN topn := 20;
     END;
+
 
     -- Adding dblink extension schema to search_path if it does not already there
     SELECT extnamespace::regnamespace AS dblink_schema INTO STRICT qres FROM pg_catalog.pg_extension WHERE extname = 'dblink';
@@ -53,10 +64,20 @@ BEGIN
         WHEN OTHERS THEN ret := 7;
     END;
 
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,connect}',jsonb_build_object('start',clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,total}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
+    -- Server connection
     PERFORM dblink_connect('server_connection',server_connstr);
     -- Setting lock_timout prevents hanging of take_sample() call due to DDL in long transaction
     PERFORM dblink('server_connection','SET lock_timeout=3000');
 
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,connect,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,get server environment}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
     -- Get settings values for the server
     FOR qres IN
       SELECT * FROM dblink('server_connection',
@@ -201,6 +222,10 @@ BEGIN
       (s.server_id = prm.server_id AND s.sample_id = prm.sample_id AND prm.name = '{pg_profile}.topn' AND prm.setting_scope = 1 AND NOT settings_refresh)
     WHERE s.server_id = sserver_id AND s.sample_id = s_id AND (prm.setting IS NULL OR prm.setting::integer != topn);
 
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,get server environment,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,collect database stats}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
     -- Construct pg_stat_database query
     server_query := 'SELECT
         datid,
@@ -295,6 +320,10 @@ BEGIN
         datsize_delta bigint
         );
 
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,collect database stats,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,calculate database stats}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
     -- Calc stat_database diff
     INSERT INTO sample_stat_database(
       server_id,
@@ -348,6 +377,11 @@ BEGIN
         (lst.server_id = cur.server_id AND lst.sample_id = cur.sample_id - 1 AND lst.datid = cur.datid AND lst.datname = cur.datname AND lst.stats_reset = cur.stats_reset)
     WHERE cur.sample_id = s_id AND cur.server_id = sserver_id;
 
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,calculate database stats,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,collect tablespace stats}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
     -- Construct tablespace stats query
     server_query := 'SELECT
         oid as tablespaceid,
@@ -384,8 +418,28 @@ BEGIN
         size_delta              bigint
     );
 
-    -- collect pg_stat_statements stats if available
-    PERFORM collect_statements_stats(server_properties, sserver_id, s_id, topn);
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,collect tablespace stats,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,collect statement stats}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
+    -- Search for statements statistics extension
+    CASE
+      -- pg_stat_statements statistics collection
+      WHEN (
+        SELECT count(*) = 1
+        FROM jsonb_to_recordset(server_properties #> '{extensions}') AS ext(extname text)
+        WHERE extname = 'pg_stat_statements'
+      ) THEN
+        PERFORM collect_pg_stat_statements_stats(server_properties, sserver_id, s_id, topn);
+      ELSE
+        NULL;
+    END CASE;
+
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,collect statement stats,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,query pg_stat_bgwriter}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
 
     -- pg_stat_bgwriter data
     CASE
@@ -483,6 +537,11 @@ BEGIN
         wal_size bigint);
     END IF;
 
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,query pg_stat_bgwriter,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,query pg_stat_archiver}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
     -- pg_stat_archiver data
     CASE
       WHEN (
@@ -535,9 +594,25 @@ BEGIN
       );
     END IF;
 
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,query pg_stat_archiver,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,collect object stats}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
     -- Collecting stat info for objects of all databases
-    PERFORM collect_obj_stats(server_properties, sserver_id, s_id);
+    server_properties := collect_obj_stats(server_properties, sserver_id, s_id);
+
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,collect object stats,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,disconnect}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
     PERFORM dblink_disconnect('server_connection');
+
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,disconnect,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,maintain repository}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
 
     -- analyze last_* tables will help with more accurate plans
     ANALYZE last_stat_indexes;
@@ -582,6 +657,11 @@ BEGIN
     WHERE tl.server_id = lst.server_id AND tl.tablespaceid = lst.tablespaceid
       AND (tl.tablespacename != lst.tablespacename OR tl.tablespacepath != lst.tablespacepath)
       AND lst.sample_id = s_id;
+
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,maintain repository,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,calculate tablespace stats}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
 
     -- Calculate diffs for tablespaces
     FOR qres IN
@@ -630,12 +710,22 @@ BEGIN
       );
     END LOOP;
 
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,calculate tablespace stats,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,calculate object stats}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
     -- collect databases objects stats
-    PERFORM sample_dbobj_delta(sserver_id,s_id,topn);
+    server_properties := sample_dbobj_delta(server_properties,sserver_id,s_id,topn);
 
     DELETE FROM last_stat_tablespaces WHERE server_id = sserver_id AND sample_id != s_id;
 
     DELETE FROM last_stat_database WHERE server_id = sserver_id AND sample_id != s_id;
+
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,calculate object stats,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,calculate cluster stats}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
 
     -- Calc stat cluster diff
     INSERT INTO sample_stat_cluster(
@@ -676,6 +766,11 @@ BEGIN
 
     DELETE FROM last_stat_cluster WHERE server_id = sserver_id AND sample_id != s_id;
 
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,calculate cluster stats,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,calculate archiver stats}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
     -- Calc stat archiver diff
     INSERT INTO sample_stat_archiver(
       server_id,
@@ -704,6 +799,11 @@ BEGIN
     WHERE cur.sample_id = s_id AND cur.server_id = sserver_id;
 
     DELETE FROM last_stat_archiver WHERE server_id = sserver_id AND sample_id != s_id;
+
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,calculate archiver stats,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,delete obsolete samples}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
 
     -- Deleting obsolete baselines
     DELETE FROM baselines
@@ -768,13 +868,22 @@ BEGIN
     WHERE server_id = sserver_id AND first_seen <
       (SELECT min(first_seen) FROM sample_settings WHERE server_id = sserver_id AND name = 'version' AND setting_scope = 2);
 
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,delete obsolete samples,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,total,end}',to_jsonb(clock_timestamp()));
+      -- Save timing statistics of sample
+      INSERT INTO sample_timings
+      SELECT sserver_id, s_id, key,(value::jsonb #>> '{end}')::timestamp with time zone - (value::jsonb #>> '{start}')::timestamp with time zone as time_spent
+      FROM jsonb_each_text(server_properties #> '{timings}');
+    END IF;
+
     RETURN 0;
 END;
 $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION take_sample(IN sserver_id integer) IS 'Statistics sample creation function (by server_id).';
 
-CREATE OR REPLACE FUNCTION take_sample(IN server name) RETURNS integer SET search_path=@extschema@,public AS $$
+CREATE FUNCTION take_sample(IN server name) RETURNS integer SET search_path=@extschema@,public AS $$
 DECLARE
     sserver_id    integer;
 BEGIN
@@ -789,7 +898,7 @@ $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION take_sample(IN server name) IS 'Statistics sample creation function (by server name).';
 
-CREATE OR REPLACE FUNCTION take_subset_sample(IN sets_cnt integer = 1, IN current_set integer = 0) RETURNS TABLE (
+CREATE FUNCTION take_sample_subset(IN sets_cnt integer = 1, IN current_set integer = 0) RETURNS TABLE (
     server      name,
     result      text,
     elapsed     interval day to second (2)
@@ -845,779 +954,20 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION take_subset_sample(IN sets_cnt integer, IN current_set integer) IS 'Statistics sample creation function (for subset of enabled servers). Used for simplification of parallel sample collection.';
+COMMENT ON FUNCTION take_sample_subset(IN sets_cnt integer, IN current_set integer) IS 'Statistics sample creation function (for subset of enabled servers). Used for simplification of parallel sample collection.';
 
-CREATE OR REPLACE FUNCTION take_sample() RETURNS TABLE (
+CREATE FUNCTION take_sample() RETURNS TABLE (
     server      name,
     result      text,
     elapsed     interval day to second (2)
 )
 SET search_path=@extschema@,public AS $$
-  SELECT * FROM take_subset_sample(1,0);
+  SELECT * FROM take_sample_subset(1,0);
 $$ LANGUAGE sql;
 
 COMMENT ON FUNCTION take_sample() IS 'Statistics sample creation function (for all enabled servers). Must be explicitly called periodically.';
 
-CREATE OR REPLACE FUNCTION collect_statements_stats(IN properties jsonb, IN sserver_id integer, IN s_id integer, IN topn integer) RETURNS void SET search_path=@extschema@,public AS $$
-DECLARE
-  qres              record;
-  st_query          text;
-BEGIN
-    -- Adding dblink extension schema to search_path if it does not already there
-    SELECT extnamespace::regnamespace AS dblink_schema INTO STRICT qres FROM pg_catalog.pg_extension WHERE extname = 'dblink';
-    IF NOT string_to_array(current_setting('search_path'),',') @> ARRAY[qres.dblink_schema::text] THEN
-      EXECUTE 'SET LOCAL search_path TO ' || current_setting('search_path')||','|| qres.dblink_schema;
-    END IF;
-
-    -- Check if mandatory extensions exists
-    IF NOT
-      (
-        SELECT count(*) > 0
-        FROM jsonb_to_recordset(properties #> '{extensions}') AS ext(extname text)
-        WHERE extname = 'pg_stat_statements'
-      )
-    THEN
-      RETURN;
-    END IF;
-
-    -- Dynamic statements query
-    st_query := format(
-      'SELECT '
-        'st.userid,'
-        'st.dbid,'
-        'st.queryid,'
-        'left(md5(db.datname || r.rolname || st.query ), 10) AS queryid_md5,'
-        '{statements_fields}'
-        '{kcache_fields}'
-      ' FROM '
-      '{statements_view} st '
-      'JOIN pg_catalog.pg_database db ON (db.oid=st.dbid) '
-      'JOIN pg_catalog.pg_roles r ON (r.oid=st.userid) '
-      '{statements_join}'
-      '{kcache_join}'
-      ' WHERE '
-        'st.queryid IS NOT NULL '
-        'AND '
-        'least('
-          '{statements_rank}'
-          '{kcache_rank}'
-          ') <= %1$s',
-      topn);
-
-    -- pg_stat_kcache placeholders processing if extension is available
-    CASE
-      (
-        SELECT extversion FROM jsonb_to_recordset(properties #> '{extensions}')
-          AS x(extname text, extversion text)
-        WHERE extname = 'pg_stat_kcache'
-      )
-      WHEN '2.1.0','2.1.1','2.1.2','2.1.3' THEN
-        st_query := replace(st_query, '{kcache_fields}',
-          ',true as kcache_avail,'
-          'kc.user_time as user_time,'
-          'kc.system_time as system_time,'
-          'kc.minflts as minflts,'
-          'kc.majflts as majflts,'
-          'kc.nswaps as nswaps,'
-          'kc.reads as reads,'
-          'kc.writes  as writes,'
-          'kc.msgsnds as msgsnds,'
-          'kc.msgrcvs as msgrcvs,'
-          'kc.nsignals as nsignals,'
-          'kc.nvcsws as nvcsws,'
-          'kc.nivcsws as nivcsws'
-        );
-        st_query := replace(st_query, '{kcache_join}',format(
-          'LEFT OUTER JOIN %1$I.pg_stat_kcache() kc ON (st.queryid = kc.queryid AND st.userid = kc.userid AND st.dbid = kc.dbid) '
-          'LEFT OUTER JOIN '
-            '(SELECT '
-              'k.userid, k.dbid, md5(s.query) as q_md5,'
-              'row_number() over (ORDER BY sum(user_time+system_time) DESC) AS cpu_time_rank,'
-              'row_number() over (ORDER BY sum(reads+writes) DESC) AS io_rank '
-            'FROM %1$I.pg_stat_kcache() k '
-            'JOIN {statements_view} s ON (s.queryid=k.queryid) '
-            'GROUP BY k.userid, k.dbid, md5(s.query)) rank_kc '
-          'ON (kc.userid=rank_kc.userid AND kc.dbid=rank_kc.dbid AND md5(st.query)=rank_kc.q_md5)',
-            (
-              SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
-                AS x(extname text, extnamespace text)
-              WHERE extname = 'pg_stat_kcache'
-            )
-          )
-        );
-        st_query := replace(st_query, '{kcache_rank}',
-          ',cpu_time_rank,'
-          'io_rank'
-        );
-      ELSE
-        st_query := replace(st_query, '{kcache_join}','');
-        st_query := replace(st_query, '{kcache_rank}','');
-        st_query := replace(st_query, '{kcache_fields}',
-          ',false as kcache_avail,'
-          'NULL as user_time,'
-          'NULL as system_time,'
-          'NULL as minflts,'
-          'NULL as majflts,'
-          'NULL as nswaps,'
-          'NULL as reads,'
-          'NULL  as writes,'
-          'NULL as msgsnds,'
-          'NULL as msgrcvs,'
-          'NULL as nsignals,'
-          'NULL as nvcsws,'
-          'NULL as nivcsws');
-    END CASE;
-
-    -- statements placeholders processing
-    CASE
-      -- pg_stat_statements v 1.3-1.7
-      WHEN (
-        SELECT count(*) = 1
-        FROM jsonb_to_recordset(properties #> '{extensions}')
-          AS ext(extname text, extversion text)
-        WHERE extname = 'pg_stat_statements'
-          AND extversion IN ('1.3','1.4','1.5','1.6','1.7')
-      )
-      THEN
-        st_query := replace(st_query, '{statements_join}',
-          'JOIN '
-          '(SELECT '
-            'userid,'
-            'dbid,'
-            'md5(query) as q_md5,'
-            'row_number() over (ORDER BY sum(total_time) DESC) AS exec_time_rank,'
-            'row_number() over (ORDER BY sum(calls) DESC) AS calls_rank,'
-            'row_number() over (ORDER BY sum(blk_read_time + blk_write_time) DESC) AS io_time_rank,'
-            'row_number() over (ORDER BY sum(shared_blks_hit + shared_blks_read) DESC) AS gets_rank,'
-            'row_number() over (ORDER BY sum(shared_blks_read) DESC) AS read_rank,'
-            'row_number() over (ORDER BY sum(shared_blks_dirtied) DESC) AS dirtied_rank,'
-            'row_number() over (ORDER BY sum(shared_blks_written) DESC) AS written_rank,'
-            'row_number() over (ORDER BY sum(temp_blks_written + local_blks_written) DESC) AS tempw_rank,'
-            'row_number() over (ORDER BY sum(temp_blks_read + local_blks_read) DESC) AS tempr_rank '
-          'FROM {statements_view} '
-          'GROUP BY userid, dbid, md5(query)) rank_st '
-          'ON (st.userid=rank_st.userid AND st.dbid=rank_st.dbid AND md5(st.query) = rank_st.q_md5) '
-        );
-        st_query := replace(st_query, '{statements_rank}',
-          'exec_time_rank,'
-          'calls_rank,'
-          'io_time_rank,'
-          'gets_rank,'
-          'read_rank,'
-          'tempw_rank,'
-          'tempr_rank,'
-          'dirtied_rank,'
-          'written_rank'
-        );
-        st_query := replace(st_query, '{statements_fields}',
-          'NULL as plans,'
-          'NULL as total_plan_time,'
-          'NULL as min_plan_time,'
-          'NULL as max_plan_time,'
-          'NULL as mean_plan_time,'
-          'NULL as stddev_plan_time,'
-          'st.calls,'
-          'st.total_time as total_exec_time,'
-          'st.min_time as min_exec_time,'
-          'st.max_time as max_exec_time,'
-          'st.mean_time as mean_exec_time,'
-          'st.stddev_time as stddev_exec_time,'
-          'st.rows,'
-          'st.shared_blks_hit,'
-          'st.shared_blks_read,'
-          'st.shared_blks_dirtied,'
-          'st.shared_blks_written,'
-          'st.local_blks_hit,'
-          'st.local_blks_read,'
-          'st.local_blks_dirtied,'
-          'st.local_blks_written,'
-          'st.temp_blks_read,'
-          'st.temp_blks_written,'
-          'st.blk_read_time,'
-          'st.blk_write_time,'
-          'NULL as wal_records,'
-          'NULL as wal_fpi,'
-          'NULL as wal_bytes,'
-          'regexp_replace(st.query,''\s+'','' '',''g'') AS query'
-        );
-        st_query := replace(st_query, '{statements_view}',
-          format('%1$I.pg_stat_statements',
-            (
-              SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
-                AS x(extname text, extnamespace text)
-              WHERE extname = 'pg_stat_statements'
-            )
-          )
-        );
-      -- pg_stat_statements v 1.8
-      WHEN (
-        SELECT count(*) = 1
-        FROM jsonb_to_recordset(properties #> '{extensions}')
-          AS ext(extname text, extversion text)
-        WHERE extname = 'pg_stat_statements'
-          AND extversion IN ('1.8')
-      )
-      THEN
-        st_query := replace(st_query, '{statements_join}',
-          'JOIN '
-          '(SELECT '
-            'userid,'
-            'dbid,'
-            'md5(query) as q_md5,'
-            'row_number() over (ORDER BY sum(total_plan_time + total_exec_time) DESC) AS time_rank,'
-            'row_number() over (ORDER BY sum(total_plan_time) DESC) AS plan_time_rank,'
-            'row_number() over (ORDER BY sum(total_exec_time) DESC) AS exec_time_rank,'
-            'row_number() over (ORDER BY sum(calls) DESC) AS calls_rank,'
-            'row_number() over (ORDER BY sum(blk_read_time + blk_write_time) DESC) AS io_time_rank,'
-            'row_number() over (ORDER BY sum(shared_blks_hit + shared_blks_read) DESC) AS gets_rank,'
-            'row_number() over (ORDER BY sum(shared_blks_read) DESC) AS read_rank,'
-            'row_number() over (ORDER BY sum(shared_blks_dirtied) DESC) AS dirtied_rank,'
-            'row_number() over (ORDER BY sum(shared_blks_written) DESC) AS written_rank,'
-            'row_number() over (ORDER BY sum(temp_blks_written + local_blks_written) DESC) AS tempw_rank,'
-            'row_number() over (ORDER BY sum(temp_blks_read + local_blks_read) DESC) AS tempr_rank,'
-            'row_number() over (ORDER BY sum(wal_bytes) DESC) AS wal_rank '
-          'FROM {statements_view} '
-          'GROUP BY userid, dbid, md5(query)) rank_st '
-          'ON (st.userid=rank_st.userid AND st.dbid=rank_st.dbid AND md5(st.query) = rank_st.q_md5) '
-        );
-        st_query := replace(st_query, '{statements_rank}',
-          'time_rank,'
-          'plan_time_rank,'
-          'exec_time_rank,'
-          'calls_rank,'
-          'io_time_rank,'
-          'gets_rank,'
-          'read_rank,'
-          'dirtied_rank,'
-          'written_rank,'
-          'tempw_rank,'
-          'tempr_rank,'
-          'wal_rank'
-        );
-        st_query := replace(st_query, '{statements_fields}',
-          'st.plans,'
-          'st.total_plan_time,'
-          'st.min_plan_time,'
-          'st.max_plan_time,'
-          'st.mean_plan_time,'
-          'st.stddev_plan_time,'
-          'st.calls,'
-          'st.total_exec_time,'
-          'st.min_exec_time,'
-          'st.max_exec_time,'
-          'st.mean_exec_time,'
-          'st.stddev_exec_time,'
-          'st.rows,'
-          'st.shared_blks_hit,'
-          'st.shared_blks_read,'
-          'st.shared_blks_dirtied,'
-          'st.shared_blks_written,'
-          'st.local_blks_hit,'
-          'st.local_blks_read,'
-          'st.local_blks_dirtied,'
-          'st.local_blks_written,'
-          'st.temp_blks_read,'
-          'st.temp_blks_written,'
-          'st.blk_read_time,'
-          'st.blk_write_time,'
-          'st.wal_records,'
-          'st.wal_fpi,'
-          'st.wal_bytes,'
-          'regexp_replace(st.query,''\s+'','' '',''g'') AS query'
-        );
-        st_query := replace(st_query, '{statements_view}',
-          format('%1$I.pg_stat_statements',
-            (
-              SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
-                AS x(extname text, extnamespace text)
-              WHERE extname = 'pg_stat_statements'
-            )
-          )
-        );
-      ELSE
-        RAISE 'Unsupported pg_stat_statements version. Supported versions are 1.3 - 1.8';
-    END CASE;
-
-    -- Sample data from pg_stat_statements and pg_stat_kcache top whole cluster statements
-    FOR qres IN
-        SELECT
-          -- pg_stat_statements fields
-          sserver_id,
-          s_id AS sample_id,
-          dbl.userid AS userid,
-          dbl.datid AS datid,
-          dbl.queryid AS queryid,
-          dbl.queryid_md5 AS queryid_md5,
-          dbl.plans AS plans,
-          dbl.total_plan_time AS total_plan_time,
-          dbl.min_plan_time AS min_plan_time,
-          dbl.max_plan_time AS max_plan_time,
-          dbl.mean_plan_time AS mean_plan_time,
-          dbl.stddev_plan_time AS stddev_plan_time,
-          dbl.calls  AS calls,
-          dbl.total_exec_time  AS total_exec_time,
-          dbl.min_exec_time  AS min_exec_time,
-          dbl.max_exec_time  AS max_exec_time,
-          dbl.mean_exec_time  AS mean_exec_time,
-          dbl.stddev_exec_time  AS stddev_exec_time,
-          dbl.rows  AS rows,
-          dbl.shared_blks_hit  AS shared_blks_hit,
-          dbl.shared_blks_read  AS shared_blks_read,
-          dbl.shared_blks_dirtied  AS shared_blks_dirtied,
-          dbl.shared_blks_written  AS shared_blks_written,
-          dbl.local_blks_hit  AS local_blks_hit,
-          dbl.local_blks_read  AS local_blks_read,
-          dbl.local_blks_dirtied  AS local_blks_dirtied,
-          dbl.local_blks_written  AS local_blks_written,
-          dbl.temp_blks_read  AS temp_blks_read,
-          dbl.temp_blks_written  AS temp_blks_written,
-          dbl.blk_read_time  AS blk_read_time,
-          dbl.blk_write_time  AS blk_write_time,
-          dbl.wal_records AS wal_records,
-          dbl.wal_fpi AS wal_fpi,
-          dbl.wal_bytes AS wal_bytes,
-          dbl.query AS query,
-          -- pg_stat_kcache fields
-          dbl.kcache_avail AS kcache_avail,
-          dbl.user_time  AS user_time,
-          dbl.system_time  AS system_time,
-          dbl.minflts  AS minflts,
-          dbl.majflts  AS majflts,
-          dbl.nswaps  AS nswaps,
-          dbl.reads  AS reads,
-          dbl.writes  AS writes,
-          dbl.msgsnds  AS msgsnds,
-          dbl.msgrcvs  AS msgrcvs,
-          dbl.nsignals  AS nsignals,
-          dbl.nvcsws  AS nvcsws,
-          dbl.nivcsws  AS nivcsws
-        FROM dblink('server_connection',st_query)
-        AS dbl (
-          -- pg_stat_statements fields
-            userid              oid,
-            datid               oid,
-            queryid             bigint,
-            queryid_md5         char(10),
-            plans               bigint,
-            total_plan_time     double precision,
-            min_plan_time       double precision,
-            max_plan_time       double precision,
-            mean_plan_time      double precision,
-            stddev_plan_time    double precision,
-            calls               bigint,
-            total_exec_time     double precision,
-            min_exec_time       double precision,
-            max_exec_time       double precision,
-            mean_exec_time      double precision,
-            stddev_exec_time    double precision,
-            rows                bigint,
-            shared_blks_hit     bigint,
-            shared_blks_read    bigint,
-            shared_blks_dirtied bigint,
-            shared_blks_written bigint,
-            local_blks_hit      bigint,
-            local_blks_read     bigint,
-            local_blks_dirtied  bigint,
-            local_blks_written  bigint,
-            temp_blks_read      bigint,
-            temp_blks_written   bigint,
-            blk_read_time       double precision,
-            blk_write_time      double precision,
-            wal_records         bigint,
-            wal_fpi             bigint,
-            wal_bytes           numeric,
-            query               text,
-          -- pg_stat_kcache fields
-            kcache_avail        boolean,
-            user_time           double precision, --  User CPU time used
-            system_time         double precision, --  System CPU time used
-            minflts             bigint, -- Number of page reclaims (soft page faults)
-            majflts             bigint, -- Number of page faults (hard page faults)
-            nswaps              bigint, -- Number of swaps
-            reads               bigint, -- Number of bytes read by the filesystem layer
-            --reads_blks          bigint, -- Number of 8K blocks read by the filesystem layer
-            writes              bigint, -- Number of bytes written by the filesystem layer
-            --writes_blks         bigint, -- Number of 8K blocks written by the filesystem layer
-            msgsnds             bigint, -- Number of IPC messages sent
-            msgrcvs             bigint, -- Number of IPC messages received
-            nsignals            bigint, -- Number of signals received
-            nvcsws              bigint, -- Number of voluntary context switches
-            nivcsws             bigint
-        ) JOIN sample_stat_database sd ON (dbl.datid = sd.datid AND sd.sample_id = s_id AND sd.server_id = sserver_id)
-    LOOP
-        INSERT INTO stmt_list(
-          queryid_md5,
-          query
-        )
-        VALUES (qres.queryid_md5,qres.query) ON CONFLICT DO NOTHING;
-
-        INSERT INTO sample_statements(
-          server_id,
-          sample_id,
-          userid,
-          datid,
-          queryid,
-          queryid_md5,
-          plans,
-          total_plan_time,
-          min_plan_time,
-          max_plan_time,
-          mean_plan_time,
-          stddev_plan_time,
-          calls,
-          total_exec_time,
-          min_exec_time,
-          max_exec_time,
-          mean_exec_time,
-          stddev_exec_time,
-          rows,
-          shared_blks_hit,
-          shared_blks_read,
-          shared_blks_dirtied,
-          shared_blks_written,
-          local_blks_hit,
-          local_blks_read,
-          local_blks_dirtied,
-          local_blks_written,
-          temp_blks_read,
-          temp_blks_written,
-          blk_read_time,
-          blk_write_time,
-          wal_records,
-          wal_fpi,
-          wal_bytes
-        )
-        VALUES (
-            qres.sserver_id,
-            qres.sample_id,
-            qres.userid,
-            qres.datid,
-            qres.queryid,
-            qres.queryid_md5,
-            qres.plans,
-            qres.total_plan_time,
-            qres.min_plan_time,
-            qres.max_plan_time,
-            qres.mean_plan_time,
-            qres.stddev_plan_time,
-            qres.calls,
-            qres.total_exec_time,
-            qres.min_exec_time,
-            qres.max_exec_time,
-            qres.mean_exec_time,
-            qres.stddev_exec_time,
-            qres.rows,
-            qres.shared_blks_hit,
-            qres.shared_blks_read,
-            qres.shared_blks_dirtied,
-            qres.shared_blks_written,
-            qres.local_blks_hit,
-            qres.local_blks_read,
-            qres.local_blks_dirtied,
-            qres.local_blks_written,
-            qres.temp_blks_read,
-            qres.temp_blks_written,
-            qres.blk_read_time,
-            qres.blk_write_time,
-            qres.wal_records,
-            qres.wal_fpi,
-            qres.wal_bytes
-        );
-        IF qres.kcache_avail THEN
-          INSERT INTO sample_kcache(
-            server_id,
-            sample_id,
-            userid,
-            datid,
-            queryid,
-            queryid_md5,
-            user_time,
-            system_time,
-            minflts,
-            majflts,
-            nswaps,
-            reads,
-            writes,
-            msgsnds,
-            msgrcvs,
-            nsignals,
-            nvcsws,
-            nivcsws
-          )
-          VALUES (
-            qres.sserver_id,
-            qres.sample_id,
-            qres.userid,
-            qres.datid,
-            qres.queryid,
-            qres.queryid_md5,
-            qres.user_time,
-            qres.system_time,
-            qres.minflts,
-            qres.majflts,
-            qres.nswaps,
-            qres.reads,
-            qres.writes,
-            qres.msgsnds,
-            qres.msgrcvs,
-            qres.nsignals,
-            qres.nvcsws,
-            qres.nivcsws
-          );
-        END IF;
-    END LOOP;
-
-    -- Aggregeted pg_stat_kcache data
-    CASE (
-        SELECT extversion FROM jsonb_to_recordset(properties #> '{extensions}')
-          AS x(extname text, extversion text)
-        WHERE extname = 'pg_stat_kcache'
-    )
-      WHEN '2.1.0','2.1.1','2.1.2','2.1.3' THEN
-        INSERT INTO sample_kcache_total(
-          server_id,
-          sample_id,
-          datid,
-          user_time,
-          system_time,
-          minflts,
-          majflts,
-          nswaps,
-          reads,
-          writes,
-          msgsnds,
-          msgrcvs,
-          nsignals,
-          nvcsws,
-          nivcsws,
-          statements
-        )
-        SELECT sd.server_id,sd.sample_id,dbl.*
-        FROM
-        dblink('server_connection',
-          format('SELECT
-              dbid as datid,
-              sum(user_time),
-              sum(system_time),
-              sum(minflts),
-              sum(majflts),
-              sum(nswaps),
-              sum(reads),
-              sum(writes),
-              sum(msgsnds),
-              sum(msgrcvs),
-              sum(nsignals),
-              sum(nvcsws),
-              sum(nivcsws ),
-              count(*)
-            FROM %1$I.pg_stat_kcache()
-            GROUP BY dbid',
-              (
-                SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
-                  AS x(extname text, extnamespace text)
-                WHERE extname = 'pg_stat_kcache'
-              )
-            )
-          ) AS dbl (
-            datid               oid,
-            user_time           double precision,
-            system_time         double precision,
-            minflts             bigint,
-            majflts             bigint, -- Number of page faults (hard page faults)
-            nswaps              bigint, -- Number of swaps
-            reads               bigint, -- Number of bytes read by the filesystem layer
-            writes              bigint, -- Number of bytes written by the filesystem layer
-            msgsnds             bigint, -- Number of IPC messages sent
-            msgrcvs             bigint, -- Number of IPC messages received
-            nsignals            bigint, -- Number of signals received
-            nvcsws              bigint, -- Number of voluntary context switches
-            nivcsws             bigint,
-            stmts               integer
-        ) JOIN sample_stat_database sd USING (datid)
-        WHERE sd.sample_id = s_id AND sd.server_id = sserver_id;
-
-        -- Flushing pg_stat_kcache
-        SELECT * INTO qres FROM dblink('server_connection',
-          format('SELECT %1$I.pg_stat_kcache_reset()',
-            (
-              SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
-                AS x(extname text, extnamespace text)
-              WHERE extname = 'pg_stat_kcache'
-            )
-          )
-        ) AS t(res char(1));
-      ELSE
-        NULL;
-    END CASE;
-
-    -- Aggregeted statements data
-    CASE
-      -- pg_stat_statements v 1.3-1.7
-      WHEN (
-        SELECT count(*) = 1
-        FROM jsonb_to_recordset(properties #> '{extensions}')
-          AS ext(extname text, extversion text)
-        WHERE extname = 'pg_stat_statements'
-          AND extversion IN ('1.3','1.4','1.5','1.6','1.7')
-      )
-      THEN
-        st_query := format('SELECT '
-            'dbid as datid,'
-            'NULL,' -- plans
-            'NULL,' -- total_plan_time
-            'sum(calls),'
-            'sum(total_time),'
-            'sum(rows),'
-            'sum(shared_blks_hit),'
-            'sum(shared_blks_read),'
-            'sum(shared_blks_dirtied),'
-            'sum(shared_blks_written),'
-            'sum(local_blks_hit),'
-            'sum(local_blks_read),'
-            'sum(local_blks_dirtied),'
-            'sum(local_blks_written),'
-            'sum(temp_blks_read),'
-            'sum(temp_blks_written),'
-            'sum(blk_read_time),'
-            'sum(blk_write_time),'
-            'NULL,' -- wal_records
-            'NULL,' -- wal_fpi
-            'NULL,' -- wal_bytes
-            'count(*) '
-        'FROM %1$I.pg_stat_statements '
-        'GROUP BY dbid',
-          (
-            SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
-              AS x(extname text, extnamespace text)
-            WHERE extname = 'pg_stat_statements'
-          )
-        );
-      -- pg_stat_statements v 1.8
-      WHEN (
-        SELECT count(*) = 1
-        FROM jsonb_to_recordset(properties #> '{extensions}')
-          AS ext(extname text, extversion text)
-        WHERE extname = 'pg_stat_statements'
-          AND extversion IN ('1.8')
-      )
-      THEN
-        st_query := format('SELECT '
-            'dbid as datid,'
-            'sum(plans),'
-            'sum(total_plan_time),'
-            'sum(calls),'
-            'sum(total_exec_time),'
-            'sum(rows),'
-            'sum(shared_blks_hit),'
-            'sum(shared_blks_read),'
-            'sum(shared_blks_dirtied),'
-            'sum(shared_blks_written),'
-            'sum(local_blks_hit),'
-            'sum(local_blks_read),'
-            'sum(local_blks_dirtied),'
-            'sum(local_blks_written),'
-            'sum(temp_blks_read),'
-            'sum(temp_blks_written),'
-            'sum(blk_read_time),'
-            'sum(blk_write_time),'
-            'sum(wal_records),'
-            'sum(wal_fpi),'
-            'sum(wal_bytes),'
-            'count(*) '
-        'FROM %1$I.pg_stat_statements '
-        'GROUP BY dbid',
-          (
-            SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
-              AS x(extname text, extnamespace text)
-            WHERE extname = 'pg_stat_statements'
-          )
-        );
-      ELSE
-        RAISE 'Unsupported pg_stat_statements version. Supported versions are 1.3, 1.4, 1.5, 1.6, 1.7, 1.8';
-    END CASE;
-
-    INSERT INTO sample_statements_total(
-      server_id,
-      sample_id,
-      datid,
-      plans,
-      total_plan_time,
-      calls,
-      total_exec_time,
-      rows,
-      shared_blks_hit,
-      shared_blks_read,
-      shared_blks_dirtied,
-      shared_blks_written,
-      local_blks_hit,
-      local_blks_read,
-      local_blks_dirtied,
-      local_blks_written,
-      temp_blks_read,
-      temp_blks_written,
-      blk_read_time,
-      blk_write_time,
-      wal_records,
-      wal_fpi,
-      wal_bytes,
-      statements
-    )
-    SELECT sd.server_id,sd.sample_id,dbl.*
-    FROM
-    dblink('server_connection',st_query
-    ) AS dbl (
-        datid               oid,
-        plans               bigint,
-        total_plan_time     double precision,
-        calls               bigint,
-        total_exec_time     double precision,
-        rows                bigint,
-        shared_blks_hit     bigint,
-        shared_blks_read    bigint,
-        shared_blks_dirtied bigint,
-        shared_blks_written bigint,
-        local_blks_hit      bigint,
-        local_blks_read     bigint,
-        local_blks_dirtied  bigint,
-        local_blks_written  bigint,
-        temp_blks_read      bigint,
-        temp_blks_written   bigint,
-        blk_read_time       double precision,
-        blk_write_time      double precision,
-        wal_records         bigint,
-        wal_fpi             bigint,
-        wal_bytes           numeric,
-        stmts               integer
-    ) JOIN sample_stat_database sd USING (datid)
-    WHERE sd.sample_id = s_id AND sd.server_id = sserver_id;
-
-    -- Flushing statements
-    CASE
-      -- pg_stat_statements v 1.3-1.8
-      WHEN (
-        SELECT count(*) = 1
-        FROM jsonb_to_recordset(properties #> '{extensions}')
-          AS ext(extname text, extversion text)
-        WHERE extname = 'pg_stat_statements'
-          AND extversion IN ('1.3','1.4','1.5','1.6','1.7','1.8')
-      )
-      THEN
-        SELECT * INTO qres FROM dblink('server_connection',
-          format('SELECT %1$I.pg_stat_statements_reset()',
-            (
-              SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
-                AS x(extname text, extnamespace text)
-              WHERE extname = 'pg_stat_statements'
-            )
-          )
-        ) AS t(res char(1));
-      ELSE
-        RAISE 'Unsupported pg_stat_statements version. Supported versions are 1.3 - 1.8';
-    END CASE;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION collect_obj_stats(IN properties jsonb, IN sserver_id integer, IN s_id integer) RETURNS integer SET search_path=@extschema@,public AS $$
+CREATE FUNCTION collect_obj_stats(IN properties jsonb, IN sserver_id integer, IN s_id integer) RETURNS jsonb SET search_path=@extschema@,public AS $$
 DECLARE
     --Cursor for db stats
     c_dblist CURSOR FOR
@@ -1632,6 +982,7 @@ DECLARE
     qres        record;
     db_connstr  text;
     t_query     text;
+    result      jsonb;
 BEGIN
     -- Adding dblink extension schema to search_path if it does not already there
     SELECT extnamespace::regnamespace AS dblink_schema INTO STRICT qres FROM pg_catalog.pg_extension WHERE extname = 'dblink';
@@ -1639,11 +990,12 @@ BEGIN
       EXECUTE 'SET LOCAL search_path TO ' || current_setting('search_path')||','|| qres.dblink_schema;
     END IF;
 
-
     -- Disconnecting existing connection
     IF dblink_get_connections() @> ARRAY['server_db_connection'] THEN
         PERFORM dblink_disconnect('server_db_connection');
     END IF;
+
+    result := properties;
 
     -- Load new data from statistic views of all cluster databases
     FOR qres IN c_dblist LOOP
@@ -1651,6 +1003,10 @@ BEGIN
       PERFORM dblink_connect('server_db_connection',db_connstr);
       -- Setting lock_timout prevents hanging of take_sample() call due to DDL in long transaction
       PERFORM dblink('server_db_connection','SET lock_timeout=3000');
+
+      IF (properties #>> '{collect_timings}')::boolean THEN
+        result := jsonb_set(result,ARRAY['timings',format('db:%s collect tables stats',qres.datname)],jsonb_build_object('start',clock_timestamp()));
+      END IF;
 
       -- Generate Table stats query
       CASE
@@ -1892,6 +1248,11 @@ BEGIN
           relkind               char
       );
 
+      IF (result #>> '{collect_timings}')::boolean THEN
+        result := jsonb_set(result,ARRAY['timings',format('db:%s collect tables stats',qres.datname),'end'],to_jsonb(clock_timestamp()));
+        result := jsonb_set(result,ARRAY['timings',format('db:%s collect indexes stats',qres.datname)],jsonb_build_object('start',clock_timestamp()));
+      END IF;
+
       -- Generate index stats query
       t_query := 'SELECT st.*,'
         'stio.idx_blks_read,'
@@ -1962,6 +1323,11 @@ BEGIN
          indisunique    bool
       );
 
+      IF (result #>> '{collect_timings}')::boolean THEN
+        result := jsonb_set(result,ARRAY['timings',format('db:%s collect indexes stats',qres.datname),'end'],to_jsonb(clock_timestamp()));
+        result := jsonb_set(result,ARRAY['timings',format('db:%s collect functions stats',qres.datname)],jsonb_build_object('start',clock_timestamp()));
+      END IF;
+
       -- Generate Function stats query
       t_query := 'SELECT f.funcid,'
         'f.schemaname,'
@@ -2012,17 +1378,24 @@ BEGIN
       );
 
       PERFORM dblink_disconnect('server_db_connection');
+      IF (result #>> '{collect_timings}')::boolean THEN
+        result := jsonb_set(result,ARRAY['timings',format('db:%s collect functions stats',qres.datname),'end'],to_jsonb(clock_timestamp()));
+      END IF;
     END LOOP;
-   RETURN 0;
+   RETURN result;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION sample_dbobj_delta(IN sserver_id integer, IN s_id integer, IN topn integer) RETURNS integer AS $$
+CREATE FUNCTION sample_dbobj_delta(IN properties jsonb, IN sserver_id integer, IN s_id integer, IN topn integer) RETURNS jsonb AS $$
 DECLARE
     qres    record;
+    result  jsonb;
 BEGIN
 
     -- Calculating difference from previous sample and storing it in sample_stat_ tables
+    IF (properties #>> '{collect_timings}')::boolean THEN
+      result := jsonb_set(properties,'{timings,calculate tables stats}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
     -- Stats of user tables
     FOR qres IN
         SELECT
@@ -2464,6 +1837,11 @@ BEGIN
     WHERE cur.sample_id = s_id AND cur.server_id = sserver_id
     GROUP BY cur.server_id, cur.sample_id, cur.datid, cur.relkind, cur.tablespaceid;
 
+    IF (result #>> '{collect_timings}')::boolean THEN
+      result := jsonb_set(result,'{timings,calculate tables stats,end}',to_jsonb(clock_timestamp()));
+      result := jsonb_set(result,'{timings,calculate indexes stats}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
     -- Stats of user indexes
     FOR qres IN
         SELECT
@@ -2808,6 +2186,11 @@ BEGIN
     WHERE cur.sample_id = s_id AND cur.server_id = sserver_id
     GROUP BY cur.server_id, cur.sample_id, cur.datid,cur.tablespaceid;
 
+    IF (result #>> '{collect_timings}')::boolean THEN
+      result := jsonb_set(result,'{timings,calculate indexes stats,end}',to_jsonb(clock_timestamp()));
+      result := jsonb_set(result,'{timings,calculate functions stats}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
     -- User functions stats
     FOR qres IN
         SELECT
@@ -2902,6 +2285,10 @@ BEGIN
     WHERE cur.sample_id = s_id AND cur.server_id = sserver_id
     GROUP BY cur.server_id, cur.sample_id, cur.datid, cur.trg_fn;
 
+    IF (result #>> '{collect_timings}')::boolean THEN
+      result := jsonb_set(result,'{timings,calculate functions stats,end}',to_jsonb(clock_timestamp()));
+    END IF;
+
     -- Clear data in last_ tables, holding data only for next diff sample
     DELETE FROM last_stat_tables WHERE server_id=sserver_id AND sample_id != s_id;
 
@@ -2909,11 +2296,11 @@ BEGIN
 
     DELETE FROM last_stat_user_functions WHERE server_id=sserver_id AND sample_id != s_id;
 
-    RETURN 0;
+    RETURN result;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION show_samples(IN server name,IN days integer = NULL)
+CREATE FUNCTION show_samples(IN server name,IN days integer = NULL)
 RETURNS TABLE(
     sample integer,
     sample_time timestamp (0) with time zone,
@@ -2941,7 +2328,7 @@ SET search_path=@extschema@,public AS $$
 $$ LANGUAGE sql;
 COMMENT ON FUNCTION show_samples(IN server name,IN days integer) IS 'Display available server samples';
 
-CREATE OR REPLACE FUNCTION show_samples(IN days integer = NULL)
+CREATE FUNCTION show_samples(IN days integer = NULL)
 RETURNS TABLE(
     sample integer,
     sample_time timestamp (0) with time zone,

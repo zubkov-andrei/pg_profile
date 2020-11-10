@@ -1,6 +1,6 @@
 /* ===== pg_stat_statements checks ===== */
 
-CREATE OR REPLACE FUNCTION check_stmt_cnt(IN sserver_id integer, IN start_id integer = 0, IN end_id integer = 0) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION check_stmt_cnt(IN sserver_id integer, IN start_id integer = 0, IN end_id integer = 0) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     tab_tpl CONSTANT text :=
       '<table>'
@@ -80,7 +80,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION check_stmt_all_setting(IN sserver_id integer, IN start_id integer, IN end_id integer)
+CREATE FUNCTION check_stmt_all_setting(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS integer SET search_path=@extschema@,public AS $$
     SELECT count(1)::integer
     FROM v_sample_settings

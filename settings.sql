@@ -1,5 +1,5 @@
 /*===== Settings reporting functions =====*/
-CREATE OR REPLACE FUNCTION settings_and_changes(IN sserver_id integer, IN start_id integer, IN end_id integer)
+CREATE FUNCTION settings_and_changes(IN sserver_id integer, IN start_id integer, IN end_id integer)
   RETURNS TABLE(
     first_seen          timestamp(0) with time zone,
     setting_scope       smallint,
@@ -50,7 +50,7 @@ SET search_path=@extschema@,public AS $$
   WHERE s.server_id = sserver_id AND s.first_seen > s_start.sample_time AND s.first_seen <= s_end.sample_time
 $$ LANGUAGE SQL;
 
-CREATE OR REPLACE FUNCTION settings_and_changes_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer)
+CREATE FUNCTION settings_and_changes_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer)
   RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report_defined text := '';
@@ -135,7 +135,7 @@ BEGIN
           notes := array_append(notes,'Pending restart');
         END IF;
         notes := array_remove(notes,'');
-        IF r_result.default_val and NOT r_result.changed THEN
+        IF r_result.default_val AND NOT r_result.changed THEN
             report_default := report_default||format(
               jtab_tpl #>> ARRAY['init_tpl'],
               r_result.name,
@@ -143,6 +143,15 @@ BEGIN
               r_result.unit,
               r_result.sourcefile || ':' || r_result.sourceline::text,
               array_to_string(notes,', ')
+          );
+        ELSIF NOT r_result.changed THEN
+            report_defined := report_defined ||format(
+              jtab_tpl #>> ARRAY['init_tpl'],
+              r_result.name,
+              r_result.reset_val,
+              r_result.unit,
+              r_result.sourcefile || ':' || r_result.sourceline::text,
+              array_to_string(notes,',  ')
           );
         ELSE
             report_defined := report_defined ||format(
@@ -172,7 +181,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION settings_and_changes_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION settings_and_changes_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report_defined text := '';
@@ -306,8 +315,17 @@ BEGIN
           notes := array_append(notes,'Pending restart');
         END IF;
         notes := array_remove(notes,'');
-        IF r_result.default_val and NOT r_result.changed THEN
+        IF r_result.default_val AND NOT r_result.changed THEN
           report_default := report_default||format(
+              jtab_tpl #>> ARRAY[v_init_tpl],
+              r_result.name,
+              r_result.reset_val,
+              r_result.unit,
+              r_result.sourcefile || ':' || r_result.sourceline::text,
+              array_to_string(notes,',')
+          );
+        ELSIF NOT r_result.changed THEN
+          report_defined := report_defined||format(
               jtab_tpl #>> ARRAY[v_init_tpl],
               r_result.name,
               r_result.reset_val,

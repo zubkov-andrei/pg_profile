@@ -2,7 +2,7 @@
 
 /* ========= Cluster databases report functions ========= */
 
-CREATE OR REPLACE FUNCTION dbstats(IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
+CREATE FUNCTION dbstats(IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
 RETURNS TABLE(
     server_id         integer,
     datid             oid,
@@ -52,7 +52,7 @@ SET search_path=@extschema@,public AS $$
     GROUP BY st.server_id, st.datid, st.datname
 $$ LANGUAGE sql;
 
-CREATE OR REPLACE FUNCTION dbstats_reset(IN sserver_id integer, IN start_id integer, IN end_id integer)
+CREATE FUNCTION dbstats_reset(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS TABLE(
   datname       name,
   stats_reset   timestamp with time zone,
@@ -64,14 +64,14 @@ SET search_path=@extschema@,public AS $$
         st1.stats_reset,
         st1.sample_id
     FROM sample_stat_database st1
-        LEFT JOIN sample_stat_database st2 ON
-          (st2.server_id = st1.server_id AND st2.sample_id = st1.sample_id - 1 AND st2.datid = st1.datid)
+        LEFT JOIN sample_stat_database st0 ON
+          (st0.server_id = st1.server_id AND st0.sample_id = st1.sample_id - 1 AND st0.datid = st1.datid)
     WHERE st1.server_id = sserver_id AND st1.datname NOT LIKE 'template_' AND st1.sample_id BETWEEN start_id + 1 AND end_id
-      AND st1.stats_reset != st2.stats_reset
+      AND nullif(st1.stats_reset,st0.stats_reset) IS NOT NULL
     ORDER BY sample_id ASC
 $$ LANGUAGE sql;
 
-CREATE OR REPLACE FUNCTION dbstats_reset_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION dbstats_reset_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -125,7 +125,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION dbstats_reset_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION dbstats_reset_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
 IN start2_id integer, IN end2_id integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -205,7 +205,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION dbstats_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION dbstats_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -214,20 +214,20 @@ DECLARE
     c_dbstats CURSOR FOR
     SELECT
         COALESCE(st.dbname,'Total') as dbname,
-        sum(st.xact_commit) as xact_commit,
-        sum(st.xact_rollback) as xact_rollback,
-        sum(st.blks_read) as blks_read,
-        sum(st.blks_hit) as blks_hit,
-        sum(st.tup_returned) as tup_returned,
-        sum(st.tup_fetched) as tup_fetched,
-        sum(st.tup_inserted) as tup_inserted,
-        sum(st.tup_updated) as tup_updated,
-        sum(st.tup_deleted) as tup_deleted,
-        sum(st.temp_files) as temp_files,
-        pg_size_pretty(sum(st.temp_bytes)) AS temp_bytes,
-        pg_size_pretty(sum(st_last.datsize)) AS datsize,
-        pg_size_pretty(sum(st.datsize_delta)) AS datsize_delta,
-        sum(st.deadlocks) as deadlocks,
+        NULLIF(sum(st.xact_commit), 0) as xact_commit,
+        NULLIF(sum(st.xact_rollback), 0) as xact_rollback,
+        NULLIF(sum(st.blks_read), 0) as blks_read,
+        NULLIF(sum(st.blks_hit), 0) as blks_hit,
+        NULLIF(sum(st.tup_returned), 0) as tup_returned,
+        NULLIF(sum(st.tup_fetched), 0) as tup_fetched,
+        NULLIF(sum(st.tup_inserted), 0) as tup_inserted,
+        NULLIF(sum(st.tup_updated), 0) as tup_updated,
+        NULLIF(sum(st.tup_deleted), 0) as tup_deleted,
+        NULLIF(sum(st.temp_files), 0) as temp_files,
+        pg_size_pretty(NULLIF(sum(st.temp_bytes), 0)) AS temp_bytes,
+        pg_size_pretty(NULLIF(sum(st_last.datsize), 0)) AS datsize,
+        pg_size_pretty(NULLIF(sum(st.datsize_delta), 0)) AS datsize_delta,
+        NULLIF(sum(st.deadlocks), 0) as deadlocks,
         (sum(st.blks_hit)*100/NULLIF(sum(st.blks_hit)+sum(st.blks_read),0))::double precision AS blks_hit_pct
     FROM dbstats(sserver_id,start_id,end_id,topn) st
       LEFT OUTER JOIN sample_stat_database st_last ON
@@ -321,7 +321,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 
-CREATE OR REPLACE FUNCTION dbstats_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION dbstats_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
    IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -331,35 +331,35 @@ DECLARE
     c_dbstats CURSOR FOR
     SELECT
         COALESCE(COALESCE(dbs1.dbname,dbs2.dbname),'Total') AS dbname,
-        sum(dbs1.xact_commit) AS xact_commit1,
-        sum(dbs1.xact_rollback) AS xact_rollback1,
-        sum(dbs1.blks_read) AS blks_read1,
-        sum(dbs1.blks_hit) AS blks_hit1,
-        sum(dbs1.tup_returned) AS tup_returned1,
-        sum(dbs1.tup_fetched) AS tup_fetched1,
-        sum(dbs1.tup_inserted) AS tup_inserted1,
-        sum(dbs1.tup_updated) AS tup_updated1,
-        sum(dbs1.tup_deleted) AS tup_deleted1,
-        sum(dbs1.temp_files) AS temp_files1,
-        pg_size_pretty(sum(dbs1.temp_bytes)) AS temp_bytes1,
-        pg_size_pretty(sum(st_last1.datsize)) AS datsize1,
-        pg_size_pretty(sum(dbs1.datsize_delta)) AS datsize_delta1,
-        sum(dbs1.deadlocks) AS deadlocks1,
+        NULLIF(sum(dbs1.xact_commit), 0) AS xact_commit1,
+        NULLIF(sum(dbs1.xact_rollback), 0) AS xact_rollback1,
+        NULLIF(sum(dbs1.blks_read), 0) AS blks_read1,
+        NULLIF(sum(dbs1.blks_hit), 0) AS blks_hit1,
+        NULLIF(sum(dbs1.tup_returned), 0) AS tup_returned1,
+        NULLIF(sum(dbs1.tup_fetched), 0) AS tup_fetched1,
+        NULLIF(sum(dbs1.tup_inserted), 0) AS tup_inserted1,
+        NULLIF(sum(dbs1.tup_updated), 0) AS tup_updated1,
+        NULLIF(sum(dbs1.tup_deleted), 0) AS tup_deleted1,
+        NULLIF(sum(dbs1.temp_files), 0) AS temp_files1,
+        pg_size_pretty(NULLIF(sum(dbs1.temp_bytes), 0)) AS temp_bytes1,
+        pg_size_pretty(NULLIF(sum(st_last1.datsize), 0)) AS datsize1,
+        pg_size_pretty(NULLIF(sum(dbs1.datsize_delta), 0)) AS datsize_delta1,
+        NULLIF(sum(dbs1.deadlocks), 0) AS deadlocks1,
         (sum(dbs1.blks_hit)*100/NULLIF(sum(dbs1.blks_hit)+sum(dbs1.blks_read),0))::double precision AS blks_hit_pct1,
-        sum(dbs2.xact_commit) AS xact_commit2,
-        sum(dbs2.xact_rollback) AS xact_rollback2,
-        sum(dbs2.blks_read) AS blks_read2,
-        sum(dbs2.blks_hit) AS blks_hit2,
-        sum(dbs2.tup_returned) AS tup_returned2,
-        sum(dbs2.tup_fetched) AS tup_fetched2,
-        sum(dbs2.tup_inserted) AS tup_inserted2,
-        sum(dbs2.tup_updated) AS tup_updated2,
-        sum(dbs2.tup_deleted) AS tup_deleted2,
-        sum(dbs2.temp_files) AS temp_files2,
-        pg_size_pretty(sum(dbs2.temp_bytes)) AS temp_bytes2,
-        pg_size_pretty(sum(st_last2.datsize)) AS datsize2,
-        pg_size_pretty(sum(dbs2.datsize_delta)) AS datsize_delta2,
-        sum(dbs2.deadlocks) AS deadlocks2,
+        NULLIF(sum(dbs2.xact_commit), 0) AS xact_commit2,
+        NULLIF(sum(dbs2.xact_rollback), 0) AS xact_rollback2,
+        NULLIF(sum(dbs2.blks_read), 0) AS blks_read2,
+        NULLIF(sum(dbs2.blks_hit), 0) AS blks_hit2,
+        NULLIF(sum(dbs2.tup_returned), 0) AS tup_returned2,
+        NULLIF(sum(dbs2.tup_fetched), 0) AS tup_fetched2,
+        NULLIF(sum(dbs2.tup_inserted), 0) AS tup_inserted2,
+        NULLIF(sum(dbs2.tup_updated), 0) AS tup_updated2,
+        NULLIF(sum(dbs2.tup_deleted), 0) AS tup_deleted2,
+        NULLIF(sum(dbs2.temp_files), 0) AS temp_files2,
+        pg_size_pretty(NULLIF(sum(dbs2.temp_bytes), 0)) AS temp_bytes2,
+        pg_size_pretty(NULLIF(sum(st_last2.datsize), 0)) AS datsize2,
+        pg_size_pretty(NULLIF(sum(dbs2.datsize_delta), 0)) AS datsize_delta2,
+        NULLIF(sum(dbs2.deadlocks), 0) AS deadlocks2,
         (sum(dbs2.blks_hit)*100/NULLIF(sum(dbs2.blks_hit)+sum(dbs2.blks_read),0))::double precision AS blks_hit_pct2
     FROM dbstats(sserver_id,start1_id,end1_id,topn) dbs1 FULL OUTER JOIN dbstats(sserver_id,start2_id,end2_id,topn) dbs2
         USING (server_id, datid)

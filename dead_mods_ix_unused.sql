@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION tbl_top_dead_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION tbl_top_dead_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -9,9 +9,9 @@ DECLARE
         sample_db.datname AS dbname,
         schemaname,
         relname,
-        n_live_tup,
-        n_dead_tup,
-        n_dead_tup*100/NULLIF(COALESCE(n_live_tup, 0) + COALESCE(n_dead_tup, 0), 0) AS dead_pct,
+        NULLIF(n_live_tup, 0) as n_live_tup,
+        n_dead_tup as n_dead_tup,
+        n_dead_tup * 100 / NULLIF(COALESCE(n_live_tup, 0) + COALESCE(n_dead_tup, 0), 0) AS dead_pct,
         last_autovacuum,
         pg_size_pretty(relsize) AS relsize
     FROM v_sample_stat_tables st
@@ -77,7 +77,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION tbl_top_mods_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION tbl_top_mods_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;

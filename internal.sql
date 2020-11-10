@@ -1,6 +1,6 @@
 /* ========= Internal functions ========= */
 
-CREATE OR REPLACE FUNCTION get_connstr(IN sserver_id integer) RETURNS text SET search_path=@extschema@,public SET lock_timeout=300000 AS $$
+CREATE FUNCTION get_connstr(IN sserver_id integer) RETURNS text SET search_path=@extschema@,public SET lock_timeout=300000 AS $$
 DECLARE
     server_connstr text = null;
 BEGIN
@@ -14,7 +14,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION nodata_wrapper(IN section_text text) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION nodata_wrapper(IN section_text text) RETURNS text SET search_path=@extschema@,public AS $$
 BEGIN
     IF section_text IS NULL OR section_text = '' THEN
         RETURN '<p>No data in this section</p>';
@@ -24,7 +24,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION jsonb_replace(IN dict jsonb, IN templates jsonb) RETURNS jsonb AS $$
+CREATE FUNCTION jsonb_replace(IN dict jsonb, IN templates jsonb) RETURNS jsonb AS $$
 DECLARE
     res_jsonb           jsonb;
     jsontemplkey        varchar(20);
@@ -42,7 +42,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION get_sampleids_by_timerange(IN sserver_id integer, IN time_range tstzrange)
+CREATE FUNCTION get_sampleids_by_timerange(IN sserver_id integer, IN time_range tstzrange)
 RETURNS TABLE (
     start_id    integer,
     end_id      integer
@@ -50,7 +50,12 @@ RETURNS TABLE (
 BEGIN
   SELECT min(s1.sample_id),max(s2.sample_id) INTO start_id,end_id FROM
     samples s1 JOIN
-    samples s2 ON (s1.server_id = s2.server_id AND s1.sample_id + 1 = s2.sample_id)
+    /* Here redundant join condition s1.sample_id < s2.sample_id is needed
+     * Otherwise optimizer is using tstzrange(s1.sample_time,s2.sample_time) && time_range
+     * as first join condition and some times failes with error
+     * ERROR:  range lower bound must be less than or equal to range upper bound
+     */
+    samples s2 ON (s1.sample_id < s2.sample_id AND s1.server_id = s2.server_id AND s1.sample_id + 1 = s2.sample_id)
   WHERE s1.server_id = sserver_id AND tstzrange(s1.sample_time,s2.sample_time) && time_range;
 
     IF start_id IS NULL OR end_id IS NULL THEN
@@ -62,7 +67,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION get_server_by_name(IN server name)
+CREATE FUNCTION get_server_by_name(IN server name)
 RETURNS integer SET search_path=@extschema@,public AS $$
 DECLARE
     sserver_id     integer;
@@ -76,7 +81,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION get_baseline_samples(IN sserver_id integer, baseline varchar(25))
+CREATE FUNCTION get_baseline_samples(IN sserver_id integer, baseline varchar(25))
 RETURNS TABLE (
     start_id    integer,
     end_id      integer

@@ -1,6 +1,6 @@
 /* ===== Tables stats functions ===== */
 
-CREATE OR REPLACE FUNCTION top_tables(IN sserver_id integer, IN start_id integer, IN end_id integer)
+CREATE FUNCTION top_tables(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS TABLE(
     server_id integer,
     datid oid,
@@ -101,7 +101,7 @@ RETURNS TABLE(
 $$ LANGUAGE sql;
 
 /* ===== Objects report functions ===== */
-CREATE OR REPLACE FUNCTION top_scan_tables_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION top_scan_tables_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
 
@@ -116,25 +116,25 @@ DECLARE
         schemaname,
         relname,
         reltoastrelid,
-        seq_scan,
-        seq_scan_blk_cnt,
-        idx_scan,
-        idx_tup_fetch,
-        n_tup_ins,
-        n_tup_upd,
-        n_tup_del,
-        n_tup_hot_upd,
-        toastseq_scan,
-        toastseq_scan_blk_cnt,
-        toastidx_scan,
-        toastidx_tup_fetch,
-        toastn_tup_ins,
-        toastn_tup_upd,
-        toastn_tup_del,
-        toastn_tup_hot_upd
+        NULLIF(seq_scan, 0) as seq_scan,
+        NULLIF(seq_scan_blk_cnt, 0) as seq_scan_blk_cnt,
+        NULLIF(idx_scan, 0) as idx_scan,
+        NULLIF(idx_tup_fetch, 0) as idx_tup_fetch,
+        NULLIF(n_tup_ins, 0) as n_tup_ins,
+        NULLIF(n_tup_upd, 0) as n_tup_upd,
+        NULLIF(n_tup_del, 0) as n_tup_del,
+        NULLIF(n_tup_hot_upd, 0) as n_tup_hot_upd,
+        NULLIF(toastseq_scan, 0) as toastseq_scan,
+        NULLIF(toastseq_scan_blk_cnt, 0) as toastseq_scan_blk_cnt,
+        NULLIF(toastidx_scan, 0) as toastidx_scan,
+        NULLIF(toastidx_tup_fetch, 0) as toastidx_tup_fetch,
+        NULLIF(toastn_tup_ins, 0) as toastn_tup_ins,
+        NULLIF(toastn_tup_upd, 0) as toastn_tup_upd,
+        NULLIF(toastn_tup_del, 0) as toastn_tup_del,
+        NULLIF(toastn_tup_hot_upd, 0) as toastn_tup_hot_upd
     FROM top_tables(sserver_id, start_id, end_id)
     WHERE seq_scan > 0
-    ORDER BY seq_scan_blk_cnt+COALESCE(toastseq_scan_blk_cnt,0) DESC
+    ORDER BY COALESCE(seq_scan_blk_cnt, 0) + COALESCE(toastseq_scan_blk_cnt, 0) DESC
     LIMIT topn;
 
     r_result RECORD;
@@ -260,7 +260,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_scan_tables_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION top_scan_tables_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
 IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -275,33 +275,40 @@ DECLARE
         COALESCE(tbl1.tablespacename,tbl2.tablespacename) AS tablespacename,
         COALESCE(tbl1.schemaname,tbl2.schemaname) AS schemaname,
         COALESCE(tbl1.relname,tbl2.relname) AS relname,
-        tbl1.seq_scan AS seq_scan1,
-        tbl1.seq_scan_blk_cnt AS seq_scan_blk_cnt1,
-        tbl1.idx_scan AS idx_scan1,
-        tbl1.idx_tup_fetch AS idx_tup_fetch1,
-        tbl1.toastseq_scan AS toastseq_scan1,
-        tbl1.toastseq_scan_blk_cnt AS toastseq_scan_blk_cnt1,
-        tbl1.toastidx_scan AS toastidx_scan1,
-        tbl1.toastidx_tup_fetch AS toastidx_tup_fetch1,
-        tbl2.seq_scan AS seq_scan2,
-        tbl2.seq_scan_blk_cnt AS seq_scan_blk_cnt2,
-        tbl2.idx_scan AS idx_scan2,
-        tbl2.idx_tup_fetch AS idx_tup_fetch2,
-        tbl2.toastseq_scan AS toastseq_scan2,
-        tbl2.toastseq_scan_blk_cnt AS toastseq_scan_blk_cnt2,
-        tbl2.toastidx_scan AS toastidx_scan2,
-        tbl2.toastidx_tup_fetch AS toastidx_tup_fetch2,
-        row_number() over (ORDER BY tbl1.seq_scan_blk_cnt + tbl1.toastseq_scan_blk_cnt DESC NULLS LAST) AS rn_seqpg1,
-        row_number() over (ORDER BY tbl2.seq_scan_blk_cnt + tbl2.toastseq_scan_blk_cnt DESC NULLS LAST) AS rn_seqpg2
+        NULLIF(tbl1.seq_scan, 0) AS seq_scan1,
+        NULLIF(tbl1.seq_scan_blk_cnt, 0) AS seq_scan_blk_cnt1,
+        NULLIF(tbl1.idx_scan, 0) AS idx_scan1,
+        NULLIF(tbl1.idx_tup_fetch, 0) AS idx_tup_fetch1,
+        NULLIF(tbl1.toastseq_scan, 0) AS toastseq_scan1,
+        NULLIF(tbl1.toastseq_scan_blk_cnt, 0) AS toastseq_scan_blk_cnt1,
+        NULLIF(tbl1.toastidx_scan, 0) AS toastidx_scan1,
+        NULLIF(tbl1.toastidx_tup_fetch, 0) AS toastidx_tup_fetch1,
+        NULLIF(tbl2.seq_scan, 0) AS seq_scan2,
+        NULLIF(tbl2.seq_scan_blk_cnt, 0) AS seq_scan_blk_cnt2,
+        NULLIF(tbl2.idx_scan, 0) AS idx_scan2,
+        NULLIF(tbl2.idx_tup_fetch, 0) AS idx_tup_fetch2,
+        NULLIF(tbl2.toastseq_scan, 0) AS toastseq_scan2,
+        NULLIF(tbl2.toastseq_scan_blk_cnt, 0) AS toastseq_scan_blk_cnt2,
+        NULLIF(tbl2.toastidx_scan, 0) AS toastidx_scan2,
+        NULLIF(tbl2.toastidx_tup_fetch, 0) AS toastidx_tup_fetch2,
+        row_number() over (ORDER BY COALESCE(tbl1.seq_scan_blk_cnt, 0) + COALESCE(tbl1.toastseq_scan_blk_cnt, 0) DESC NULLS LAST) AS rn_seqpg1,
+        row_number() over (ORDER BY COALESCE(tbl2.seq_scan_blk_cnt, 0) + COALESCE(tbl2.toastseq_scan_blk_cnt, 0) DESC NULLS LAST) AS rn_seqpg2
     FROM top_tables(sserver_id, start1_id, end1_id) tbl1
         FULL OUTER JOIN top_tables(sserver_id, start2_id, end2_id) tbl2 USING (server_id, datid, relid)
-    WHERE COALESCE(tbl1.seq_scan,tbl1.toastseq_scan,tbl2.seq_scan,tbl2.toastseq_scan) > 0
-    ORDER BY COALESCE(tbl1.seq_scan_blk_cnt,0) +
-      COALESCE(tbl1.toastseq_scan_blk_cnt,0) +
-      COALESCE(tbl2.seq_scan_blk_cnt,0) +
-      COALESCE(tbl2.toastseq_scan_blk_cnt,0)
+    WHERE COALESCE(tbl1.seq_scan_blk_cnt, 0) +
+      COALESCE(tbl1.toastseq_scan_blk_cnt, 0) +
+      COALESCE(tbl2.seq_scan_blk_cnt, 0) +
+      COALESCE(tbl2.toastseq_scan_blk_cnt, 0) > 0
+    ORDER BY
+      COALESCE(tbl1.seq_scan_blk_cnt, 0) +
+      COALESCE(tbl1.toastseq_scan_blk_cnt, 0) +
+      COALESCE(tbl2.seq_scan_blk_cnt, 0) +
+      COALESCE(tbl2.toastseq_scan_blk_cnt, 0)
     DESC) t1
-    WHERE rn_seqpg1 <= topn OR rn_seqpg2 <= topn;
+    WHERE least(
+        rn_seqpg1,
+        rn_seqpg2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN
@@ -395,7 +402,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_dml_tables_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION top_dml_tables_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
 
@@ -410,27 +417,27 @@ DECLARE
         schemaname,
         relname,
         reltoastrelid,
-        seq_scan,
-        seq_tup_read,
-        idx_scan,
-        idx_tup_fetch,
-        n_tup_ins,
-        n_tup_upd,
-        n_tup_del,
-        n_tup_hot_upd,
-        toastseq_scan,
-        toastseq_tup_read,
-        toastidx_scan,
-        toastidx_tup_fetch,
-        toastn_tup_ins,
-        toastn_tup_upd,
-        toastn_tup_del,
-        toastn_tup_hot_upd
+        NULLIF(seq_scan, 0) as seq_scan,
+        NULLIF(seq_tup_read, 0) as seq_tup_read,
+        NULLIF(idx_scan, 0) as idx_scan,
+        NULLIF(idx_tup_fetch, 0) as idx_tup_fetch,
+        NULLIF(n_tup_ins, 0) as n_tup_ins,
+        NULLIF(n_tup_upd, 0) as n_tup_upd,
+        NULLIF(n_tup_del, 0) as n_tup_del,
+        NULLIF(n_tup_hot_upd, 0) as n_tup_hot_upd,
+        NULLIF(toastseq_scan, 0) as toastseq_scan,
+        NULLIF(toastseq_tup_read, 0) as toastseq_tup_read,
+        NULLIF(toastidx_scan, 0) as toastidx_scan,
+        NULLIF(toastidx_tup_fetch, 0) as toastidx_tup_fetch,
+        NULLIF(toastn_tup_ins, 0) as toastn_tup_ins,
+        NULLIF(toastn_tup_upd, 0) as toastn_tup_upd,
+        NULLIF(toastn_tup_del, 0) as toastn_tup_del,
+        NULLIF(toastn_tup_hot_upd, 0) as toastn_tup_hot_upd
     FROM top_tables(sserver_id, start_id, end_id)
-    WHERE n_tup_ins+n_tup_upd+n_tup_del+
-      COALESCE(toastn_tup_ins+toastn_tup_upd+toastn_tup_del,0)> 0
-    ORDER BY n_tup_ins+n_tup_upd+n_tup_del+
-      COALESCE(toastn_tup_ins+toastn_tup_upd+toastn_tup_del,0) DESC
+    WHERE COALESCE(n_tup_ins, 0) + COALESCE(n_tup_upd, 0) + COALESCE(n_tup_del, 0) +
+      COALESCE(toastn_tup_ins, 0) + COALESCE(toastn_tup_upd, 0) + COALESCE(toastn_tup_del, 0) > 0
+    ORDER BY COALESCE(n_tup_ins, 0) + COALESCE(n_tup_upd, 0) + COALESCE(n_tup_del, 0) +
+      COALESCE(toastn_tup_ins, 0) + COALESCE(toastn_tup_upd, 0) + COALESCE(toastn_tup_del, 0) DESC
     LIMIT topn;
 
     r_result RECORD;
@@ -556,7 +563,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_dml_tables_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION top_dml_tables_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
 IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -571,37 +578,40 @@ DECLARE
         COALESCE(tbl1.tablespacename,tbl2.tablespacename) AS tablespacename,
         COALESCE(tbl1.schemaname,tbl2.schemaname) AS schemaname,
         COALESCE(tbl1.relname,tbl2.relname) AS relname,
-        tbl1.n_tup_ins AS n_tup_ins1,
-        tbl1.n_tup_upd AS n_tup_upd1,
-        tbl1.n_tup_del AS n_tup_del1,
-        tbl1.n_tup_hot_upd AS n_tup_hot_upd1,
-        tbl1.toastn_tup_ins AS toastn_tup_ins1,
-        tbl1.toastn_tup_upd AS toastn_tup_upd1,
-        tbl1.toastn_tup_del AS toastn_tup_del1,
-        tbl1.toastn_tup_hot_upd AS toastn_tup_hot_upd1,
-        tbl2.n_tup_ins AS n_tup_ins2,
-        tbl2.n_tup_upd AS n_tup_upd2,
-        tbl2.n_tup_del AS n_tup_del2,
-        tbl2.n_tup_hot_upd AS n_tup_hot_upd2,
-        tbl2.toastn_tup_ins AS toastn_tup_ins2,
-        tbl2.toastn_tup_upd AS toastn_tup_upd2,
-        tbl2.toastn_tup_del AS toastn_tup_del2,
-        tbl2.toastn_tup_hot_upd AS toastn_tup_hot_upd2,
-        row_number() OVER (ORDER BY tbl1.n_tup_ins + tbl1.n_tup_upd + tbl1.n_tup_del +
-          tbl1.toastn_tup_ins + tbl1.toastn_tup_upd + tbl1.toastn_tup_del DESC NULLS LAST) AS rn_dml1,
-        row_number() OVER (ORDER BY tbl2.n_tup_ins + tbl2.n_tup_upd + tbl2.n_tup_del +
-          tbl2.toastn_tup_ins + tbl2.toastn_tup_upd + tbl2.toastn_tup_del DESC NULLS LAST) AS rn_dml2
+        NULLIF(tbl1.n_tup_ins, 0) AS n_tup_ins1,
+        NULLIF(tbl1.n_tup_upd, 0) AS n_tup_upd1,
+        NULLIF(tbl1.n_tup_del, 0) AS n_tup_del1,
+        NULLIF(tbl1.n_tup_hot_upd, 0) AS n_tup_hot_upd1,
+        NULLIF(tbl1.toastn_tup_ins, 0) AS toastn_tup_ins1,
+        NULLIF(tbl1.toastn_tup_upd, 0) AS toastn_tup_upd1,
+        NULLIF(tbl1.toastn_tup_del, 0) AS toastn_tup_del1,
+        NULLIF(tbl1.toastn_tup_hot_upd, 0) AS toastn_tup_hot_upd1,
+        NULLIF(tbl2.n_tup_ins, 0) AS n_tup_ins2,
+        NULLIF(tbl2.n_tup_upd, 0) AS n_tup_upd2,
+        NULLIF(tbl2.n_tup_del, 0) AS n_tup_del2,
+        NULLIF(tbl2.n_tup_hot_upd, 0) AS n_tup_hot_upd2,
+        NULLIF(tbl2.toastn_tup_ins, 0) AS toastn_tup_ins2,
+        NULLIF(tbl2.toastn_tup_upd, 0) AS toastn_tup_upd2,
+        NULLIF(tbl2.toastn_tup_del, 0) AS toastn_tup_del2,
+        NULLIF(tbl2.toastn_tup_hot_upd, 0) AS toastn_tup_hot_upd2,
+        row_number() OVER (ORDER BY COALESCE(tbl1.n_tup_ins, 0) + COALESCE(tbl1.n_tup_upd, 0) + COALESCE(tbl1.n_tup_del, 0) +
+          COALESCE(tbl1.toastn_tup_ins, 0) + COALESCE(tbl1.toastn_tup_upd, 0) + COALESCE(tbl1.toastn_tup_del, 0) DESC NULLS LAST) AS rn_dml1,
+        row_number() OVER (ORDER BY COALESCE(tbl2.n_tup_ins, 0) + COALESCE(tbl2.n_tup_upd, 0) + COALESCE(tbl2.n_tup_del, 0) +
+          COALESCE(tbl2.toastn_tup_ins, 0) + COALESCE(tbl2.toastn_tup_upd, 0) + COALESCE(tbl2.toastn_tup_del, 0) DESC NULLS LAST) AS rn_dml2
     FROM top_tables(sserver_id, start1_id, end1_id) tbl1
         FULL OUTER JOIN top_tables(sserver_id, start2_id, end2_id) tbl2 USING (server_id, datid, relid)
-    WHERE COALESCE(tbl1.n_tup_ins + tbl1.n_tup_upd + tbl1.n_tup_del,
-        tbl1.toastn_tup_ins + tbl1.toastn_tup_upd + tbl1.toastn_tup_del,
-        tbl2.n_tup_ins + tbl2.n_tup_upd + tbl2.n_tup_del,
-        tbl2.toastn_tup_ins + tbl2.toastn_tup_upd + tbl2.toastn_tup_del, 0) > 0
-    ORDER BY COALESCE(tbl1.n_tup_ins + tbl1.n_tup_upd + tbl1.n_tup_del +
-          tbl1.toastn_tup_ins + tbl1.toastn_tup_upd + tbl1.toastn_tup_del,0) +
-          COALESCE(tbl2.n_tup_ins + tbl2.n_tup_upd + tbl2.n_tup_del +
-          tbl2.toastn_tup_ins + tbl2.toastn_tup_upd + tbl2.toastn_tup_del,0) DESC) t1
-    WHERE rn_dml1 <= topn OR rn_dml2 <= topn;
+    WHERE COALESCE(tbl1.n_tup_ins, 0) + COALESCE(tbl1.n_tup_upd, 0) + COALESCE(tbl1.n_tup_del, 0) +
+        COALESCE(tbl1.toastn_tup_ins, 0) + COALESCE(tbl1.toastn_tup_upd, 0) + COALESCE(tbl1.toastn_tup_del, 0) +
+        COALESCE(tbl2.n_tup_ins, 0) + COALESCE(tbl2.n_tup_upd, 0) + COALESCE(tbl2.n_tup_del, 0) +
+        COALESCE(tbl2.toastn_tup_ins, 0) + COALESCE(tbl2.toastn_tup_upd, 0) + COALESCE(tbl2.toastn_tup_del, 0) > 0
+    ORDER BY COALESCE(tbl1.n_tup_ins, 0) + COALESCE(tbl1.n_tup_upd, 0) + COALESCE(tbl1.n_tup_del, 0) +
+          COALESCE(tbl1.toastn_tup_ins, 0) + COALESCE(tbl1.toastn_tup_upd, 0) + COALESCE(tbl1.toastn_tup_del, 0) +
+          COALESCE(tbl2.n_tup_ins, 0) + COALESCE(tbl2.n_tup_upd, 0) + COALESCE(tbl2.n_tup_del, 0) +
+          COALESCE(tbl2.toastn_tup_ins, 0) + COALESCE(tbl2.toastn_tup_upd, 0) + COALESCE(tbl2.toastn_tup_del, 0) DESC) t1
+    WHERE least(
+        rn_dml1,
+        rn_dml2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN
@@ -695,7 +705,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_upd_vac_tables_htbl(IN jreportset jsonb, IN sserver_id integer,
+CREATE FUNCTION top_upd_vac_tables_htbl(IN jreportset jsonb, IN sserver_id integer,
 IN start_id integer, IN end_id integer, IN topn integer)
 RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
@@ -712,25 +722,25 @@ DECLARE
         schemaname,
         relname,
         reltoastrelid,
-        n_tup_upd,
-        n_tup_del,
-        n_tup_hot_upd,
-        vacuum_count,
-        autovacuum_count,
-        analyze_count,
-        autoanalyze_count,
-        toastn_tup_upd,
-        toastn_tup_del,
-        toastn_tup_hot_upd,
-        toastvacuum_count,
-        toastautovacuum_count,
-        toastanalyze_count,
-        toastautoanalyze_count
+        NULLIF(n_tup_upd, 0) as n_tup_upd,
+        NULLIF(n_tup_del, 0) as n_tup_del,
+        NULLIF(n_tup_hot_upd, 0) as n_tup_hot_upd,
+        NULLIF(vacuum_count, 0) as vacuum_count,
+        NULLIF(autovacuum_count, 0) as autovacuum_count,
+        NULLIF(analyze_count, 0) as analyze_count,
+        NULLIF(autoanalyze_count, 0) as autoanalyze_count,
+        NULLIF(toastn_tup_upd, 0) as toastn_tup_upd,
+        NULLIF(toastn_tup_del, 0) as toastn_tup_del,
+        NULLIF(toastn_tup_hot_upd, 0) as toastn_tup_hot_upd,
+        NULLIF(toastvacuum_count, 0) as toastvacuum_count,
+        NULLIF(toastautovacuum_count, 0) as toastautovacuum_count,
+        NULLIF(toastanalyze_count, 0) as toastanalyze_count,
+        NULLIF(toastautoanalyze_count, 0) as toastautoanalyze_count
     FROM top_tables(sserver_id, start_id, end_id)
-    WHERE n_tup_upd+n_tup_del+
-      COALESCE(toastn_tup_upd+toastn_tup_del,0) > 0
-    ORDER BY n_tup_upd+n_tup_del+
-      COALESCE(toastn_tup_upd+toastn_tup_del,0) DESC
+    WHERE COALESCE(n_tup_upd, 0) + COALESCE(n_tup_del, 0) +
+      COALESCE(toastn_tup_upd, 0) + COALESCE(toastn_tup_del, 0) > 0
+    ORDER BY COALESCE(n_tup_upd, 0) + COALESCE(n_tup_del, 0) +
+      COALESCE(toastn_tup_upd, 0) + COALESCE(toastn_tup_del, 0) DESC
     LIMIT topn;
 
     r_result RECORD;
@@ -848,7 +858,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_upd_vac_tables_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION top_upd_vac_tables_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
 IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -863,29 +873,32 @@ DECLARE
         COALESCE(tbl1.tablespacename,tbl2.tablespacename) AS tablespacename,
         COALESCE(tbl1.schemaname,tbl2.schemaname) as schemaname,
         COALESCE(tbl1.relname,tbl2.relname) as relname,
-        tbl1.n_tup_upd as n_tup_upd1,
-        tbl1.n_tup_del as n_tup_del1,
-        tbl1.n_tup_hot_upd as n_tup_hot_upd1,
-        tbl1.vacuum_count as vacuum_count1,
-        tbl1.autovacuum_count as autovacuum_count1,
-        tbl1.analyze_count as analyze_count1,
-        tbl1.autoanalyze_count as autoanalyze_count1,
-        tbl2.n_tup_upd as n_tup_upd2,
-        tbl2.n_tup_del as n_tup_del2,
-        tbl2.n_tup_hot_upd as n_tup_hot_upd2,
-        tbl2.vacuum_count as vacuum_count2,
-        tbl2.autovacuum_count as autovacuum_count2,
-        tbl2.analyze_count as analyze_count2,
-        tbl2.autoanalyze_count as autoanalyze_count2,
-        row_number() OVER (ORDER BY tbl1.n_tup_upd + tbl1.n_tup_del DESC NULLS LAST) as rn_vactpl1,
-        row_number() OVER (ORDER BY tbl2.n_tup_upd + tbl2.n_tup_del DESC NULLS LAST) as rn_vactpl2
+        NULLIF(tbl1.n_tup_upd, 0) as n_tup_upd1,
+        NULLIF(tbl1.n_tup_del, 0) as n_tup_del1,
+        NULLIF(tbl1.n_tup_hot_upd, 0) as n_tup_hot_upd1,
+        NULLIF(tbl1.vacuum_count, 0) as vacuum_count1,
+        NULLIF(tbl1.autovacuum_count, 0) as autovacuum_count1,
+        NULLIF(tbl1.analyze_count, 0) as analyze_count1,
+        NULLIF(tbl1.autoanalyze_count, 0) as autoanalyze_count1,
+        NULLIF(tbl2.n_tup_upd, 0) as n_tup_upd2,
+        NULLIF(tbl2.n_tup_del, 0) as n_tup_del2,
+        NULLIF(tbl2.n_tup_hot_upd, 0) as n_tup_hot_upd2,
+        NULLIF(tbl2.vacuum_count, 0) as vacuum_count2,
+        NULLIF(tbl2.autovacuum_count, 0) as autovacuum_count2,
+        NULLIF(tbl2.analyze_count, 0) as analyze_count2,
+        NULLIF(tbl2.autoanalyze_count, 0) as autoanalyze_count2,
+        row_number() OVER (ORDER BY COALESCE(tbl1.n_tup_upd, 0) + COALESCE(tbl1.n_tup_del, 0) DESC NULLS LAST) as rn_vactpl1,
+        row_number() OVER (ORDER BY COALESCE(tbl2.n_tup_upd, 0) + COALESCE(tbl2.n_tup_del, 0) DESC NULLS LAST) as rn_vactpl2
     FROM top_tables(sserver_id, start1_id, end1_id) tbl1
         FULL OUTER JOIN top_tables(sserver_id, start2_id, end2_id) tbl2 USING (server_id, datid, relid)
-    WHERE COALESCE(tbl1.n_tup_upd + tbl1.n_tup_del,
-            tbl2.n_tup_upd + tbl2.n_tup_del) > 0
-    ORDER BY COALESCE(tbl1.n_tup_upd + tbl1.n_tup_del,0) +
-          COALESCE(tbl2.n_tup_upd + tbl2.n_tup_del,0) DESC) t1
-    WHERE rn_vactpl1 <= topn OR rn_vactpl2 <= topn;
+    WHERE COALESCE(tbl1.n_tup_upd, 0) + COALESCE(tbl1.n_tup_del, 0) +
+          COALESCE(tbl2.n_tup_upd, 0) + COALESCE(tbl2.n_tup_del, 0) > 0
+    ORDER BY COALESCE(tbl1.n_tup_upd, 0) + COALESCE(tbl1.n_tup_del, 0) +
+          COALESCE(tbl2.n_tup_upd, 0) + COALESCE(tbl2.n_tup_del, 0) DESC) t1
+    WHERE least(
+        rn_vactpl1,
+        rn_vactpl2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN
@@ -970,7 +983,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_growth_tables_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION top_growth_tables_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
 
@@ -984,25 +997,25 @@ DECLARE
         top.schemaname,
         top.relname,
         top.reltoastrelid,
-        top.n_tup_ins,
-        top.n_tup_upd,
-        top.n_tup_del,
-        top.n_tup_hot_upd,
-        pg_size_pretty(top.growth) AS growth,
-        pg_size_pretty(st_last.relsize) AS relsize,
-        top.toastn_tup_ins,
-        top.toastn_tup_upd,
-        top.toastn_tup_del,
-        top.toastn_tup_hot_upd,
-        pg_size_pretty(top.toastgrowth) AS toastgrowth,
-        pg_size_pretty(stt_last.relsize) AS toastrelsize
+        NULLIF(top.n_tup_ins, 0) as n_tup_ins,
+        NULLIF(top.n_tup_upd, 0) as n_tup_upd,
+        NULLIF(top.n_tup_del, 0) as n_tup_del,
+        NULLIF(top.n_tup_hot_upd, 0) as n_tup_hot_upd,
+        pg_size_pretty(NULLIF(top.growth, 0)) AS growth,
+        pg_size_pretty(NULLIF(st_last.relsize, 0)) AS relsize,
+        NULLIF(top.toastn_tup_ins, 0) as toastn_tup_ins,
+        NULLIF(top.toastn_tup_upd, 0) as toastn_tup_upd,
+        NULLIF(top.toastn_tup_del, 0) as toastn_tup_del,
+        NULLIF(top.toastn_tup_hot_upd, 0) as toastn_tup_hot_upd,
+        pg_size_pretty(NULLIF(top.toastgrowth, 0)) AS toastgrowth,
+        pg_size_pretty(NULLIF(stt_last.relsize, 0)) AS toastrelsize
     FROM top_tables(sserver_id, start_id, end_id) top
         JOIN v_sample_stat_tables st_last
           ON (top.server_id=st_last.server_id AND top.datid=st_last.datid AND top.relid=st_last.relid)
         LEFT OUTER JOIN v_sample_stat_tables stt_last
           ON (top.server_id=stt_last.server_id AND top.datid=stt_last.datid AND top.reltoastrelid=stt_last.relid AND stt_last.sample_id=end_id)
-    WHERE st_last.sample_id=end_id AND top.growth + COALESCE (top.toastgrowth,0) > 0
-    ORDER BY top.growth + COALESCE (top.toastgrowth,0) DESC
+    WHERE st_last.sample_id = end_id AND COALESCE(top.growth, 0) + COALESCE(top.toastgrowth, 0) > 0
+    ORDER BY COALESCE(top.growth, 0) + COALESCE(top.toastgrowth, 0) DESC
     LIMIT topn;
 
     r_result RECORD;
@@ -1114,7 +1127,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_growth_tables_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION top_growth_tables_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer)
 RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
@@ -1130,32 +1143,32 @@ DECLARE
         COALESCE(tbl1.tablespacename,tbl2.tablespacename) AS tablespacename,
         COALESCE(tbl1.schemaname,tbl2.schemaname) as schemaname,
         COALESCE(tbl1.relname,tbl2.relname) as relname,
-        tbl1.n_tup_ins as n_tup_ins1,
-        tbl1.n_tup_upd as n_tup_upd1,
-        tbl1.n_tup_del as n_tup_del1,
-        tbl1.n_tup_hot_upd as n_tup_hot_upd1,
-        pg_size_pretty(tbl1.growth) AS growth1,
-        pg_size_pretty(st_last1.relsize) AS relsize1,
-        tbl1.toastn_tup_ins as toastn_tup_ins1,
-        tbl1.toastn_tup_upd as toastn_tup_upd1,
-        tbl1.toastn_tup_del as toastn_tup_del1,
-        tbl1.toastn_tup_hot_upd as toastn_tup_hot_upd1,
-        pg_size_pretty(tbl1.toastgrowth) AS toastgrowth1,
-        pg_size_pretty(stt_last1.relsize) AS toastrelsize1,
-        tbl2.n_tup_ins as n_tup_ins2,
-        tbl2.n_tup_upd as n_tup_upd2,
-        tbl2.n_tup_del as n_tup_del2,
-        tbl2.n_tup_hot_upd as n_tup_hot_upd2,
-        pg_size_pretty(tbl2.growth) AS growth2,
-        pg_size_pretty(st_last2.relsize) AS relsize2,
-        tbl2.toastn_tup_ins as toastn_tup_ins2,
-        tbl2.toastn_tup_upd as toastn_tup_upd2,
-        tbl2.toastn_tup_del as toastn_tup_del2,
-        tbl2.toastn_tup_hot_upd as toastn_tup_hot_upd2,
-        pg_size_pretty(tbl2.toastgrowth) AS toastgrowth2,
-        pg_size_pretty(stt_last2.relsize) AS toastrelsize2,
-        row_number() OVER (ORDER BY tbl1.growth + tbl1.toastgrowth DESC NULLS LAST) as rn_growth1,
-        row_number() OVER (ORDER BY tbl2.growth + tbl2.toastgrowth DESC NULLS LAST) as rn_growth2
+        NULLIF(tbl1.n_tup_ins, 0) as n_tup_ins1,
+        NULLIF(tbl1.n_tup_upd, 0) as n_tup_upd1,
+        NULLIF(tbl1.n_tup_del, 0) as n_tup_del1,
+        NULLIF(tbl1.n_tup_hot_upd, 0) as n_tup_hot_upd1,
+        pg_size_pretty(NULLIF(tbl1.growth, 0)) AS growth1,
+        pg_size_pretty(NULLIF(st_last1.relsize, 0)) AS relsize1,
+        NULLIF(tbl1.toastn_tup_ins, 0) as toastn_tup_ins1,
+        NULLIF(tbl1.toastn_tup_upd, 0) as toastn_tup_upd1,
+        NULLIF(tbl1.toastn_tup_del, 0) as toastn_tup_del1,
+        NULLIF(tbl1.toastn_tup_hot_upd, 0) as toastn_tup_hot_upd1,
+        pg_size_pretty(NULLIF(tbl1.toastgrowth, 0)) AS toastgrowth1,
+        pg_size_pretty(NULLIF(stt_last1.relsize, 0)) AS toastrelsize1,
+        NULLIF(tbl2.n_tup_ins, 0) as n_tup_ins2,
+        NULLIF(tbl2.n_tup_upd, 0) as n_tup_upd2,
+        NULLIF(tbl2.n_tup_del, 0) as n_tup_del2,
+        NULLIF(tbl2.n_tup_hot_upd, 0) as n_tup_hot_upd2,
+        pg_size_pretty(NULLIF(tbl2.growth, 0)) AS growth2,
+        pg_size_pretty(NULLIF(st_last2.relsize, 0)) AS relsize2,
+        NULLIF(tbl2.toastn_tup_ins, 0) as toastn_tup_ins2,
+        NULLIF(tbl2.toastn_tup_upd, 0) as toastn_tup_upd2,
+        NULLIF(tbl2.toastn_tup_del, 0) as toastn_tup_del2,
+        NULLIF(tbl2.toastn_tup_hot_upd, 0) as toastn_tup_hot_upd2,
+        pg_size_pretty(NULLIF(tbl2.toastgrowth, 0)) AS toastgrowth2,
+        pg_size_pretty(NULLIF(stt_last2.relsize, 0)) AS toastrelsize2,
+        row_number() OVER (ORDER BY COALESCE(tbl1.growth, 0) + COALESCE(tbl1.toastgrowth, 0) DESC NULLS LAST) as rn_growth1,
+        row_number() OVER (ORDER BY COALESCE(tbl2.growth, 0) + COALESCE(tbl2.toastgrowth, 0) DESC NULLS LAST) as rn_growth2
     FROM top_tables(sserver_id, start1_id, end1_id) tbl1
         FULL OUTER JOIN top_tables(sserver_id, start2_id, end2_id) tbl2 USING (server_id,datid,relid)
         LEFT OUTER JOIN v_sample_stat_tables st_last1 ON (tbl1.server_id = st_last1.server_id
@@ -1169,10 +1182,14 @@ DECLARE
         LEFT OUTER JOIN v_sample_stat_tables stt_last2 ON (st_last2.server_id = stt_last2.server_id
           AND st_last2.datid = stt_last2.datid AND st_last2.reltoastrelid = stt_last2.relid
           AND st_last2.sample_id=stt_last2.sample_id)
-    WHERE COALESCE(tbl1.growth, tbl2.growth) > 0
-    ORDER BY COALESCE(tbl1.growth + tbl1.toastgrowth,0) +
-      COALESCE(tbl2.growth + tbl2.toastgrowth,0) DESC) t1
-    WHERE rn_growth1 <= topn OR rn_growth2 <= topn;
+    WHERE COALESCE(tbl1.growth, 0) + COALESCE(tbl1.toastgrowth, 0) +
+      COALESCE(tbl2.growth, 0) + COALESCE(tbl2.toastgrowth, 0) > 0
+    ORDER BY COALESCE(tbl1.growth, 0) + COALESCE(tbl1.toastgrowth, 0) +
+      COALESCE(tbl2.growth, 0) + COALESCE(tbl2.toastgrowth, 0) DESC) t1
+    WHERE least(
+        rn_growth1,
+        rn_growth2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN
@@ -1287,7 +1304,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_vacuumed_tables_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION top_vacuumed_tables_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
 
@@ -1300,15 +1317,15 @@ DECLARE
         top.tablespacename,
         top.schemaname,
         top.relname,
-        top.vacuum_count,
-        top.autovacuum_count,
-        top.n_tup_ins,
-        top.n_tup_upd,
-        top.n_tup_del,
-        top.n_tup_hot_upd
+        NULLIF(top.vacuum_count, 0) as vacuum_count,
+        NULLIF(top.autovacuum_count, 0) as autovacuum_count,
+        NULLIF(top.n_tup_ins, 0) as n_tup_ins,
+        NULLIF(top.n_tup_upd, 0) as n_tup_upd,
+        NULLIF(top.n_tup_del, 0) as n_tup_del,
+        NULLIF(top.n_tup_hot_upd, 0) as n_tup_hot_upd
     FROM top_tables(sserver_id, start_id, end_id) top
-    WHERE COALESCE(top.vacuum_count,0) + COALESCE(top.autovacuum_count,0) > 0
-    ORDER BY COALESCE(top.vacuum_count,0) + COALESCE(top.autovacuum_count,0) DESC
+    WHERE COALESCE(top.vacuum_count, 0) + COALESCE(top.autovacuum_count, 0) > 0
+    ORDER BY COALESCE(top.vacuum_count, 0) + COALESCE(top.autovacuum_count, 0) DESC
     LIMIT topn;
 
     r_result RECORD;
@@ -1375,7 +1392,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_vacuumed_tables_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION top_vacuumed_tables_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer)
 RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
@@ -1391,27 +1408,30 @@ DECLARE
         COALESCE(tbl1.tablespacename,tbl2.tablespacename) AS tablespacename,
         COALESCE(tbl1.schemaname,tbl2.schemaname) as schemaname,
         COALESCE(tbl1.relname,tbl2.relname) as relname,
-        tbl1.vacuum_count as vacuum_count1,
-        tbl1.autovacuum_count as autovacuum_count1,
-        tbl1.n_tup_ins as n_tup_ins1,
-        tbl1.n_tup_upd as n_tup_upd1,
-        tbl1.n_tup_del as n_tup_del1,
-        tbl1.n_tup_hot_upd as n_tup_hot_upd1,
-        tbl2.vacuum_count as vacuum_count2,
-        tbl2.autovacuum_count as autovacuum_count2,
-        tbl2.n_tup_ins as n_tup_ins2,
-        tbl2.n_tup_upd as n_tup_upd2,
-        tbl2.n_tup_del as n_tup_del2,
-        tbl2.n_tup_hot_upd as n_tup_hot_upd2,
-        row_number() OVER (ORDER BY COALESCE(tbl1.vacuum_count,0) + COALESCE(tbl1.autovacuum_count,0) DESC) as rn_vacuum1,
-        row_number() OVER (ORDER BY COALESCE(tbl2.vacuum_count,0) + COALESCE(tbl2.autovacuum_count,0) DESC) as rn_vacuum2
+        NULLIF(tbl1.vacuum_count, 0) as vacuum_count1,
+        NULLIF(tbl1.autovacuum_count, 0) as autovacuum_count1,
+        NULLIF(tbl1.n_tup_ins, 0) as n_tup_ins1,
+        NULLIF(tbl1.n_tup_upd, 0) as n_tup_upd1,
+        NULLIF(tbl1.n_tup_del, 0) as n_tup_del1,
+        NULLIF(tbl1.n_tup_hot_upd, 0) as n_tup_hot_upd1,
+        NULLIF(tbl2.vacuum_count, 0) as vacuum_count2,
+        NULLIF(tbl2.autovacuum_count, 0) as autovacuum_count2,
+        NULLIF(tbl2.n_tup_ins, 0) as n_tup_ins2,
+        NULLIF(tbl2.n_tup_upd, 0) as n_tup_upd2,
+        NULLIF(tbl2.n_tup_del, 0) as n_tup_del2,
+        NULLIF(tbl2.n_tup_hot_upd, 0) as n_tup_hot_upd2,
+        row_number() OVER (ORDER BY COALESCE(tbl1.vacuum_count, 0) + COALESCE(tbl1.autovacuum_count, 0) DESC) as rn_vacuum1,
+        row_number() OVER (ORDER BY COALESCE(tbl2.vacuum_count, 0) + COALESCE(tbl2.autovacuum_count, 0) DESC) as rn_vacuum2
     FROM top_tables(sserver_id, start1_id, end1_id) tbl1
         FULL OUTER JOIN top_tables(sserver_id, start2_id, end2_id) tbl2 USING (server_id,datid,relid)
-    WHERE COALESCE(tbl1.vacuum_count,0) + COALESCE(tbl1.autovacuum_count,0) +
-          COALESCE(tbl2.vacuum_count,0) + COALESCE(tbl2.autovacuum_count,0) > 0
-    ORDER BY COALESCE(tbl1.vacuum_count,0) + COALESCE(tbl1.autovacuum_count,0) +
-          COALESCE(tbl2.vacuum_count,0) + COALESCE(tbl2.autovacuum_count,0) DESC) t1
-    WHERE least(rn_vacuum1, rn_vacuum2) <= topn;
+    WHERE COALESCE(tbl1.vacuum_count, 0) + COALESCE(tbl1.autovacuum_count, 0) +
+          COALESCE(tbl2.vacuum_count, 0) + COALESCE(tbl2.autovacuum_count, 0) > 0
+    ORDER BY COALESCE(tbl1.vacuum_count, 0) + COALESCE(tbl1.autovacuum_count, 0) +
+          COALESCE(tbl2.vacuum_count, 0) + COALESCE(tbl2.autovacuum_count, 0) DESC) t1
+    WHERE least(
+        rn_vacuum1,
+        rn_vacuum2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN
@@ -1492,7 +1512,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_analyzed_tables_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION top_analyzed_tables_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
 
@@ -1505,15 +1525,15 @@ DECLARE
         top.tablespacename,
         top.schemaname,
         top.relname,
-        top.analyze_count,
-        top.autoanalyze_count,
-        top.n_tup_ins,
-        top.n_tup_upd,
-        top.n_tup_del,
-        top.n_tup_hot_upd
+        NULLIF(top.analyze_count, 0) as analyze_count,
+        NULLIF(top.autoanalyze_count, 0) as autoanalyze_count,
+        NULLIF(top.n_tup_ins, 0) as n_tup_ins,
+        NULLIF(top.n_tup_upd, 0) as n_tup_upd,
+        NULLIF(top.n_tup_del, 0) as n_tup_del,
+        NULLIF(top.n_tup_hot_upd, 0) as n_tup_hot_upd
     FROM top_tables(sserver_id, start_id, end_id) top
-    WHERE COALESCE(top.analyze_count,0) + COALESCE(top.autoanalyze_count,0) > 0
-    ORDER BY COALESCE(top.analyze_count,0) + COALESCE(top.autoanalyze_count,0) DESC
+    WHERE COALESCE(top.analyze_count, 0) + COALESCE(top.autoanalyze_count, 0) > 0
+    ORDER BY COALESCE(top.analyze_count, 0) + COALESCE(top.autoanalyze_count, 0) DESC
     LIMIT topn;
 
     r_result RECORD;
@@ -1580,7 +1600,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_analyzed_tables_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION top_analyzed_tables_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer)
 RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
@@ -1596,27 +1616,30 @@ DECLARE
         COALESCE(tbl1.tablespacename,tbl2.tablespacename) AS tablespacename,
         COALESCE(tbl1.schemaname,tbl2.schemaname) as schemaname,
         COALESCE(tbl1.relname,tbl2.relname) as relname,
-        tbl1.analyze_count as analyze_count1,
-        tbl1.autoanalyze_count as autoanalyze_count1,
-        tbl1.n_tup_ins as n_tup_ins1,
-        tbl1.n_tup_upd as n_tup_upd1,
-        tbl1.n_tup_del as n_tup_del1,
-        tbl1.n_tup_hot_upd as n_tup_hot_upd1,
-        tbl2.analyze_count as analyze_count2,
-        tbl2.autoanalyze_count as autoanalyze_count2,
-        tbl2.n_tup_ins as n_tup_ins2,
-        tbl2.n_tup_upd as n_tup_upd2,
-        tbl2.n_tup_del as n_tup_del2,
-        tbl2.n_tup_hot_upd as n_tup_hot_upd2,
-        row_number() OVER (ORDER BY COALESCE(tbl1.analyze_count,0) + COALESCE(tbl1.autoanalyze_count,0) DESC) as rn_analyze1,
-        row_number() OVER (ORDER BY COALESCE(tbl2.analyze_count,0) + COALESCE(tbl2.autoanalyze_count,0) DESC) as rn_analyze2
+        NULLIF(tbl1.analyze_count, 0) as analyze_count1,
+        NULLIF(tbl1.autoanalyze_count, 0) as autoanalyze_count1,
+        NULLIF(tbl1.n_tup_ins, 0) as n_tup_ins1,
+        NULLIF(tbl1.n_tup_upd, 0) as n_tup_upd1,
+        NULLIF(tbl1.n_tup_del, 0) as n_tup_del1,
+        NULLIF(tbl1.n_tup_hot_upd, 0) as n_tup_hot_upd1,
+        NULLIF(tbl2.analyze_count, 0) as analyze_count2,
+        NULLIF(tbl2.autoanalyze_count, 0) as autoanalyze_count2,
+        NULLIF(tbl2.n_tup_ins, 0) as n_tup_ins2,
+        NULLIF(tbl2.n_tup_upd, 0) as n_tup_upd2,
+        NULLIF(tbl2.n_tup_del, 0) as n_tup_del2,
+        NULLIF(tbl2.n_tup_hot_upd, 0) as n_tup_hot_upd2,
+        row_number() OVER (ORDER BY COALESCE(tbl1.analyze_count, 0) + COALESCE(tbl1.autoanalyze_count, 0) DESC) as rn_analyze1,
+        row_number() OVER (ORDER BY COALESCE(tbl2.analyze_count, 0) + COALESCE(tbl2.autoanalyze_count, 0) DESC) as rn_analyze2
     FROM top_tables(sserver_id, start1_id, end1_id) tbl1
         FULL OUTER JOIN top_tables(sserver_id, start2_id, end2_id) tbl2 USING (server_id,datid,relid)
-    WHERE COALESCE(tbl1.analyze_count,0) + COALESCE(tbl1.autoanalyze_count,0) +
-          COALESCE(tbl2.analyze_count,0) + COALESCE(tbl2.autoanalyze_count,0) > 0
-    ORDER BY COALESCE(tbl1.analyze_count,0) + COALESCE(tbl1.autoanalyze_count,0) +
-          COALESCE(tbl2.analyze_count,0) + COALESCE(tbl2.autoanalyze_count,0) DESC) t1
-    WHERE least(rn_analyze1, rn_analyze2) <= topn;
+    WHERE COALESCE(tbl1.analyze_count, 0) + COALESCE(tbl1.autoanalyze_count, 0) +
+          COALESCE(tbl2.analyze_count, 0) + COALESCE(tbl2.autoanalyze_count, 0) > 0
+    ORDER BY COALESCE(tbl1.analyze_count, 0) + COALESCE(tbl1.autoanalyze_count, 0) +
+          COALESCE(tbl2.analyze_count, 0) + COALESCE(tbl2.autoanalyze_count, 0) DESC) t1
+    WHERE least(
+        rn_analyze1,
+        rn_analyze2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN

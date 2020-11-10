@@ -1,6 +1,6 @@
 /* ===== Differential report functions ===== */
 
-CREATE OR REPLACE FUNCTION get_diffreport(IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION get_diffreport(IN sserver_id integer, IN start1_id integer, IN end1_id integer,
 IN start2_id integer, IN end2_id integer, IN description text = NULL) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     tmp_text    text;
@@ -20,6 +20,7 @@ DECLARE
     report_css CONSTANT text := 'table, th, td {border: 1px solid black; border-collapse: collapse; padding: 4px;} '
     'table .value, table .mono {font-family: Monospace;} '
     'table .value {text-align: right;} '
+    'table p {margin: 0.2em;}'
     '.int1 td:not(.hdr), td.int1 {background-color: #FFEEEE;} '
     '.int2 td:not(.hdr), td.int2 {background-color: #EEEEFF;} '
     'table.diff tr.int2 td {border-top: hidden;} '
@@ -167,9 +168,9 @@ BEGIN
     tmp_text := tmp_text ||'<H2>Report sections</H2><ul>';
     tmp_text := tmp_text || '<li><a HREF=#cl_stat>Server statistics</a></li>';
     tmp_text := tmp_text || '<ul>';
-    tmp_text := tmp_text || '<li><a HREF=#db_stat>Databases statistics</a></li>';
+    tmp_text := tmp_text || '<li><a HREF=#db_stat>Database statistics</a></li>';
     IF jsonb_extract_path_text(jreportset, 'report_features', 'statstatements')::boolean THEN
-      tmp_text := tmp_text || '<li><a HREF=#st_stat>Statements statistics by database</a></li>';
+      tmp_text := tmp_text || '<li><a HREF=#st_stat>Statement statistics by database</a></li>';
     END IF;
     tmp_text := tmp_text || '<li><a HREF=#clu_stat>Cluster statistics</a></li>';
      tmp_text := tmp_text || '<li><a HREF=#tablespace_stat>Tablespace statistics</a></li>';
@@ -193,22 +194,22 @@ BEGIN
       END IF;
       tmp_text := tmp_text || '<li><a HREF=#top_temp>Top SQL by temp usage</a></li>';
       IF jsonb_extract_path_text(jreportset, 'report_features', 'kcachestatements')::boolean THEN
-        tmp_text := tmp_text || '<li><a HREF=#kcache_stat>Kcache statistics</a></li>';
+        tmp_text := tmp_text || '<li><a HREF=#kcache_stat>rusage statistics</a></li>';
         tmp_text := tmp_text || '<ul>';
         tmp_text := tmp_text || '<li><a HREF=#kcache_time>Top SQL by system and user time </a></li>';
         tmp_text := tmp_text || '<li><a HREF=#kcache_reads_writes>Top SQL by reads/writes done by filesystem layer </a></li>';
         tmp_text := tmp_text || '</ul>';
       END IF;
-      tmp_text := tmp_text || '<li><a HREF=#sql_list>Complete List of SQL Text</a></li>';
+      tmp_text := tmp_text || '<li><a HREF=#sql_list>Complete list of SQL texts</a></li>';
       tmp_text := tmp_text || '</ul>';
     END IF;
-    tmp_text := tmp_text || '<li><a HREF=#schema_stat>Schema objects statistics</a></li>';
+    tmp_text := tmp_text || '<li><a HREF=#schema_stat>Schema object statisctics</a></li>';
     tmp_text := tmp_text || '<ul>';
-    tmp_text := tmp_text || '<li><a HREF=#scanned_tbl>Top tables by sequential scanned blocks estimation</a></li>';
+    tmp_text := tmp_text || '<li><a HREF=#scanned_tbl>Top tables by estimated number of sequentially scanned blocks</a></li>';
     tmp_text := tmp_text || '<li><a HREF=#fetch_tbl>Top tables by blocks fetched</a></li>';
     tmp_text := tmp_text || '<li><a HREF=#read_tbl>Top tables by blocks read</a></li>';
     tmp_text := tmp_text || '<li><a HREF=#dml_tbl>Top DML tables</a></li>';
-    tmp_text := tmp_text || '<li><a HREF=#vac_tbl>Top Delete/Update tables with vacuum run count</a></li>';
+    tmp_text := tmp_text || '<li><a HREF=#vac_tbl>Top tables by Delete/Update operations</a></li>';
     tmp_text := tmp_text || '<li><a HREF=#growth_tbl>Top growing tables</a></li>';
     tmp_text := tmp_text || '<li><a HREF=#fetch_idx>Top indexes by blocks fetched</a></li>';
     tmp_text := tmp_text || '<li><a HREF=#read_idx>Top indexes by blocks read</a></li>';
@@ -222,21 +223,21 @@ BEGIN
     tmp_text := tmp_text || '<li><a HREF=#trg_funcs_time_stat>Top trigger functions by total time</a></li>';
     tmp_text := tmp_text || '</ul>';
 
-    tmp_text := tmp_text || '<li><a HREF=#vacuum_stats>Vacuum related statistics</a></li>';
+    tmp_text := tmp_text || '<li><a HREF=#vacuum_stats>Vacuum-related statistics</a></li>';
     tmp_text := tmp_text || '<ul>';
-    tmp_text := tmp_text || '<li><a HREF=#top_vacuum_cnt_tbl>Tables ordered by vacuum count</a></li>';
-    tmp_text := tmp_text || '<li><a HREF=#top_analyze_cnt_tbl>Tables ordered by analyze count</a></li>';
-    tmp_text := tmp_text || '<li><a HREF=#top_ix_vacuum_bytes_cnt_tbl>Indexes ordered by vacuum I/O load estimation</a></li>';
+    tmp_text := tmp_text || '<li><a HREF=#top_vacuum_cnt_tbl>Top tables by vacuum operations</a></li>';
+    tmp_text := tmp_text || '<li><a HREF=#top_analyze_cnt_tbl>Top tables by analyze operations</a></li>';
+    tmp_text := tmp_text || '<li><a HREF=#top_ix_vacuum_bytes_cnt_tbl>Top indexes by estimated vacuum I/O load</a></li>';
     tmp_text := tmp_text || '</ul>';
 
-    tmp_text := tmp_text || '<li><a HREF=#pg_settings>Cluster settings during report interval</a></li>';
+    tmp_text := tmp_text || '<li><a HREF=#pg_settings>Cluster settings during the report interval</a></li>';
 
     tmp_text := tmp_text || '</ul>';
 
 
     --Reporting cluster stats
     tmp_text := tmp_text || '<H2><a NAME=cl_stat>Server statistics</a></H2>';
-    tmp_text := tmp_text || '<H3><a NAME=db_stat>Databases statistics</a></H3>';
+    tmp_text := tmp_text || '<H3><a NAME=db_stat>Database statistics</a></H3>';
     tmp_report := dbstats_reset_diff_htbl(jreportset, sserver_id, start1_id, end1_id, start2_id, end2_id);
     IF tmp_report != '' THEN
       tmp_text := tmp_text || '<p><b>Warning!</b> Database statistics reset detected during report period!</p>'||tmp_report||
@@ -245,7 +246,7 @@ BEGIN
     tmp_text := tmp_text || nodata_wrapper(dbstats_diff_htbl(jreportset, sserver_id, start1_id, end1_id, start2_id, end2_id, topn));
 
     IF jsonb_extract_path_text(jreportset, 'report_features', 'statstatements')::boolean THEN
-      tmp_text := tmp_text || '<H3><a NAME=st_stat>Statements statistics by database</a></H3>';
+      tmp_text := tmp_text || '<H3><a NAME=st_stat>Statement statistics by database</a></H3>';
       tmp_text := tmp_text || nodata_wrapper(statements_stats_diff_htbl(jreportset, sserver_id, start1_id, end1_id, start2_id, end2_id, topn));
     END IF;
 
@@ -307,21 +308,21 @@ BEGIN
 
       IF jsonb_extract_path_text(jreportset, 'report_features', 'kcachestatements')::boolean THEN
         --Reporting kcache queries
-        tmp_text := tmp_text || '<H3><a NAME=kcache_stat>Kcache statistics</a></H3>';
+        tmp_text := tmp_text || '<H3><a NAME=kcache_stat>rusage statistics</a></H3>';
         tmp_text := tmp_text||'<H4><a NAME=kcache_time>Top SQL by system and user time </a></H4>';
         tmp_text := tmp_text || nodata_wrapper(top_cpu_time_diff_htbl(jreportset, sserver_id, start1_id, end1_id, start2_id, end2_id, topn));
         tmp_text := tmp_text||'<H4><a NAME=kcache_reads_writes>Top SQL by reads/writes done by filesystem layer </a></H4>';
         tmp_text := tmp_text || nodata_wrapper(top_io_filesystem_diff_htbl(jreportset, sserver_id, start1_id, end1_id, start2_id, end2_id, topn));
       END IF;
       -- Listing queries
-      tmp_text := tmp_text || '<H3><a NAME=sql_list>Complete List of SQL Text</a></H3>';
+      tmp_text := tmp_text || '<H3><a NAME=sql_list>Complete list of SQL texts</a></H3>';
       tmp_text := tmp_text || nodata_wrapper(report_queries(jreportset));
     END IF;
 
     -- Reporting Object stats
     -- Reporting scanned table
-    tmp_text := tmp_text || '<H2><a NAME=schema_stat>Schema objects statistics</a></H2>';
-    tmp_text := tmp_text || '<H3><a NAME=scanned_tbl>Top tables by sequential scanned blocks estimation</a></H3>';
+    tmp_text := tmp_text || '<H2><a NAME=schema_stat>Schema object statisctics</a></H2>';
+    tmp_text := tmp_text || '<H3><a NAME=scanned_tbl>Top tables by estimated number of sequentially scanned blocks</a></H3>';
     tmp_text := tmp_text || nodata_wrapper(top_scan_tables_diff_htbl(jreportset, sserver_id, start1_id, end1_id, start2_id, end2_id, topn));
 
     tmp_text := tmp_text || '<H3><a NAME=fetch_tbl>Top tables by blocks fetched</a></H3>';
@@ -333,7 +334,7 @@ BEGIN
     tmp_text := tmp_text || '<H3><a NAME=dml_tbl>Top DML tables</a></H3>';
     tmp_text := tmp_text || nodata_wrapper(top_dml_tables_diff_htbl(jreportset, sserver_id, start1_id, end1_id, start2_id, end2_id, topn));
 
-    tmp_text := tmp_text || '<H3><a NAME=vac_tbl>Top Delete/Update tables with vacuum run count</a></H3>';
+    tmp_text := tmp_text || '<H3><a NAME=vac_tbl>Top tables by Delete/Update operations</a></H3>';
     tmp_text := tmp_text || nodata_wrapper(top_upd_vac_tables_diff_htbl(jreportset, sserver_id, start1_id, end1_id, start2_id, end2_id, topn));
 
     tmp_text := tmp_text || '<H3><a NAME=growth_tbl>Top growing tables</a></H3>';
@@ -359,16 +360,16 @@ BEGIN
     tmp_text := tmp_text || nodata_wrapper(func_top_trg_diff_htbl(jreportset, sserver_id, start1_id, end1_id, start2_id, end2_id, topn));
 
     -- Reporting vacuum related stats
-    tmp_text := tmp_text || '<H2><a NAME=vacuum_stats>Vacuum related statistics</a></H2>';
-    tmp_text := tmp_text || '<H3><a NAME=top_vacuum_cnt_tbl>Tables ordered by vacuum count</a></H3>';
+    tmp_text := tmp_text || '<H2><a NAME=vacuum_stats>Vacuum-related statistics</a></H2>';
+    tmp_text := tmp_text || '<H3><a NAME=top_vacuum_cnt_tbl>Top tables by vacuum operations</a></H3>';
     tmp_text := tmp_text || nodata_wrapper(top_vacuumed_tables_diff_htbl(jreportset, sserver_id, start1_id, end1_id, start2_id, end2_id, topn));
-    tmp_text := tmp_text || '<H3><a NAME=top_analyze_cnt_tbl>Tables ordered by analyze count</a></H3>';
+    tmp_text := tmp_text || '<H3><a NAME=top_analyze_cnt_tbl>Top tables by analyze operations</a></H3>';
     tmp_text := tmp_text || nodata_wrapper(top_analyzed_tables_diff_htbl(jreportset, sserver_id, start1_id, end1_id, start2_id, end2_id, topn));
-    tmp_text := tmp_text || '<H3><a NAME=top_ix_vacuum_bytes_cnt_tbl>Indexes ordered by vacuum I/O load estimation</a></H3>';
+    tmp_text := tmp_text || '<H3><a NAME=top_ix_vacuum_bytes_cnt_tbl>Top indexes by estimated vacuum I/O load</a></H3>';
     tmp_text := tmp_text || nodata_wrapper(top_vacuumed_indexes_diff_htbl(jreportset, sserver_id, start1_id, end1_id, start2_id, end2_id, topn));
 
     -- Database settings report
-    tmp_text := tmp_text || '<H2><a NAME=pg_settings>Cluster settings during report intervals</a></H2>';
+    tmp_text := tmp_text || '<H2><a NAME=pg_settings>Cluster settings during the report intervals</a></H2>';
     tmp_text := tmp_text || nodata_wrapper(settings_and_changes_diff_htbl(jreportset, sserver_id, start1_id, end1_id, start2_id, end2_id));
 
     report := replace(report,'{report}',tmp_text);
@@ -380,7 +381,7 @@ COMMENT ON FUNCTION get_diffreport(IN sserver_id integer, IN start1_id integer, 
 IN end2_id integer, IN description text)
 IS 'Statistics differential report generation function. Takes server_id and IDs of start and end sample for first and second intervals';
 
-CREATE OR REPLACE FUNCTION get_diffreport(IN server name, IN start1_id integer, IN end1_id integer, IN start2_id integer,
+CREATE FUNCTION get_diffreport(IN server name, IN start1_id integer, IN end1_id integer, IN start2_id integer,
 IN end2_id integer, IN description text = NULL) RETURNS text SET search_path=@extschema@,public AS $$
   SELECT get_diffreport(get_server_by_name(server),start1_id,end1_id,start2_id,end2_id,description);
 $$ LANGUAGE sql;
@@ -388,7 +389,7 @@ COMMENT ON FUNCTION get_diffreport(IN server name, IN start1_id integer, IN end1
 IN end2_id integer, IN description text)
 IS 'Statistics differential report generation function. Takes server name and IDs of start and end sample for first and second intervals';
 
-CREATE OR REPLACE FUNCTION get_diffreport(IN start1_id integer, IN end1_id integer, IN start2_id integer,
+CREATE FUNCTION get_diffreport(IN start1_id integer, IN end1_id integer, IN start2_id integer,
 IN end2_id integer, IN description text = NULL) RETURNS text SET search_path=@extschema@,public AS $$
   SELECT get_diffreport('local',start1_id,end1_id,start2_id,end2_id,description);
 $$ LANGUAGE sql;
@@ -397,7 +398,7 @@ COMMENT ON FUNCTION get_diffreport(IN start1_id integer, IN end1_id integer, IN 
 IN end2_id integer, IN description text)
 IS 'Statistics differential report generation function for local server. Takes IDs of start and end sample for first and second intervals';
 
-CREATE OR REPLACE FUNCTION get_diffreport(IN server name, IN baseline1 varchar(25), IN baseline2 varchar(25),
+CREATE FUNCTION get_diffreport(IN server name, IN baseline1 varchar(25), IN baseline2 varchar(25),
 IN description text = NULL) RETURNS text SET search_path=@extschema@,public AS $$
   SELECT get_diffreport(get_server_by_name(server),bl1.start_id,bl1.end_id,bl2.start_id,bl2.end_id,description)
   FROM get_baseline_samples(get_server_by_name(server), baseline1) bl1
@@ -407,14 +408,14 @@ COMMENT ON FUNCTION get_diffreport(IN server name, IN baseline1 varchar(25), IN 
 IN description text)
 IS 'Statistics differential report generation function. Takes server name and two baselines to compare.';
 
-CREATE OR REPLACE FUNCTION get_diffreport(IN baseline1 varchar(25), IN baseline2 varchar(25),
+CREATE FUNCTION get_diffreport(IN baseline1 varchar(25), IN baseline2 varchar(25),
 IN description text = NULL) RETURNS text SET search_path=@extschema@,public AS $$
   SELECT get_diffreport('local',baseline1,baseline2,description);
 $$ LANGUAGE sql;
 COMMENT ON FUNCTION get_diffreport(IN baseline1 varchar(25), IN baseline2 varchar(25),
 IN description text) IS 'Statistics differential report generation function for local server. Takes two baselines to compare.';
 
-CREATE OR REPLACE FUNCTION get_diffreport(IN server name, IN baseline varchar(25), IN start2_id integer,
+CREATE FUNCTION get_diffreport(IN server name, IN baseline varchar(25), IN start2_id integer,
 IN end2_id integer, IN description text = NULL) RETURNS text SET search_path=@extschema@,public AS $$
   SELECT get_diffreport(get_server_by_name(server),bl1.start_id,bl1.end_id,start2_id,end2_id,description)
   FROM get_baseline_samples(get_server_by_name(server), baseline) bl1
@@ -423,7 +424,7 @@ COMMENT ON FUNCTION get_diffreport(IN server name, IN baseline varchar(25), IN s
 IN end2_id integer, IN description text)
 IS 'Statistics differential report generation function. Takes server name, reference baseline name as first interval, start and end sample_ids of second interval.';
 
-CREATE OR REPLACE FUNCTION get_diffreport(IN baseline varchar(25), IN start2_id integer,
+CREATE FUNCTION get_diffreport(IN baseline varchar(25), IN start2_id integer,
 IN end2_id integer, IN description text = NULL)
 RETURNS text SET search_path=@extschema@,public AS $$
   SELECT get_diffreport('local',baseline,start2_id,end2_id,description);
@@ -432,7 +433,7 @@ COMMENT ON FUNCTION get_diffreport(IN baseline varchar(25), IN start2_id integer
 IN end2_id integer, IN description text)
 IS 'Statistics differential report generation function for local server. Takes reference baseline name as first interval, start and end sample_ids of second interval.';
 
-CREATE OR REPLACE FUNCTION get_diffreport(IN server name, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION get_diffreport(IN server name, IN start1_id integer, IN end1_id integer,
 IN baseline varchar(25), IN description text = NULL)
 RETURNS text SET search_path=@extschema@,public AS $$
   SELECT get_diffreport(get_server_by_name(server),start1_id,end1_id,bl2.start_id,bl2.end_id,description)
@@ -442,7 +443,7 @@ COMMENT ON FUNCTION get_diffreport(IN server name, IN start1_id integer, IN end1
 IN baseline varchar(25), IN description text)
 IS 'Statistics differential report generation function. Takes server name, start and end sample_ids of first interval and reference baseline name as second interval.';
 
-CREATE OR REPLACE FUNCTION get_diffreport(IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION get_diffreport(IN start1_id integer, IN end1_id integer,
 IN baseline varchar(25), IN description text = NULL)
 RETURNS text SET search_path=@extschema@,public AS $$
   SELECT get_diffreport('local',start1_id,end1_id,baseline,description);
@@ -451,7 +452,7 @@ COMMENT ON FUNCTION get_diffreport(IN baseline varchar(25), IN start2_id integer
 IN end2_id integer, IN description text)
 IS 'Statistics differential report generation function for local server. Takes start and end sample_ids of first interval and reference baseline name as second interval.';
 
-CREATE OR REPLACE FUNCTION get_diffreport(IN server name, IN time_range1 tstzrange,
+CREATE FUNCTION get_diffreport(IN server name, IN time_range1 tstzrange,
   IN time_range2 tstzrange,
   IN description text = NULL)
 RETURNS text SET search_path=@extschema@,public AS $$
@@ -463,7 +464,7 @@ COMMENT ON FUNCTION get_diffreport(IN server name, IN time_range1 tstzrange, IN 
 IN description text)
 IS 'Statistics differential report generation function. Takes server name and two time intervals to compare.';
 
-CREATE OR REPLACE FUNCTION get_diffreport(IN server name, IN baseline varchar(25),
+CREATE FUNCTION get_diffreport(IN server name, IN baseline varchar(25),
   IN time_range tstzrange,
   IN description text = NULL)
 RETURNS text SET search_path=@extschema@,public AS $$
@@ -475,7 +476,7 @@ COMMENT ON FUNCTION get_diffreport(IN server name, IN baseline varchar(25), IN t
 IN description text)
 IS 'Statistics differential report generation function. Takes server name, baseline and time interval to compare.';
 
-CREATE OR REPLACE FUNCTION get_diffreport(IN server name, IN time_range tstzrange,
+CREATE FUNCTION get_diffreport(IN server name, IN time_range tstzrange,
   IN baseline varchar(25),
   IN description text = NULL)
 RETURNS text SET search_path=@extschema@,public AS $$

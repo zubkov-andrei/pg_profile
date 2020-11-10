@@ -1,6 +1,6 @@
 /* ========= Server functions ========= */
 
-CREATE OR REPLACE FUNCTION create_server(IN server name, IN server_connstr text, IN server_enabled boolean = TRUE,
+CREATE FUNCTION create_server(IN server name, IN server_connstr text, IN server_enabled boolean = TRUE,
 IN max_sample_age integer = NULL) RETURNS integer SET search_path=@extschema@,public AS $$
 DECLARE
     sserver_id     integer;
@@ -22,7 +22,7 @@ $$ LANGUAGE plpgsql;
 COMMENT ON FUNCTION create_server(IN server name, IN server_connstr text, IN server_enabled boolean,
 IN max_sample_age integer) IS 'Create a new server';
 
-CREATE OR REPLACE FUNCTION drop_server(IN server name) RETURNS integer SET search_path=@extschema@,public AS $$
+CREATE FUNCTION drop_server(IN server name) RETURNS integer SET search_path=@extschema@,public AS $$
 DECLARE
     del_rows    integer;
     dserver_id  integer;
@@ -50,7 +50,7 @@ $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION drop_server(IN server name) IS 'Drop a server';
 
-CREATE OR REPLACE FUNCTION rename_server(IN server name, IN server_new_name name) RETURNS integer SET search_path=@extschema@,public AS $$
+CREATE FUNCTION rename_server(IN server name, IN server_new_name name) RETURNS integer SET search_path=@extschema@,public AS $$
 DECLARE
     upd_rows integer;
 BEGIN
@@ -62,7 +62,7 @@ $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION rename_server(IN server name, IN server_new_name name) IS 'Rename existing server';
 
-CREATE OR REPLACE FUNCTION set_server_connstr(IN server name, IN server_connstr text) RETURNS integer SET search_path=@extschema@,public AS $$
+CREATE FUNCTION set_server_connstr(IN server name, IN server_connstr text) RETURNS integer SET search_path=@extschema@,public AS $$
 DECLARE
     upd_rows integer;
 BEGIN
@@ -74,7 +74,7 @@ $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION set_server_connstr(IN server name, IN server_connstr text) IS 'Update server connection string';
 
-CREATE OR REPLACE FUNCTION set_server_max_sample_age(IN server name, IN max_sample_age integer) RETURNS integer SET search_path=@extschema@,public AS $$
+CREATE FUNCTION set_server_max_sample_age(IN server name, IN max_sample_age integer) RETURNS integer SET search_path=@extschema@,public AS $$
 DECLARE
     upd_rows integer;
 BEGIN
@@ -86,7 +86,7 @@ $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION set_server_max_sample_age(IN server name, IN max_sample_age integer) IS 'Update server max_sample_age period';
 
-CREATE OR REPLACE FUNCTION enable_server(IN server name) RETURNS integer SET search_path=@extschema@,public AS $$
+CREATE FUNCTION enable_server(IN server name) RETURNS integer SET search_path=@extschema@,public AS $$
 DECLARE
     upd_rows integer;
 BEGIN
@@ -98,7 +98,7 @@ $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION enable_server(IN server name) IS 'Enable existing server (will be included in take_sample() call)';
 
-CREATE OR REPLACE FUNCTION disable_server(IN server name) RETURNS integer SET search_path=@extschema@,public AS $$
+CREATE FUNCTION disable_server(IN server name) RETURNS integer SET search_path=@extschema@,public AS $$
 DECLARE
     upd_rows integer;
 BEGIN
@@ -110,7 +110,7 @@ $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION disable_server(IN server name) IS 'Disable existing server (will be excluded from take_sample() call)';
 
-CREATE OR REPLACE FUNCTION set_server_db_exclude(IN server name, IN exclude_db name[]) RETURNS integer SET search_path=@extschema@,public AS $$
+CREATE FUNCTION set_server_db_exclude(IN server name, IN exclude_db name[]) RETURNS integer SET search_path=@extschema@,public AS $$
 DECLARE
     upd_rows integer;
 BEGIN
@@ -122,7 +122,7 @@ $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION set_server_db_exclude(IN server name, IN exclude_db name[]) IS 'Excude databases from object stats collection. Useful in RDS.';
 
-CREATE OR REPLACE FUNCTION show_servers() RETURNS TABLE(server_name name, connstr text, enabled boolean) SET search_path=@extschema@,public AS $$
+CREATE FUNCTION show_servers() RETURNS TABLE(server_name name, connstr text, enabled boolean) SET search_path=@extschema@,public AS $$
     SELECT server_name,connstr,enabled FROM servers;
 $$ LANGUAGE sql;
 

@@ -1,6 +1,6 @@
 /* ========= Statement stats functions ========= */
 
-CREATE OR REPLACE FUNCTION profile_checkavail_statstatements(IN sserver_id integer, IN start_id integer, IN end_id integer)
+CREATE FUNCTION profile_checkavail_statstatements(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS BOOLEAN
 SET search_path=@extschema@,public AS $$
 -- Check if there was available pg_stat_statements statistics during report interval
@@ -9,7 +9,7 @@ SET search_path=@extschema@,public AS $$
   WHERE sn.server_id = sserver_id AND sn.sample_id BETWEEN start_id + 1 AND end_id
 $$ LANGUAGE sql;
 
-CREATE OR REPLACE FUNCTION profile_checkavail_statements_v18(IN sserver_id integer, IN start_id integer, IN end_id integer)
+CREATE FUNCTION profile_checkavail_statements_v18(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS BOOLEAN
 SET search_path=@extschema@,public AS $$
 -- Check if there was available pg_stat_statements v1.8 during report interval
@@ -18,7 +18,7 @@ SET search_path=@extschema@,public AS $$
   WHERE sn.server_id = sserver_id AND sn.sample_id BETWEEN start_id + 1 AND end_id
 $$ LANGUAGE sql;
 
-CREATE OR REPLACE FUNCTION statements_stats(IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
+CREATE FUNCTION statements_stats(IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
 RETURNS TABLE(
         dbname              name,
         datid               oid,
@@ -51,8 +51,8 @@ SET search_path=@extschema@,public AS $$
         sum(st.blk_read_time)/1000::double precision AS blk_read_time,
         sum(st.blk_write_time)/1000::double precision AS blk_write_time,
         (sum(trg.total_time)/1000)::double precision AS trg_fn_total_time,
-        sum(st.shared_blks_hit + st.shared_blks_read)::bigint AS shared_gets,
-        sum(st.local_blks_hit + st.local_blks_read)::bigint AS local_gets,
+        sum(st.shared_blks_hit)::bigint + sum(st.shared_blks_read)::bigint AS shared_gets,
+        sum(st.local_blks_hit)::bigint + sum(st.local_blks_read)::bigint AS local_gets,
         sum(st.shared_blks_dirtied)::bigint AS shared_blks_dirtied,
         sum(st.local_blks_dirtied)::bigint AS local_blks_dirtied,
         sum(st.temp_blks_read)::bigint AS temp_blks_read,
@@ -80,7 +80,7 @@ SET search_path=@extschema@,public AS $$
     GROUP BY sample_db.datname, sample_db.datid;
 $$ LANGUAGE sql;
 
-CREATE OR REPLACE FUNCTION statements_stats_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION statements_stats_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -89,22 +89,22 @@ DECLARE
     c_dbstats CURSOR FOR
     SELECT
         COALESCE(dbname,'Total') as dbname_t,
-        sum(calls) as calls,
-        sum(total_exec_time) as total_exec_time,
-        sum(total_plan_time) as total_plan_time,
-        sum(blk_read_time) as blk_read_time,
-        sum(blk_write_time) as blk_write_time,
-        sum(trg_fn_total_time) as trg_fn_total_time,
-        sum(shared_gets) as shared_gets,
-        sum(local_gets) as local_gets,
-        sum(shared_blks_dirtied) as shared_blks_dirtied,
-        sum(local_blks_dirtied) as local_blks_dirtied,
-        sum(temp_blks_read) as temp_blks_read,
-        sum(temp_blks_written) as temp_blks_written,
-        sum(local_blks_read) as local_blks_read,
-        sum(local_blks_written) as local_blks_written,
-        sum(statements) as statements,
-        sum(wal_bytes) as wal_bytes
+        NULLIF(sum(calls), 0) as calls,
+        NULLIF(sum(total_exec_time), 0.0) as total_exec_time,
+        NULLIF(sum(total_plan_time), 0.0) as total_plan_time,
+        NULLIF(sum(blk_read_time), 0.0) as blk_read_time,
+        NULLIF(sum(blk_write_time), 0.0) as blk_write_time,
+        NULLIF(sum(trg_fn_total_time), 0.0) as trg_fn_total_time,
+        NULLIF(sum(shared_gets), 0) as shared_gets,
+        NULLIF(sum(local_gets), 0) as local_gets,
+        NULLIF(sum(shared_blks_dirtied), 0) as shared_blks_dirtied,
+        NULLIF(sum(local_blks_dirtied), 0) as local_blks_dirtied,
+        NULLIF(sum(temp_blks_read), 0) as temp_blks_read,
+        NULLIF(sum(temp_blks_written), 0) as temp_blks_written,
+        NULLIF(sum(local_blks_read), 0) as local_blks_read,
+        NULLIF(sum(local_blks_written), 0) as local_blks_written,
+        NULLIF(sum(statements), 0) as statements,
+        NULLIF(sum(wal_bytes), 0) as wal_bytes
     FROM statements_stats(sserver_id,start_id,end_id,topn)
     GROUP BY ROLLUP(dbname)
     ORDER BY dbname NULLS LAST;
@@ -224,7 +224,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION statements_stats_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION statements_stats_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
 IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -234,38 +234,38 @@ DECLARE
     c_dbstats CURSOR FOR
     SELECT
         COALESCE(COALESCE(st1.dbname,st2.dbname),'Total') as dbname,
-        sum(st1.calls) as calls1,
-        sum(st1.total_exec_time) as total_exec_time1,
-        sum(st1.total_plan_time) as total_plan_time1,
-        sum(st1.blk_read_time) as blk_read_time1,
-        sum(st1.blk_write_time) as blk_write_time1,
-        sum(st1.trg_fn_total_time) as trg_fn_total_time1,
-        sum(st1.shared_gets) as shared_gets1,
-        sum(st1.local_gets) as local_gets1,
-        sum(st1.shared_blks_dirtied) as shared_blks_dirtied1,
-        sum(st1.local_blks_dirtied) as local_blks_dirtied1,
-        sum(st1.temp_blks_read) as temp_blks_read1,
-        sum(st1.temp_blks_written) as temp_blks_written1,
-        sum(st1.local_blks_read) as local_blks_read1,
-        sum(st1.local_blks_written) as local_blks_written1,
-        sum(st1.statements) as statements1,
-        sum(st1.wal_bytes) as wal_bytes1,
-        sum(st2.calls) as calls2,
-        sum(st2.total_exec_time) as total_exec_time2,
-        sum(st2.total_plan_time) as total_plan_time2,
-        sum(st2.blk_read_time) as blk_read_time2,
-        sum(st2.blk_write_time) as blk_write_time2,
-        sum(st2.trg_fn_total_time) as trg_fn_total_time2,
-        sum(st2.shared_gets) as shared_gets2,
-        sum(st2.local_gets) as local_gets2,
-        sum(st2.shared_blks_dirtied) as shared_blks_dirtied2,
-        sum(st2.local_blks_dirtied) as local_blks_dirtied2,
-        sum(st2.temp_blks_read) as temp_blks_read2,
-        sum(st2.temp_blks_written) as temp_blks_written2,
-        sum(st2.local_blks_read) as local_blks_read2,
-        sum(st2.local_blks_written) as local_blks_written2,
-        sum(st2.statements) as statements2,
-        sum(st2.wal_bytes) as wal_bytes2
+        NULLIF(sum(st1.calls), 0) as calls1,
+        NULLIF(sum(st1.total_exec_time), 0.0) as total_exec_time1,
+        NULLIF(sum(st1.total_plan_time), 0.0) as total_plan_time1,
+        NULLIF(sum(st1.blk_read_time), 0.0) as blk_read_time1,
+        NULLIF(sum(st1.blk_write_time), 0.0) as blk_write_time1,
+        NULLIF(sum(st1.trg_fn_total_time), 0.0) as trg_fn_total_time1,
+        NULLIF(sum(st1.shared_gets), 0) as shared_gets1,
+        NULLIF(sum(st1.local_gets), 0) as local_gets1,
+        NULLIF(sum(st1.shared_blks_dirtied), 0) as shared_blks_dirtied1,
+        NULLIF(sum(st1.local_blks_dirtied), 0) as local_blks_dirtied1,
+        NULLIF(sum(st1.temp_blks_read), 0) as temp_blks_read1,
+        NULLIF(sum(st1.temp_blks_written), 0) as temp_blks_written1,
+        NULLIF(sum(st1.local_blks_read), 0) as local_blks_read1,
+        NULLIF(sum(st1.local_blks_written), 0) as local_blks_written1,
+        NULLIF(sum(st1.statements), 0) as statements1,
+        NULLIF(sum(st1.wal_bytes), 0) as wal_bytes1,
+        NULLIF(sum(st2.calls), 0) as calls2,
+        NULLIF(sum(st2.total_exec_time), 0.0) as total_exec_time2,
+        NULLIF(sum(st2.total_plan_time), 0.0) as total_plan_time2,
+        NULLIF(sum(st2.blk_read_time), 0.0) as blk_read_time2,
+        NULLIF(sum(st2.blk_write_time), 0.0) as blk_write_time2,
+        NULLIF(sum(st2.trg_fn_total_time), 0.0) as trg_fn_total_time2,
+        NULLIF(sum(st2.shared_gets), 0) as shared_gets2,
+        NULLIF(sum(st2.local_gets), 0) as local_gets2,
+        NULLIF(sum(st2.shared_blks_dirtied), 0) as shared_blks_dirtied2,
+        NULLIF(sum(st2.local_blks_dirtied), 0) as local_blks_dirtied2,
+        NULLIF(sum(st2.temp_blks_read), 0) as temp_blks_read2,
+        NULLIF(sum(st2.temp_blks_written), 0) as temp_blks_written2,
+        NULLIF(sum(st2.local_blks_read), 0) as local_blks_read2,
+        NULLIF(sum(st2.local_blks_written), 0) as local_blks_written2,
+        NULLIF(sum(st2.statements), 0) as statements2,
+        NULLIF(sum(st2.wal_bytes), 0) as wal_bytes2
     FROM statements_stats(sserver_id,start1_id,end1_id,topn) st1
         FULL OUTER JOIN statements_stats(sserver_id,start2_id,end2_id,topn) st2 USING (datid)
     GROUP BY ROLLUP(COALESCE(st1.dbname,st2.dbname))

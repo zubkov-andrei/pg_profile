@@ -1,6 +1,6 @@
 /* ===== Tables stats functions ===== */
 
-CREATE OR REPLACE FUNCTION tablespace_stats(IN sserver_id integer, IN start_id integer, IN end_id integer)
+CREATE FUNCTION tablespace_stats(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS TABLE(
     server_id integer,
     tablespaceid oid,
@@ -29,7 +29,7 @@ RETURNS TABLE(
     GROUP BY st.server_id, st.tablespaceid, st.tablespacename, st.tablespacepath
 $$ LANGUAGE sql;
 
-CREATE OR REPLACE FUNCTION tablespaces_stats_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION tablespaces_stats_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -39,8 +39,8 @@ DECLARE
     SELECT
         st.tablespacename,
         st.tablespacepath,
-        pg_size_pretty(st_last.size) as size,
-        pg_size_pretty(st.size_delta) as size_delta
+        pg_size_pretty(NULLIF(st_last.size, 0)) as size,
+        pg_size_pretty(NULLIF(st.size_delta, 0)) as size_delta
     FROM tablespace_stats(sserver_id,start_id,end_id) st
       LEFT OUTER JOIN v_sample_stat_tablespaces st_last ON
         (st_last.server_id = st.server_id AND st_last.sample_id = end_id AND st_last.tablespaceid = st.tablespaceid);
@@ -91,7 +91,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION tablespaces_stats_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION tablespaces_stats_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
 IN start2_id integer, IN end2_id integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -102,10 +102,10 @@ DECLARE
     SELECT
         COALESCE(stat1.tablespacename,stat2.tablespacename) AS tablespacename,
         COALESCE(stat1.tablespacepath,stat2.tablespacepath) AS tablespacepath,
-        pg_size_pretty(st_last1.size) as size1,
-        pg_size_pretty(st_last2.size) as size2,
-        pg_size_pretty(stat1.size_delta) as size_delta1,
-        pg_size_pretty(stat2.size_delta) as size_delta2
+        pg_size_pretty(NULLIF(st_last1.size, 0)) as size1,
+        pg_size_pretty(NULLIF(st_last2.size, 0)) as size2,
+        pg_size_pretty(NULLIF(stat1.size_delta, 0)) as size_delta1,
+        pg_size_pretty(NULLIF(stat2.size_delta, 0)) as size_delta2
     FROM tablespace_stats(sserver_id,start1_id,end1_id) stat1
         FULL OUTER JOIN tablespace_stats(sserver_id,start2_id,end2_id) stat2 USING (server_id,tablespaceid)
         LEFT OUTER JOIN v_sample_stat_tablespaces st_last1 ON

@@ -1,6 +1,6 @@
 /* ===== Cluster stats functions ===== */
 
-CREATE OR REPLACE FUNCTION cluster_stats(IN sserver_id integer, IN start_id integer, IN end_id integer)
+CREATE FUNCTION cluster_stats(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS TABLE(
         server_id               integer,
         checkpoints_timed     bigint,
@@ -49,7 +49,7 @@ SET search_path=@extschema@,public AS $$
     --HAVING max(stats_reset)=min(stats_reset);
 $$ LANGUAGE sql;
 
-CREATE OR REPLACE FUNCTION cluster_stats_reset(IN sserver_id integer, IN start_id integer, IN end_id integer)
+CREATE FUNCTION cluster_stats_reset(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS TABLE(
         sample_id               integer,
         bgwriter_stats_reset  timestamp with time zone,
@@ -58,22 +58,22 @@ RETURNS TABLE(
 SET search_path=@extschema@,public AS $$
   SELECT
       bgwr1.sample_id as sample_id,
-      nullif(bgwr1.stats_reset,coalesce(bgwr2.stats_reset,bgwr1.stats_reset)),
-      nullif(sta1.stats_reset,coalesce(sta2.stats_reset,sta1.stats_reset))
+      nullif(bgwr1.stats_reset,bgwr0.stats_reset),
+      nullif(sta1.stats_reset,sta0.stats_reset)
   FROM sample_stat_cluster bgwr1
       LEFT OUTER JOIN sample_stat_archiver sta1 USING (server_id,sample_id)
-      JOIN sample_stat_cluster bgwr2 ON (bgwr1.server_id = bgwr2.server_id AND bgwr1.sample_id = bgwr2.sample_id + 1)
-      LEFT OUTER JOIN sample_stat_archiver sta2 ON (sta1.server_id = sta2.server_id AND sta1.sample_id = sta2.sample_id + 1)
+      JOIN sample_stat_cluster bgwr0 ON (bgwr1.server_id = bgwr0.server_id AND bgwr1.sample_id = bgwr0.sample_id + 1)
+      LEFT OUTER JOIN sample_stat_archiver sta0 ON (sta1.server_id = sta0.server_id AND sta1.sample_id = sta0.sample_id + 1)
   WHERE bgwr1.server_id = sserver_id AND bgwr1.sample_id BETWEEN start_id + 1 AND end_id
     AND
       COALESCE(
-        nullif(bgwr1.stats_reset,coalesce(bgwr2.stats_reset,bgwr1.stats_reset)),
-        nullif(sta1.stats_reset,coalesce(sta2.stats_reset,sta1.stats_reset))
+        nullif(bgwr1.stats_reset,bgwr0.stats_reset),
+        nullif(sta1.stats_reset,sta0.stats_reset)
       ) IS NOT NULL
   ORDER BY bgwr1.sample_id ASC
 $$ LANGUAGE sql;
 
-CREATE OR REPLACE FUNCTION cluster_stats_reset_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION cluster_stats_reset_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -127,7 +127,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION cluster_stats_reset_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION cluster_stats_reset_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
 IN start2_id integer, IN end2_id integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -207,7 +207,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION cluster_stats_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION cluster_stats_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -215,19 +215,19 @@ DECLARE
     --Cursor for db stats
     c_dbstats CURSOR FOR
     SELECT
-        checkpoints_timed,
-        checkpoints_req,
-        checkpoint_write_time,
-        checkpoint_sync_time,
-        buffers_checkpoint,
-        buffers_clean,
-        buffers_backend,
-        buffers_backend_fsync,
-        maxwritten_clean,
-        buffers_alloc,
-        pg_size_pretty(wal_size) as wal_size,
-        archived_count,
-        failed_count
+        NULLIF(checkpoints_timed, 0) as checkpoints_timed,
+        NULLIF(checkpoints_req, 0) as checkpoints_req,
+        NULLIF(checkpoint_write_time, 0.0) as checkpoint_write_time,
+        NULLIF(checkpoint_sync_time, 0.0) as checkpoint_sync_time,
+        NULLIF(buffers_checkpoint, 0) as buffers_checkpoint,
+        NULLIF(buffers_clean, 0) as buffers_clean,
+        NULLIF(buffers_backend, 0) as buffers_backend,
+        NULLIF(buffers_backend_fsync, 0) as buffers_backend_fsync,
+        NULLIF(maxwritten_clean, 0) as maxwritten_clean,
+        NULLIF(buffers_alloc, 0) as buffers_alloc,
+        pg_size_pretty(NULLIF(wal_size, 0)) as wal_size,
+        NULLIF(archived_count, 0) as archived_count,
+        NULLIF(failed_count, 0) as failed_count
     FROM cluster_stats(sserver_id,start_id,end_id);
 
     r_result RECORD;
@@ -273,7 +273,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION cluster_stats_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION cluster_stats_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
 IN start2_id integer, IN end2_id integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -282,32 +282,32 @@ DECLARE
     --Cursor for db stats
     c_dbstats CURSOR FOR
     SELECT
-        stat1.checkpoints_timed as checkpoints_timed1,
-        stat1.checkpoints_req as checkpoints_req1,
-        stat1.checkpoint_write_time as checkpoint_write_time1,
-        stat1.checkpoint_sync_time as checkpoint_sync_time1,
-        stat1.buffers_checkpoint as buffers_checkpoint1,
-        stat1.buffers_clean as buffers_clean1,
-        stat1.buffers_backend as buffers_backend1,
-        stat1.buffers_backend_fsync as buffers_backend_fsync1,
-        stat1.maxwritten_clean as maxwritten_clean1,
-        stat1.buffers_alloc as buffers_alloc1,
-        pg_size_pretty(stat1.wal_size) as wal_size1,
-        stat1.archived_count as archived_count1,
-        stat1.failed_count as failed_count1,
-        stat2.checkpoints_timed as checkpoints_timed2,
-        stat2.checkpoints_req as checkpoints_req2,
-        stat2.checkpoint_write_time as checkpoint_write_time2,
-        stat2.checkpoint_sync_time as checkpoint_sync_time2,
-        stat2.buffers_checkpoint as buffers_checkpoint2,
-        stat2.buffers_clean as buffers_clean2,
-        stat2.buffers_backend as buffers_backend2,
-        stat2.buffers_backend_fsync as buffers_backend_fsync2,
-        stat2.maxwritten_clean as maxwritten_clean2,
-        stat2.buffers_alloc as buffers_alloc2,
-        pg_size_pretty(stat2.wal_size) as wal_size2,
-        stat2.archived_count as archived_count2,
-        stat2.failed_count as failed_count2
+        NULLIF(stat1.checkpoints_timed, 0) as checkpoints_timed1,
+        NULLIF(stat1.checkpoints_req, 0) as checkpoints_req1,
+        NULLIF(stat1.checkpoint_write_time, 0.0) as checkpoint_write_time1,
+        NULLIF(stat1.checkpoint_sync_time, 0.0) as checkpoint_sync_time1,
+        NULLIF(stat1.buffers_checkpoint, 0) as buffers_checkpoint1,
+        NULLIF(stat1.buffers_clean, 0) as buffers_clean1,
+        NULLIF(stat1.buffers_backend, 0) as buffers_backend1,
+        NULLIF(stat1.buffers_backend_fsync, 0) as buffers_backend_fsync1,
+        NULLIF(stat1.maxwritten_clean, 0) as maxwritten_clean1,
+        NULLIF(stat1.buffers_alloc, 0) as buffers_alloc1,
+        pg_size_pretty(NULLIF(stat1.wal_size, 0)) as wal_size1,
+        NULLIF(stat1.archived_count, 0) as archived_count1,
+        NULLIF(stat1.failed_count, 0) as failed_count1,
+        NULLIF(stat2.checkpoints_timed, 0) as checkpoints_timed2,
+        NULLIF(stat2.checkpoints_req, 0) as checkpoints_req2,
+        NULLIF(stat2.checkpoint_write_time, 0.0) as checkpoint_write_time2,
+        NULLIF(stat2.checkpoint_sync_time, 0.0) as checkpoint_sync_time2,
+        NULLIF(stat2.buffers_checkpoint, 0) as buffers_checkpoint2,
+        NULLIF(stat2.buffers_clean, 0) as buffers_clean2,
+        NULLIF(stat2.buffers_backend, 0) as buffers_backend2,
+        NULLIF(stat2.buffers_backend_fsync, 0) as buffers_backend_fsync2,
+        NULLIF(stat2.maxwritten_clean, 0) as maxwritten_clean2,
+        NULLIF(stat2.buffers_alloc, 0) as buffers_alloc2,
+        pg_size_pretty(NULLIF(stat2.wal_size, 0)) as wal_size2,
+        NULLIF(stat2.archived_count, 0) as archived_count2,
+        NULLIF(stat2.failed_count, 0) as failed_count2
     FROM cluster_stats(sserver_id,start1_id,end1_id) stat1
         FULL OUTER JOIN cluster_stats(sserver_id,start2_id,end2_id) stat2 USING (server_id);
 

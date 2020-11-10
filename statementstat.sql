@@ -1,11 +1,12 @@
 /* ===== Statements stats functions ===== */
 
-CREATE OR REPLACE FUNCTION top_statements(IN sserver_id integer, IN start_id integer, IN end_id integer)
+CREATE FUNCTION top_statements(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS TABLE(
     server_id                 integer,
     datid                   oid,
     dbname                  name,
     userid                  oid,
+    queryid                 bigint,
     queryid_md5             char(10),
     plans                   bigint,
     plans_pct               float,
@@ -66,7 +67,7 @@ RETURNS TABLE(
     WITH
       tot AS (
         SELECT
-            COALESCE(sum(total_plan_time), 0) + sum(total_exec_time) AS total_time,
+            COALESCE(sum(total_plan_time), 0.0) + sum(total_exec_time) AS total_time,
             sum(blk_read_time) AS blk_read_time,
             sum(blk_write_time) AS blk_write_time,
             sum(shared_blks_hit) AS shared_blks_hit,
@@ -83,7 +84,7 @@ RETURNS TABLE(
       ),
       totbgwr AS (
         SELECT
-          sum(buffers_checkpoint + buffers_clean + buffers_backend) AS written,
+          sum(buffers_checkpoint) + sum(buffers_clean) + sum(buffers_backend) AS written,
           sum(buffers_backend) AS buffers_backend,
           sum(wal_size) AS wal_size
         FROM sample_stat_cluster
@@ -94,18 +95,19 @@ RETURNS TABLE(
         st.datid as datid,
         sample_db.datname as dbname,
         st.userid as userid,
+        st.queryid as queryid,
         st.queryid_md5 as queryid_md5,
         sum(st.plans)::bigint as plans,
         (sum(st.plans)*100/NULLIF(min(tot.plans), 0))::float as plans_pct,
         sum(st.calls)::bigint as calls,
         (sum(st.calls)*100/NULLIF(min(tot.calls), 0))::float as calls_pct,
-        (sum(st.total_exec_time) + coalesce(sum(st.total_plan_time), 0))/1000 as total_time,
-        (sum(st.total_exec_time) + coalesce(sum(st.total_plan_time), 0))*100/NULLIF(min(tot.total_time), 0) as total_time_pct,
+        (sum(st.total_exec_time) + COALESCE(sum(st.total_plan_time), 0.0))/1000 as total_time,
+        (sum(st.total_exec_time) + COALESCE(sum(st.total_plan_time), 0.0))*100/NULLIF(min(tot.total_time), 0) as total_time_pct,
         sum(st.total_plan_time)/1000 as total_plan_time,
-        sum(st.total_plan_time)*100/NULLIF(min(st.total_exec_time) + min(st.total_plan_time), 0) as plan_time_pct,
+        sum(st.total_plan_time)*100/NULLIF(sum(st.total_exec_time) + COALESCE(sum(st.total_plan_time), 0.0), 0) as plan_time_pct,
         sum(st.total_exec_time)/1000 as total_exec_time,
         sum(st.total_exec_time)*100/NULLIF(min(tot.total_time), 0) as total_exec_time_pct,
-        sum(st.total_exec_time)*100/NULLIF(min(st.total_exec_time) + min(st.total_plan_time), 0) as exec_time_pct,
+        sum(st.total_exec_time)*100/NULLIF(sum(st.total_exec_time) + COALESCE(sum(st.total_plan_time), 0.0), 0) as exec_time_pct,
         min(st.min_exec_time) as min_exec_time,
         max(st.max_exec_time) as max_exec_time,
         sum(st.mean_exec_time*st.calls)/NULLIF(sum(st.calls), 0) as mean_exec_time,
@@ -136,7 +138,7 @@ RETURNS TABLE(
         sum(st.temp_blks_written)::bigint as temp_blks_written,
         sum(st.blk_read_time)/1000 as blk_read_time,
         sum(st.blk_write_time)/1000 as blk_write_time,
-        (sum(st.blk_read_time + st.blk_write_time))/1000 as io_time,
+        (sum(st.blk_read_time) + sum(st.blk_write_time))/1000 as io_time,
         (sum(st.blk_read_time) + sum(st.blk_write_time)) * 100 / NULLIF(min(tot.blk_read_time) + min(tot.blk_write_time),0) as io_time_pct,
         (sum(st.temp_blks_read) * 100 / NULLIF(min(tot.temp_blks_read), 0))::float as temp_read_total_pct,
         (sum(st.temp_blks_written) * 100 / NULLIF(min(tot.temp_blks_written), 0))::float as temp_write_total_pct,
@@ -172,7 +174,7 @@ RETURNS TABLE(
     GROUP BY st.server_id,st.datid,sample_db.datname,st.userid,st.queryid,st.queryid_md5
 $$ LANGUAGE sql;
 
-CREATE OR REPLACE FUNCTION top_elapsed_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION top_elapsed_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -180,18 +182,19 @@ DECLARE
     --Cursor for top(cnt) queries ordered by epapsed time
     c_elapsed_time CURSOR FOR
     SELECT
-        st.queryid_md5 as queryid,
+        st.queryid,
+        st.queryid_md5,
         st.dbname,
-        st.total_time_pct,
-        st.total_time,
-        st.total_plan_time,
-        st.total_exec_time,
-        st.blk_read_time,
-        st.blk_write_time,
-        st.user_time,
-        st.system_time,
-        st.calls,
-        st.plans
+        NULLIF(st.total_time_pct, 0) as total_time_pct,
+        NULLIF(st.total_time, 0) as total_time,
+        NULLIF(st.total_plan_time, 0) as total_plan_time,
+        NULLIF(st.total_exec_time, 0) as total_exec_time,
+        NULLIF(st.blk_read_time, 0.0) as blk_read_time,
+        NULLIF(st.blk_write_time, 0.0) as blk_write_time,
+        NULLIF(st.user_time, 0.0) as user_time,
+        NULLIF(st.system_time, 0.0) as system_time,
+        NULLIF(st.calls, 0) as calls,
+        NULLIF(st.plans, 0) as plans
     FROM top_statements(sserver_id, start_id, end_id) st
     ORDER BY st.total_time DESC
     LIMIT topn;
@@ -228,17 +231,18 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><a HREF="#%1$s">%1$s</a></td>'
-          '<td>%2$s</td>'
-          '<td {value}>%3$s</td>'
+          '<td {mono}><p><a HREF="#%1$s">%1$s</a></p>'
+          '<p><small>[%2$s]</small></p></td>'
+          '<td>%3$s</td>'
           '<td {value}>%4$s</td>'
           '<td {value}>%5$s</td>'
           '<td {value}>%6$s</td>'
           '<td {value}>%7$s</td>'
           '<td {value}>%8$s</td>'
+          '<td {value}>%9$s</td>'
           '{kcache_row}'
-          '<td {value}>%11$s</td>'
           '<td {value}>%12$s</td>'
+          '<td {value}>%13$s</td>'
         '</tr>',
       'kcache_hdr1',
         '<th colspan="2">CPU time (s)</th>',
@@ -246,8 +250,8 @@ BEGIN
         '<th>Usr</th>'
         '<th>Sys</th>',
       'kcache_row',
-        '<td {value}>%9$s</td>'
         '<td {value}>%10$s</td>'
+        '<td {value}>%11$s</td>'
       );
     -- Conditional template
     IF jsonb_extract_path_text(jreportset, 'report_features', 'kcachestatements')::boolean THEN
@@ -265,7 +269,8 @@ BEGIN
     FOR r_result IN c_elapsed_time LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid,
+            r_result.queryid_md5,
+            to_hex(r_result.queryid),
             r_result.dbname,
             round(CAST(r_result.total_time_pct AS numeric),2),
             round(CAST(r_result.total_time AS numeric),2),
@@ -278,7 +283,7 @@ BEGIN
             r_result.plans,
             r_result.calls
         );
-        PERFORM collect_queries(r_result.queryid);
+        PERFORM collect_queries(r_result.queryid_md5);
     END LOOP;
 
     IF report != '' THEN
@@ -289,7 +294,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_elapsed_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION top_elapsed_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -298,34 +303,38 @@ DECLARE
     --Cursor for top(cnt) queries ordered by epapsed time
     c_elapsed_time CURSOR FOR
     SELECT * FROM (SELECT
-        COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid,
+        COALESCE(st1.queryid,st2.queryid) as queryid,
+        COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid_md5,
         COALESCE(st1.dbname,st2.dbname) as dbname,
-        st1.total_time as total_time1,
-        st1.total_time_pct as total_time_pct1,
-        st1.total_plan_time as total_plan_time1,
-        st1.total_exec_time as total_exec_time1,
-        st1.blk_read_time as blk_read_time1,
-        st1.blk_write_time as blk_write_time1,
-        st1.user_time as user_time1,
-        st1.system_time as system_time1,
-        st1.calls as calls1,
-        st1.plans as plans1,
-        st2.total_time as total_time2,
-        st2.total_time_pct as total_time_pct2,
-        st2.total_plan_time as total_plan_time2,
-        st2.total_exec_time as total_exec_time2,
-        st2.blk_read_time as blk_read_time2,
-        st2.blk_write_time as blk_write_time2,
-        st2.user_time as user_time2,
-        st2.system_time as system_time2,
-        st2.calls as calls2,
-        st2.plans as plans2,
+        NULLIF(st1.total_time, 0.0) as total_time1,
+        NULLIF(st1.total_time_pct, 0.0) as total_time_pct1,
+        NULLIF(st1.total_plan_time, 0.0) as total_plan_time1,
+        NULLIF(st1.total_exec_time, 0.0) as total_exec_time1,
+        NULLIF(st1.blk_read_time, 0.0) as blk_read_time1,
+        NULLIF(st1.blk_write_time, 0.0) as blk_write_time1,
+        NULLIF(st1.user_time, 0.0) as user_time1,
+        NULLIF(st1.system_time, 0.0) as system_time1,
+        NULLIF(st1.calls, 0) as calls1,
+        NULLIF(st1.plans, 0) as plans1,
+        NULLIF(st2.total_time, 0.0) as total_time2,
+        NULLIF(st2.total_time_pct, 0.0) as total_time_pct2,
+        NULLIF(st2.total_plan_time, 0.0) as total_plan_time2,
+        NULLIF(st2.total_exec_time, 0.0) as total_exec_time2,
+        NULLIF(st2.blk_read_time, 0.0) as blk_read_time2,
+        NULLIF(st2.blk_write_time, 0.0) as blk_write_time2,
+        NULLIF(st2.user_time, 0.0) as user_time2,
+        NULLIF(st2.system_time, 0.0) as system_time2,
+        NULLIF(st2.calls, 0) as calls2,
+        NULLIF(st2.plans, 0) as plans2,
         row_number() over (ORDER BY st1.total_time DESC NULLS LAST) as rn_time1,
         row_number() over (ORDER BY st2.total_time DESC NULLS LAST) as rn_time2
     FROM top_statements(sserver_id, start1_id, end1_id) st1
-        FULL OUTER JOIN top_statements(sserver_id, start2_id, end2_id) st2 USING (server_id, datid, userid, queryid_md5)
+        FULL OUTER JOIN top_statements(sserver_id, start2_id, end2_id) st2 USING (server_id, datid, userid, queryid)
     ORDER BY COALESCE(st1.total_time,0) + COALESCE(st2.total_time,0) DESC ) t1
-    WHERE rn_time1 <= topn OR rn_time2 <= topn;
+    WHERE least(
+        rn_time1,
+        rn_time2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN
@@ -361,30 +370,31 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><a HREF="#%1$s">%1$s</a></td>'
-          '<td {rowtdspanhdr}>%2$s</td>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%1$s</a></p>'
+          '<p><small>[%2$s]</small></p></td>'
+          '<td {rowtdspanhdr}>%3$s</td>'
           '<td {label} {title1}>1</td>'
-          '<td {value}>%3$s</td>'
           '<td {value}>%4$s</td>'
           '<td {value}>%5$s</td>'
           '<td {value}>%6$s</td>'
           '<td {value}>%7$s</td>'
           '<td {value}>%8$s</td>'
+          '<td {value}>%9$s</td>'
           '{kcache_row1}'
-          '<td {value}>%11$s</td>'
           '<td {value}>%12$s</td>'
+          '<td {value}>%13$s</td>'
         '</tr>'
         '<tr {interval2}>'
           '<td {label} {title2}>2</td>'
-          '<td {value}>%13$s</td>'
           '<td {value}>%14$s</td>'
           '<td {value}>%15$s</td>'
           '<td {value}>%16$s</td>'
           '<td {value}>%17$s</td>'
           '<td {value}>%18$s</td>'
+          '<td {value}>%19$s</td>'
           '{kcache_row2}'
-          '<td {value}>%21$s</td>'
           '<td {value}>%22$s</td>'
+          '<td {value}>%23$s</td>'
         '</tr>'
         '<tr style="visibility:collapse"></tr>',
       'kcache_hdr1',
@@ -393,11 +403,11 @@ BEGIN
         '<th>Usr</th>'
         '<th>Sys</th>',
       'kcache_row1',
-        '<td {value}>%9$s</td>'
-        '<td {value}>%10$s</td>',
+        '<td {value}>%10$s</td>'
+        '<td {value}>%11$s</td>',
       'kcache_row2',
-        '<td {value}>%19$s</td>'
         '<td {value}>%20$s</td>'
+        '<td {value}>%21$s</td>'
       );
     -- Conditional template
     IF jsonb_extract_path_text(jreportset, 'report_features', 'kcachestatements')::boolean THEN
@@ -418,7 +428,8 @@ BEGIN
     FOR r_result IN c_elapsed_time LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid,
+            r_result.queryid_md5,
+            to_hex(r_result.queryid),
             r_result.dbname,
             round(CAST(r_result.total_time_pct1 AS numeric),2),
             round(CAST(r_result.total_time1 AS numeric),2),
@@ -442,7 +453,7 @@ BEGIN
             r_result.calls2
         );
 
-        PERFORM collect_queries(r_result.queryid);
+        PERFORM collect_queries(r_result.queryid_md5);
     END LOOP;
 
     IF report != '' THEN
@@ -454,7 +465,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 
-CREATE OR REPLACE FUNCTION top_plan_time_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION top_plan_time_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -462,16 +473,17 @@ DECLARE
     --Cursor for queries ordered by planning time
     c_elapsed_time CURSOR FOR
     SELECT
-        st.queryid_md5 as queryid,
+        st.queryid,
+        st.queryid_md5,
         st.dbname,
-        st.plans,
-        st.calls,
-        st.total_plan_time,
-        st.plan_time_pct,
-        st.min_plan_time,
-        st.max_plan_time,
-        st.mean_plan_time,
-        st.stddev_plan_time
+        NULLIF(st.plans, 0) as plans,
+        NULLIF(st.calls, 0) as calls,
+        NULLIF(st.total_plan_time, 0.0) as total_plan_time,
+        NULLIF(st.plan_time_pct, 0.0) as plan_time_pct,
+        NULLIF(st.min_plan_time, 0.0) as min_plan_time,
+        NULLIF(st.max_plan_time, 0.0) as max_plan_time,
+        NULLIF(st.mean_plan_time, 0.0) as mean_plan_time,
+        NULLIF(st.stddev_plan_time, 0.0) as stddev_plan_time
     FROM top_statements(sserver_id, start_id, end_id) st
     ORDER BY st.total_plan_time DESC
     LIMIT topn;
@@ -505,9 +517,9 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><a HREF="#%1$s">%1$s</a></td>'
-          '<td>%2$s</td>'
-          '<td {value}>%3$s</td>'
+          '<td {mono}><p><a HREF="#%1$s">%1$s</a></p>'
+          '<p><small>[%2$s]</small></p></td>'
+          '<td>%3$s</td>'
           '<td {value}>%4$s</td>'
           '<td {value}>%5$s</td>'
           '<td {value}>%6$s</td>'
@@ -515,6 +527,7 @@ BEGIN
           '<td {value}>%8$s</td>'
           '<td {value}>%9$s</td>'
           '<td {value}>%10$s</td>'
+          '<td {value}>%11$s</td>'
         '</tr>'
       );
     -- apply settings to templates
@@ -523,7 +536,8 @@ BEGIN
     FOR r_result IN c_elapsed_time LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid,
+            r_result.queryid_md5,
+            to_hex(r_result.queryid),
             r_result.dbname,
             round(CAST(r_result.total_plan_time AS numeric),2),
             round(CAST(r_result.plan_time_pct AS numeric),2),
@@ -534,7 +548,7 @@ BEGIN
             r_result.plans,
             r_result.calls
         );
-        PERFORM collect_queries(r_result.queryid);
+        PERFORM collect_queries(r_result.queryid_md5);
     END LOOP;
 
     IF report != '' THEN
@@ -545,7 +559,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_plan_time_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION top_plan_time_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -554,30 +568,34 @@ DECLARE
     --Cursor for top(cnt) queries ordered by epapsed time
     c_elapsed_time CURSOR FOR
     SELECT * FROM (SELECT
-        COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid,
+        COALESCE(st1.queryid,st2.queryid) as queryid,
+        COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid_md5,
         COALESCE(st1.dbname,st2.dbname) as dbname,
-        st1.plans as plans1,
-        st1.calls as calls1,
-        st1.total_plan_time as total_plan_time1,
-        st1.plan_time_pct as plan_time_pct1,
-        st1.min_plan_time as min_plan_time1,
-        st1.max_plan_time as max_plan_time1,
-        st1.mean_plan_time as mean_plan_time1,
-        st1.stddev_plan_time as stddev_plan_time1,
-        st2.plans as plans2,
-        st2.calls as calls2,
-        st2.total_plan_time as total_plan_time2,
-        st2.plan_time_pct as plan_time_pct2,
-        st2.min_plan_time as min_plan_time2,
-        st2.max_plan_time as max_plan_time2,
-        st2.mean_plan_time as mean_plan_time2,
-        st2.stddev_plan_time as stddev_plan_time2,
+        NULLIF(st1.plans, 0) as plans1,
+        NULLIF(st1.calls, 0) as calls1,
+        NULLIF(st1.total_plan_time, 0.0) as total_plan_time1,
+        NULLIF(st1.plan_time_pct, 0.0) as plan_time_pct1,
+        NULLIF(st1.min_plan_time, 0.0) as min_plan_time1,
+        NULLIF(st1.max_plan_time, 0.0) as max_plan_time1,
+        NULLIF(st1.mean_plan_time, 0.0) as mean_plan_time1,
+        NULLIF(st1.stddev_plan_time, 0.0) as stddev_plan_time1,
+        NULLIF(st2.plans, 0) as plans2,
+        NULLIF(st2.calls, 0) as calls2,
+        NULLIF(st2.total_plan_time, 0.0) as total_plan_time2,
+        NULLIF(st2.plan_time_pct, 0.0) as plan_time_pct2,
+        NULLIF(st2.min_plan_time, 0.0) as min_plan_time2,
+        NULLIF(st2.max_plan_time, 0.0) as max_plan_time2,
+        NULLIF(st2.mean_plan_time, 0.0) as mean_plan_time2,
+        NULLIF(st2.stddev_plan_time, 0.0) as stddev_plan_time2,
         row_number() over (ORDER BY st1.total_plan_time DESC NULLS LAST) as rn_time1,
         row_number() over (ORDER BY st2.total_plan_time DESC NULLS LAST) as rn_time2
     FROM top_statements(sserver_id, start1_id, end1_id) st1
-        FULL OUTER JOIN top_statements(sserver_id, start2_id, end2_id) st2 USING (server_id, datid, userid, queryid_md5)
+        FULL OUTER JOIN top_statements(sserver_id, start2_id, end2_id) st2 USING (server_id, datid, userid, queryid)
     ORDER BY COALESCE(st1.total_plan_time,0) + COALESCE(st2.total_plan_time,0) DESC ) t1
-    WHERE rn_time1 <= topn OR rn_time2 <= topn;
+    WHERE least(
+        rn_time1,
+        rn_time2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN
@@ -605,10 +623,10 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><a HREF="#%1$s">%1$s</a></td>'
-          '<td {rowtdspanhdr}>%2$s</td>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%1$s</a></p>'
+          '<p><small>[%2$s]</small></p></td>'
+          '<td {rowtdspanhdr}>%3$s</td>'
           '<td {label} {title1}>1</td>'
-          '<td {value}>%3$s</td>'
           '<td {value}>%4$s</td>'
           '<td {value}>%5$s</td>'
           '<td {value}>%6$s</td>'
@@ -616,10 +634,10 @@ BEGIN
           '<td {value}>%8$s</td>'
           '<td {value}>%9$s</td>'
           '<td {value}>%10$s</td>'
+          '<td {value}>%11$s</td>'
         '</tr>'
         '<tr {interval2}>'
           '<td {label} {title2}>2</td>'
-          '<td {value}>%11$s</td>'
           '<td {value}>%12$s</td>'
           '<td {value}>%13$s</td>'
           '<td {value}>%14$s</td>'
@@ -627,6 +645,7 @@ BEGIN
           '<td {value}>%16$s</td>'
           '<td {value}>%17$s</td>'
           '<td {value}>%18$s</td>'
+          '<td {value}>%19$s</td>'
         '</tr>'
         '<tr style="visibility:collapse"></tr>'
       );
@@ -637,7 +656,8 @@ BEGIN
     FOR r_result IN c_elapsed_time LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid,
+            r_result.queryid_md5,
+            to_hex(r_result.queryid),
             r_result.dbname,
             round(CAST(r_result.total_plan_time1 AS numeric),2),
             round(CAST(r_result.plan_time_pct1 AS numeric),2),
@@ -657,7 +677,7 @@ BEGIN
             r_result.calls2
         );
 
-        PERFORM collect_queries(r_result.queryid);
+        PERFORM collect_queries(r_result.queryid_md5);
     END LOOP;
 
     IF report != '' THEN
@@ -668,7 +688,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_exec_time_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION top_exec_time_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -676,21 +696,22 @@ DECLARE
     --Cursor for queries ordered by execution time
     c_elapsed_time CURSOR FOR
     SELECT
-        st.queryid_md5 as queryid,
+        st.queryid,
+        st.queryid_md5,
         st.dbname,
-        st.calls,
-        st.total_exec_time,
-        st.total_exec_time_pct,
-        st.exec_time_pct,
-        st.blk_read_time,
-        st.blk_write_time,
-        st.min_exec_time,
-        st.max_exec_time,
-        st.mean_exec_time,
-        st.stddev_exec_time,
-        st.rows,
-        st.user_time,
-        st.system_time
+        NULLIF(st.calls, 0) as calls,
+        NULLIF(st.total_exec_time, 0.0) as total_exec_time,
+        NULLIF(st.total_exec_time_pct, 0.0) as total_exec_time_pct,
+        NULLIF(st.exec_time_pct, 0.0) as exec_time_pct,
+        NULLIF(st.blk_read_time, 0.0) as blk_read_time,
+        NULLIF(st.blk_write_time, 0.0) as blk_write_time,
+        NULLIF(st.min_exec_time, 0.0) as min_exec_time,
+        NULLIF(st.max_exec_time, 0.0) as max_exec_time,
+        NULLIF(st.mean_exec_time, 0.0) as mean_exec_time,
+        NULLIF(st.stddev_exec_time, 0.0) as stddev_exec_time,
+        NULLIF(st.rows, 0) as rows,
+        NULLIF(st.user_time, 0.0) as user_time,
+        NULLIF(st.system_time, 0.0) as system_time
     FROM top_statements(sserver_id, start_id, end_id) st
     ORDER BY st.total_exec_time DESC
     LIMIT topn;
@@ -725,33 +746,34 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><a HREF="#%1$s">%1$s</a></td>'
-          '<td>%2$s</td>'
-          '<td {value}>%3$s</td>'
-          '{elapsed_pct_row}'
+          '<td {mono}><p><a HREF="#%1$s">%1$s</a></p>'
+          '<p><small>[%2$s]</small></p></td>'
+          '<td>%3$s</td>'
           '<td {value}>%4$s</td>'
+          '{elapsed_pct_row}'
           '<td {value}>%5$s</td>'
           '<td {value}>%6$s</td>'
+          '<td {value}>%7$s</td>'
           '{kcache_row}'
-          '<td {value}>%9$s</td>'
           '<td {value}>%10$s</td>'
           '<td {value}>%11$s</td>'
           '<td {value}>%12$s</td>'
           '<td {value}>%13$s</td>'
           '<td {value}>%14$s</td>'
+          '<td {value}>%15$s</td>'
         '</tr>',
       'elapsed_pct_hdr',
         '<th rowspan="2" title="Exec time as a percentage of statement elapsed time">%Elapsed</th>',
       'elapsed_pct_row',
-        '<td {value}>%15$s</td>',
+        '<td {value}>%16$s</td>',
       'kcache_hdr1',
         '<th colspan="2">CPU time (s)</th>',
       'kcache_hdr2',
         '<th>Usr</th>'
         '<th>Sys</th>',
       'kcache_row',
-        '<td {value}>%7$s</td>'
         '<td {value}>%8$s</td>'
+        '<td {value}>%9$s</td>'
       );
     -- Conditional template
     -- kcache
@@ -780,7 +802,8 @@ BEGIN
     FOR r_result IN c_elapsed_time LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid,
+            r_result.queryid_md5,
+            to_hex(r_result.queryid),
             r_result.dbname,
             round(CAST(r_result.total_exec_time AS numeric),2),
             round(CAST(r_result.total_exec_time_pct AS numeric),2),
@@ -796,7 +819,7 @@ BEGIN
             r_result.calls,
             round(CAST(r_result.exec_time_pct AS numeric),2)
         );
-        PERFORM collect_queries(r_result.queryid);
+        PERFORM collect_queries(r_result.queryid_md5);
     END LOOP;
 
     IF report != '' THEN
@@ -807,7 +830,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_exec_time_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION top_exec_time_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -816,40 +839,44 @@ DECLARE
     --Cursor for top(cnt) queries ordered by epapsed time
     c_elapsed_time CURSOR FOR
     SELECT * FROM (SELECT
-        COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid,
+        COALESCE(st1.queryid,st2.queryid) as queryid,
+        COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid_md5,
         COALESCE(st1.dbname,st2.dbname) as dbname,
-        st1.calls as calls1,
-        st1.total_exec_time as total_exec_time1,
-        st1.total_exec_time_pct as total_exec_time_pct1,
-        st1.exec_time_pct as exec_time_pct1,
-        st1.blk_read_time as blk_read_time1,
-        st1.blk_write_time as blk_write_time1,
-        st1.min_exec_time as min_exec_time1,
-        st1.max_exec_time as max_exec_time1,
-        st1.mean_exec_time as mean_exec_time1,
-        st1.stddev_exec_time as stddev_exec_time1,
-        st1.rows as rows1,
-        st1.user_time as user_time1,
-        st1.system_time as system_time1,
-        st2.calls as calls2,
-        st2.total_exec_time as total_exec_time2,
-        st2.total_exec_time_pct as total_exec_time_pct2,
-        st2.exec_time_pct as exec_time_pct2,
-        st2.blk_read_time as blk_read_time2,
-        st2.blk_write_time as blk_write_time2,
-        st2.min_exec_time as min_exec_time2,
-        st2.max_exec_time as max_exec_time2,
-        st2.mean_exec_time as mean_exec_time2,
-        st2.stddev_exec_time as stddev_exec_time2,
-        st2.rows as rows2,
-        st2.user_time as user_time2,
-        st2.system_time as system_time2,
+        NULLIF(st1.calls, 0) as calls1,
+        NULLIF(st1.total_exec_time, 0.0) as total_exec_time1,
+        NULLIF(st1.total_exec_time_pct, 0.0) as total_exec_time_pct1,
+        NULLIF(st1.exec_time_pct, 0.0) as exec_time_pct1,
+        NULLIF(st1.blk_read_time, 0.0) as blk_read_time1,
+        NULLIF(st1.blk_write_time, 0.0) as blk_write_time1,
+        NULLIF(st1.min_exec_time, 0.0) as min_exec_time1,
+        NULLIF(st1.max_exec_time, 0.0) as max_exec_time1,
+        NULLIF(st1.mean_exec_time, 0.0) as mean_exec_time1,
+        NULLIF(st1.stddev_exec_time, 0.0) as stddev_exec_time1,
+        NULLIF(st1.rows, 0) as rows1,
+        NULLIF(st1.user_time, 0.0) as user_time1,
+        NULLIF(st1.system_time, 0.0) as system_time1,
+        NULLIF(st2.calls, 0) as calls2,
+        NULLIF(st2.total_exec_time, 0.0) as total_exec_time2,
+        NULLIF(st2.total_exec_time_pct, 0.0) as total_exec_time_pct2,
+        NULLIF(st2.exec_time_pct, 0.0) as exec_time_pct2,
+        NULLIF(st2.blk_read_time, 0.0) as blk_read_time2,
+        NULLIF(st2.blk_write_time, 0.0) as blk_write_time2,
+        NULLIF(st2.min_exec_time, 0.0) as min_exec_time2,
+        NULLIF(st2.max_exec_time, 0.0) as max_exec_time2,
+        NULLIF(st2.mean_exec_time, 0.0) as mean_exec_time2,
+        NULLIF(st2.stddev_exec_time, 0.0) as stddev_exec_time2,
+        NULLIF(st2.rows, 0) as rows2,
+        NULLIF(st2.user_time, 0.0) as user_time2,
+        NULLIF(st2.system_time, 0.0) as system_time2,
         row_number() over (ORDER BY st1.total_exec_time DESC NULLS LAST) as rn_time1,
         row_number() over (ORDER BY st2.total_exec_time DESC NULLS LAST) as rn_time2
     FROM top_statements(sserver_id, start1_id, end1_id) st1
-        FULL OUTER JOIN top_statements(sserver_id, start2_id, end2_id) st2 USING (server_id, datid, userid, queryid_md5)
+        FULL OUTER JOIN top_statements(sserver_id, start2_id, end2_id) st2 USING (server_id, datid, userid, queryid)
     ORDER BY COALESCE(st1.total_exec_time,0) + COALESCE(st2.total_exec_time,0) DESC ) t1
-    WHERE rn_time1 <= topn OR rn_time2 <= topn;
+    WHERE least(
+        rn_time1,
+        rn_time2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN
@@ -883,55 +910,56 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><a HREF="#%1$s">%1$s</a></td>'
-          '<td {rowtdspanhdr}>%2$s</td>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%1$s</a></p>'
+          '<p><small>[%2$s]</small></p></td>'
+          '<td {rowtdspanhdr}>%3$s</td>'
           '<td {label} {title1}>1</td>'
-          '<td {value}>%3$s</td>'
-          '{elapsed_pct_row1}'
           '<td {value}>%4$s</td>'
+          '{elapsed_pct_row1}'
           '<td {value}>%5$s</td>'
           '<td {value}>%6$s</td>'
+          '<td {value}>%7$s</td>'
           '{kcache_row1}'
-          '<td {value}>%9$s</td>'
           '<td {value}>%10$s</td>'
           '<td {value}>%11$s</td>'
           '<td {value}>%12$s</td>'
           '<td {value}>%13$s</td>'
           '<td {value}>%14$s</td>'
+          '<td {value}>%15$s</td>'
         '</tr>'
         '<tr {interval2}>'
           '<td {label} {title2}>2</td>'
-          '<td {value}>%15$s</td>'
-          '{elapsed_pct_row2}'
           '<td {value}>%16$s</td>'
+          '{elapsed_pct_row2}'
           '<td {value}>%17$s</td>'
           '<td {value}>%18$s</td>'
+          '<td {value}>%19$s</td>'
           '{kcache_row2}'
-          '<td {value}>%21$s</td>'
           '<td {value}>%22$s</td>'
           '<td {value}>%23$s</td>'
           '<td {value}>%24$s</td>'
           '<td {value}>%25$s</td>'
           '<td {value}>%26$s</td>'
+          '<td {value}>%27$s</td>'
         '</tr>'
         '<tr style="visibility:collapse"></tr>',
       'elapsed_pct_hdr',
         '<th rowspan="2" title="Exec time as a percentage of statement elapsed time">%Elapsed</th>',
       'elapsed_pct_row1',
-        '<td {value}>%27$s</td>',
-      'elapsed_pct_row2',
         '<td {value}>%28$s</td>',
+      'elapsed_pct_row2',
+        '<td {value}>%29$s</td>',
       'kcache_hdr1',
         '<th colspan="2">CPU time (s)</th>',
       'kcache_hdr2',
         '<th>Usr</th>'
         '<th>Sys</th>',
       'kcache_row1',
-        '<td {value}>%7$s</td>'
-        '<td {value}>%8$s</td>',
+        '<td {value}>%8$s</td>'
+        '<td {value}>%9$s</td>',
       'kcache_row2',
-        '<td {value}>%19$s</td>'
         '<td {value}>%20$s</td>'
+        '<td {value}>%21$s</td>'
       );
     -- Conditional template
     IF jsonb_extract_path_text(jreportset, 'report_features', 'kcachestatements')::boolean AND
@@ -963,7 +991,8 @@ BEGIN
     FOR r_result IN c_elapsed_time LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid,
+            r_result.queryid_md5,
+            to_hex(r_result.queryid),
             r_result.dbname,
             round(CAST(r_result.total_exec_time1 AS numeric),2),
             round(CAST(r_result.total_exec_time_pct1 AS numeric),2),
@@ -993,7 +1022,7 @@ BEGIN
             round(CAST(r_result.exec_time_pct2 AS numeric),2)
         );
 
-        PERFORM collect_queries(r_result.queryid);
+        PERFORM collect_queries(r_result.queryid_md5);
     END LOOP;
 
     IF report != '' THEN
@@ -1004,7 +1033,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_exec_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION top_exec_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -1012,16 +1041,17 @@ DECLARE
     -- Cursor for topn querues ordered by executions
     c_calls CURSOR FOR
     SELECT
-        st.queryid_md5 as queryid,
+        st.queryid,
+        st.queryid_md5,
         st.dbname,
-        st.calls,
-        st.calls_pct,
-        st.total_exec_time,
-        st.min_exec_time,
-        st.max_exec_time,
-        st.mean_exec_time,
-        st.stddev_exec_time,
-        st.rows
+        NULLIF(st.calls, 0) as calls,
+        NULLIF(st.calls_pct, 0.0) as calls_pct,
+        NULLIF(st.total_exec_time, 0.0) as total_exec_time,
+        NULLIF(st.min_exec_time, 0.0) as min_exec_time,
+        NULLIF(st.max_exec_time, 0.0) as max_exec_time,
+        NULLIF(st.mean_exec_time, 0.0) as mean_exec_time,
+        NULLIF(st.stddev_exec_time, 0.0) as stddev_exec_time,
+        NULLIF(st.rows, 0) as rows
     FROM top_statements(sserver_id, start_id, end_id) st
     ORDER BY st.calls DESC
     LIMIT topn;
@@ -1047,7 +1077,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><a HREF="#%s">%s</a></td>'
+          '<td {mono}><p><a HREF="#%1$s">%1$s</a></p>'
+          '<p><small>[%2$s]</small></p></td>'
           '<td>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
@@ -1064,8 +1095,8 @@ BEGIN
     FOR r_result IN c_calls LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid,
-            r_result.queryid,
+            r_result.queryid_md5,
+            to_hex(r_result.queryid),
             r_result.dbname,
             r_result.calls,
             round(CAST(r_result.calls_pct AS numeric),2),
@@ -1076,7 +1107,7 @@ BEGIN
             round(CAST(r_result.stddev_exec_time AS numeric),3),
             round(CAST(r_result.total_exec_time AS numeric),1)
         );
-        PERFORM collect_queries(r_result.queryid);
+        PERFORM collect_queries(r_result.queryid_md5);
     END LOOP;
 
     IF report != '' THEN
@@ -1087,7 +1118,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_exec_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION top_exec_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -1096,30 +1127,34 @@ DECLARE
     -- Cursor for topn querues ordered by executions
     c_calls CURSOR FOR
     SELECT * FROM (SELECT
-        COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid,
+        COALESCE(st1.queryid,st2.queryid) as queryid,
+        COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid_md5,
         COALESCE(st1.dbname,st2.dbname) as dbname,
-        st1.calls as calls1,
-        st1.calls_pct as calls_pct1,
-        st1.total_exec_time as total_exec_time1,
-        st1.min_exec_time as min_exec_time1,
-        st1.max_exec_time as max_exec_time1,
-        st1.mean_exec_time as mean_exec_time1,
-        st1.stddev_exec_time as stddev_exec_time1,
-        st1.rows as rows1,
-        st2.calls as calls2,
-        st2.calls_pct as calls_pct2,
-        st2.total_exec_time as total_exec_time2,
-        st2.min_exec_time as min_exec_time2,
-        st2.max_exec_time as max_exec_time2,
-        st2.mean_exec_time as mean_exec_time2,
-        st2.stddev_exec_time as stddev_exec_time2,
-        st2.rows as rows2,
+        NULLIF(st1.calls, 0) as calls1,
+        NULLIF(st1.calls_pct, 0.0) as calls_pct1,
+        NULLIF(st1.total_exec_time, 0.0) as total_exec_time1,
+        NULLIF(st1.min_exec_time, 0.0) as min_exec_time1,
+        NULLIF(st1.max_exec_time, 0.0) as max_exec_time1,
+        NULLIF(st1.mean_exec_time, 0.0) as mean_exec_time1,
+        NULLIF(st1.stddev_exec_time, 0.0) as stddev_exec_time1,
+        NULLIF(st1.rows, 0) as rows1,
+        NULLIF(st2.calls, 0) as calls2,
+        NULLIF(st2.calls_pct, 0.0) as calls_pct2,
+        NULLIF(st2.total_exec_time, 0.0) as total_exec_time2,
+        NULLIF(st2.min_exec_time, 0.0) as min_exec_time2,
+        NULLIF(st2.max_exec_time, 0.0) as max_exec_time2,
+        NULLIF(st2.mean_exec_time, 0.0) as mean_exec_time2,
+        NULLIF(st2.stddev_exec_time, 0.0) as stddev_exec_time2,
+        NULLIF(st2.rows, 0) as rows2,
         row_number() over (ORDER BY st1.calls DESC NULLS LAST) as rn_calls1,
         row_number() over (ORDER BY st2.calls DESC NULLS LAST) as rn_calls2
     FROM top_statements(sserver_id, start1_id, end1_id) st1
-        FULL OUTER JOIN top_statements(sserver_id, start2_id, end2_id) st2 USING (server_id, datid, userid, queryid_md5)
+        FULL OUTER JOIN top_statements(sserver_id, start2_id, end2_id) st2 USING (server_id, datid, userid, queryid)
     ORDER BY COALESCE(st1.calls,0) + COALESCE(st2.calls,0) DESC ) t1
-    WHERE rn_calls1 <= topn OR rn_calls2 <= topn;
+    WHERE least(
+        rn_calls1,
+        rn_calls2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN
@@ -1144,7 +1179,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><a HREF="#%s">%s</a></td>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%1$s</a></p>'
+          '<p><small>[%2$s]</small></p></td>'
           '<td {rowtdspanhdr}>%s</td>'
           '<td {label} {title1}>1</td>'
           '<td {value}>%s</td>'
@@ -1175,8 +1211,8 @@ BEGIN
     FOR r_result IN c_calls LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid,
-            r_result.queryid,
+            r_result.queryid_md5,
+            to_hex(r_result.queryid),
             r_result.dbname,
             r_result.calls1,
             round(CAST(r_result.calls_pct1 AS numeric),2),
@@ -1196,7 +1232,7 @@ BEGIN
             round(CAST(r_result.total_exec_time2 AS numeric),1)
         );
 
-        PERFORM collect_queries(r_result.queryid);
+        PERFORM collect_queries(r_result.queryid_md5);
     END LOOP;
 
     IF report != '' THEN
@@ -1207,7 +1243,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_iowait_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION top_iowait_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -1215,20 +1251,21 @@ DECLARE
     --Cursor for top(cnt) querues ordered by I/O Wait time
     c_iowait_time CURSOR FOR
     SELECT
-        st.queryid_md5 AS queryid,
+        st.queryid_md5 AS queryid_md5,
+        st.queryid AS queryid,
         st.dbname,
-        st.total_time,
-        st.io_time,
-        st.blk_read_time,
-        st.blk_write_time,
-        st.io_time_pct,
-        st.shared_blks_read,
-        st.local_blks_read,
-        st.temp_blks_read,
-        st.shared_blks_written,
-        st.local_blks_written,
-        st.temp_blks_written,
-        st.calls
+        NULLIF(st.total_time, 0.0) as total_time,
+        NULLIF(st.io_time, 0.0) as io_time,
+        NULLIF(st.blk_read_time, 0.0) as blk_read_time,
+        NULLIF(st.blk_write_time, 0.0) as blk_write_time,
+        NULLIF(st.io_time_pct, 0.0) as io_time_pct,
+        NULLIF(st.shared_blks_read, 0) as shared_blks_read,
+        NULLIF(st.local_blks_read, 0) as local_blks_read,
+        NULLIF(st.temp_blks_read, 0) as temp_blks_read,
+        NULLIF(st.shared_blks_written, 0) as shared_blks_written,
+        NULLIF(st.local_blks_written, 0) as local_blks_written,
+        NULLIF(st.temp_blks_written, 0) as temp_blks_written,
+        NULLIF(st.calls, 0) as calls
     FROM top_statements(sserver_id, start_id, end_id) st
     WHERE st.io_time > 0
     ORDER BY st.io_time DESC
@@ -1263,7 +1300,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><a HREF="#%s">%s</a></td>'
+          '<td {mono}><p><a HREF="#%1$s">%1$s</a></p>'
+          '<p><small>[%2$s]</small></p></td>'
           '<td>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
@@ -1284,8 +1322,8 @@ BEGIN
     FOR r_result IN c_iowait_time LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid,
-            r_result.queryid,
+            r_result.queryid_md5,
+            to_hex(r_result.queryid),
             r_result.dbname,
             round(CAST(r_result.io_time AS numeric),3),
             round(CAST(r_result.blk_read_time AS numeric),3),
@@ -1300,7 +1338,7 @@ BEGIN
             round(CAST(r_result.total_time AS numeric),1),
             r_result.calls
         );
-      PERFORM collect_queries(r_result.queryid);
+      PERFORM collect_queries(r_result.queryid_md5);
     END LOOP;
 
     IF report != '' THEN
@@ -1311,7 +1349,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_iowait_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION top_iowait_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -1320,39 +1358,43 @@ DECLARE
     --Cursor for top(cnt) querues ordered by I/O Wait time
     c_iowait_time CURSOR FOR
     SELECT * FROM (SELECT
-        COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid,
+        COALESCE(st1.queryid,st2.queryid) as queryid,
+        COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid_md5,
         COALESCE(st1.dbname,st2.dbname) as dbname,
-        st1.calls as calls1,
-        st1.total_time as total_time1,
-        st1.io_time as io_time1,
-        st1.blk_read_time as blk_read_time1,
-        st1.blk_write_time as blk_write_time1,
-        st1.io_time_pct as io_time_pct1,
-        st1.shared_blks_read as shared_blks_read1,
-        st1.local_blks_read as local_blks_read1,
-        st1.temp_blks_read as temp_blks_read1,
-        st1.shared_blks_written as shared_blks_written1,
-        st1.local_blks_written as local_blks_written1,
-        st1.temp_blks_written as temp_blks_written1,
-        st2.calls as calls2,
-        st2.total_time as total_time2,
-        st2.io_time as io_time2,
-        st2.blk_read_time as blk_read_time2,
-        st2.blk_write_time as blk_write_time2,
-        st2.io_time_pct as io_time_pct2,
-        st2.shared_blks_read as shared_blks_read2,
-        st2.local_blks_read as local_blks_read2,
-        st2.temp_blks_read as temp_blks_read2,
-        st2.shared_blks_written as shared_blks_written2,
-        st2.local_blks_written as local_blks_written2,
-        st2.temp_blks_written as temp_blks_written2,
+        NULLIF(st1.calls, 0) as calls1,
+        NULLIF(st1.total_time, 0.0) as total_time1,
+        NULLIF(st1.io_time, 0.0) as io_time1,
+        NULLIF(st1.blk_read_time, 0.0) as blk_read_time1,
+        NULLIF(st1.blk_write_time, 0.0) as blk_write_time1,
+        NULLIF(st1.io_time_pct, 0.0) as io_time_pct1,
+        NULLIF(st1.shared_blks_read, 0) as shared_blks_read1,
+        NULLIF(st1.local_blks_read, 0) as local_blks_read1,
+        NULLIF(st1.temp_blks_read, 0) as temp_blks_read1,
+        NULLIF(st1.shared_blks_written, 0) as shared_blks_written1,
+        NULLIF(st1.local_blks_written, 0) as local_blks_written1,
+        NULLIF(st1.temp_blks_written, 0) as temp_blks_written1,
+        NULLIF(st2.calls, 0) as calls2,
+        NULLIF(st2.total_time, 0.0) as total_time2,
+        NULLIF(st2.io_time, 0.0) as io_time2,
+        NULLIF(st2.blk_read_time, 0.0) as blk_read_time2,
+        NULLIF(st2.blk_write_time, 0.0) as blk_write_time2,
+        NULLIF(st2.io_time_pct, 0.0) as io_time_pct2,
+        NULLIF(st2.shared_blks_read, 0) as shared_blks_read2,
+        NULLIF(st2.local_blks_read, 0) as local_blks_read2,
+        NULLIF(st2.temp_blks_read, 0) as temp_blks_read2,
+        NULLIF(st2.shared_blks_written, 0) as shared_blks_written2,
+        NULLIF(st2.local_blks_written, 0) as local_blks_written2,
+        NULLIF(st2.temp_blks_written, 0) as temp_blks_written2,
         row_number() over (ORDER BY st1.io_time DESC NULLS LAST) as rn_iotime1,
         row_number() over (ORDER BY st2.io_time DESC NULLS LAST) as rn_iotime2
     FROM top_statements(sserver_id, start1_id, end1_id) st1
-        FULL OUTER JOIN top_statements(sserver_id, start2_id, end2_id) st2 USING (server_id, datid, userid, queryid_md5)
-    WHERE COALESCE(st1.io_time,st2.io_time) > 0
-    ORDER BY COALESCE(st1.io_time,0) + COALESCE(st2.io_time,0) DESC ) t1
-    WHERE rn_iotime1 <= topn OR rn_iotime2 <= topn;
+        FULL OUTER JOIN top_statements(sserver_id, start2_id, end2_id) st2 USING (server_id, datid, userid, queryid)
+    WHERE COALESCE(st1.io_time, 0.0) + COALESCE(st2.io_time, 0.0) > 0
+    ORDER BY COALESCE(st1.io_time, 0.0) + COALESCE(st2.io_time, 0.0) DESC ) t1
+    WHERE least(
+        rn_iotime1,
+        rn_iotime2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN
@@ -1385,7 +1427,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><a HREF="#%s">%s</a></td>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%1$s</a></p>'
+          '<p><small>[%2$s]</small></p></td>'
           '<td {rowtdspanhdr}>%s</td>'
           '<td {label} {title1}>1</td>'
           '<td {value}>%s</td>'
@@ -1423,8 +1466,8 @@ BEGIN
     FOR r_result IN c_iowait_time LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid,
-            r_result.queryid,
+            r_result.queryid_md5,
+            to_hex(r_result.queryid),
             r_result.dbname,
             round(CAST(r_result.io_time1 AS numeric),3),
             round(CAST(r_result.blk_read_time1 AS numeric),3),
@@ -1452,7 +1495,7 @@ BEGIN
             r_result.calls2
         );
 
-        PERFORM collect_queries(r_result.queryid);
+        PERFORM collect_queries(r_result.queryid_md5);
     END LOOP;
 
     IF report != '' THEN
@@ -1463,7 +1506,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_shared_blks_fetched_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
+CREATE FUNCTION top_shared_blks_fetched_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
   RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -1472,14 +1515,15 @@ DECLARE
     --Cursor for top(cnt) queries ordered by shared_blks_fetched
     c_shared_blks_fetched CURSOR FOR
     SELECT
-        st.queryid_md5 AS queryid,
+        st.queryid_md5 AS queryid_md5,
+        st.queryid AS queryid,
         st.dbname,
-        st.total_time,
-        st.rows,
-        st.shared_blks_fetched,
-        st.shared_blks_fetched_pct,
-        st.shared_hit_pct,
-        st.calls
+        NULLIF(st.total_time, 0.0) as total_time,
+        NULLIF(st.rows, 0) as rows,
+        NULLIF(st.shared_blks_fetched, 0) as shared_blks_fetched,
+        NULLIF(st.shared_blks_fetched_pct, 0.0) as shared_blks_fetched_pct,
+        NULLIF(st.shared_hit_pct, 0.0) as shared_hit_pct,
+        NULLIF(st.calls, 0) as calls
     FROM top_statements(sserver_id, start_id, end_id) st
     WHERE shared_blks_fetched > 0
     ORDER BY st.shared_blks_fetched DESC
@@ -1504,7 +1548,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><a HREF="#%s">%s</a></td>'
+          '<td {mono}><p><a HREF="#%1$s">%1$s</a></p>'
+          '<p><small>[%2$s]</small></p></td>'
           '<td>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
@@ -1520,8 +1565,8 @@ BEGIN
     FOR r_result IN c_shared_blks_fetched LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid,
-            r_result.queryid,
+            r_result.queryid_md5,
+            to_hex(r_result.queryid),
             r_result.dbname,
             r_result.shared_blks_fetched,
             round(CAST(r_result.shared_blks_fetched_pct AS numeric),2),
@@ -1530,7 +1575,7 @@ BEGIN
             r_result.rows,
             r_result.calls
         );
-      PERFORM collect_queries(r_result.queryid);
+      PERFORM collect_queries(r_result.queryid_md5);
     END LOOP;
 
     IF report != '' THEN
@@ -1541,7 +1586,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_shared_blks_fetched_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION top_shared_blks_fetched_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -1550,27 +1595,31 @@ DECLARE
     --Cursor for top(cnt) queries ordered by shared_blks_fetched
     c_shared_blks_fetched CURSOR FOR
     SELECT * FROM (SELECT
-        COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid,
+        COALESCE(st1.queryid,st2.queryid) as queryid,
+        COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid_md5,
         COALESCE(st1.dbname,st2.dbname) as dbname,
-        st1.total_time as total_time1,
-        st1.rows as rows1,
-        st1.shared_blks_fetched as shared_blks_fetched1,
-        st1.shared_blks_fetched_pct as shared_blks_fetched_pct1,
-        st1.shared_hit_pct as shared_hit_pct1,
-        st1.calls as calls1,
-        st2.total_time as total_time2,
-        st2.rows as rows2,
-        st2.shared_blks_fetched as shared_blks_fetched2,
-        st2.shared_blks_fetched_pct as shared_blks_fetched_pct2,
-        st2.shared_hit_pct as shared_hit_pct2,
-        st2.calls as calls2,
+        NULLIF(st1.total_time, 0.0) as total_time1,
+        NULLIF(st1.rows, 0) as rows1,
+        NULLIF(st1.shared_blks_fetched, 0) as shared_blks_fetched1,
+        NULLIF(st1.shared_blks_fetched_pct, 0.0) as shared_blks_fetched_pct1,
+        NULLIF(st1.shared_hit_pct, 0.0) as shared_hit_pct1,
+        NULLIF(st1.calls, 0) as calls1,
+        NULLIF(st2.total_time, 0.0) as total_time2,
+        NULLIF(st2.rows, 0) as rows2,
+        NULLIF(st2.shared_blks_fetched, 0) as shared_blks_fetched2,
+        NULLIF(st2.shared_blks_fetched_pct, 0.0) as shared_blks_fetched_pct2,
+        NULLIF(st2.shared_hit_pct, 0.0) as shared_hit_pct2,
+        NULLIF(st2.calls, 0) as calls2,
         row_number() over (ORDER BY st1.shared_blks_fetched DESC NULLS LAST) as rn_shared_blks_fetched1,
         row_number() over (ORDER BY st2.shared_blks_fetched DESC NULLS LAST) as rn_shared_blks_fetched2
     FROM top_statements(sserver_id, start1_id, end1_id) st1
-        FULL OUTER JOIN top_statements(sserver_id, start2_id, end2_id) st2 USING (server_id, datid, userid, queryid_md5)
-    WHERE COALESCE(st1.shared_blks_fetched,st2.shared_blks_fetched) > 0
-    ORDER BY COALESCE(st1.shared_blks_fetched,0) + COALESCE(st2.shared_blks_fetched,0) DESC ) t1
-    WHERE rn_shared_blks_fetched1 <= topn OR rn_shared_blks_fetched2 <= topn;
+        FULL OUTER JOIN top_statements(sserver_id, start2_id, end2_id) st2 USING (server_id, datid, userid, queryid)
+    WHERE COALESCE(st1.shared_blks_fetched, 0) + COALESCE(st2.shared_blks_fetched, 0) > 0
+    ORDER BY COALESCE(st1.shared_blks_fetched, 0) + COALESCE(st2.shared_blks_fetched, 0) DESC ) t1
+    WHERE least(
+        rn_shared_blks_fetched1,
+        rn_shared_blks_fetched2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN
@@ -1593,7 +1642,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><a HREF="#%s">%s</a></td>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%1$s</a></p>'
+          '<p><small>[%2$s]</small></p></td>'
           '<td {rowtdspanhdr}>%s</td>'
           '<td {label} {title1}>1</td>'
           '<td {value}>%s</td>'
@@ -1619,8 +1669,8 @@ BEGIN
     FOR r_result IN c_shared_blks_fetched LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid,
-            r_result.queryid,
+            r_result.queryid_md5,
+            to_hex(r_result.queryid),
             r_result.dbname,
             r_result.shared_blks_fetched1,
             round(CAST(r_result.shared_blks_fetched_pct1 AS numeric),2),
@@ -1636,7 +1686,7 @@ BEGIN
             r_result.calls2
         );
 
-        PERFORM collect_queries(r_result.queryid);
+        PERFORM collect_queries(r_result.queryid_md5);
     END LOOP;
 
     IF report != '' THEN
@@ -1647,7 +1697,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_shared_reads_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
+CREATE FUNCTION top_shared_reads_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
   RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -1656,14 +1706,15 @@ DECLARE
     --Cursor for top queries ordered by reads
     c_sh_reads CURSOR FOR
     SELECT
-        st.queryid_md5 AS queryid,
+        st.queryid_md5 AS queryid_md5,
+        st.queryid AS queryid,
         st.dbname,
-        st.total_time,
-        st.rows,
-        st.shared_blks_read,
-        st.read_pct,
-        st.shared_hit_pct,
-        st.calls
+        NULLIF(st.total_time, 0.0) as total_time,
+        NULLIF(st.rows, 0) as rows,
+        NULLIF(st.shared_blks_read, 0) as shared_blks_read,
+        NULLIF(st.read_pct, 0.0) as read_pct,
+        NULLIF(st.shared_hit_pct, 0.0) as shared_hit_pct,
+        NULLIF(st.calls, 0) as calls
     FROM top_statements(sserver_id, start_id, end_id) st
     WHERE st.shared_blks_read > 0
     ORDER BY st.shared_blks_read DESC
@@ -1688,7 +1739,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><a HREF="#%s">%s</a></td>'
+          '<td {mono}><p><a HREF="#%1$s">%1$s</a></p>'
+          '<p><small>[%2$s]</small></p></td>'
           '<td>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
@@ -1704,8 +1756,8 @@ BEGIN
     FOR r_result IN c_sh_reads LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid,
-            r_result.queryid,
+            r_result.queryid_md5,
+            to_hex(r_result.queryid),
             r_result.dbname,
             r_result.shared_blks_read,
             round(CAST(r_result.read_pct AS numeric),2),
@@ -1714,7 +1766,7 @@ BEGIN
             r_result.rows,
             r_result.calls
         );
-      PERFORM collect_queries(r_result.queryid);
+      PERFORM collect_queries(r_result.queryid_md5);
     END LOOP;
 
     IF report != '' THEN
@@ -1725,7 +1777,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_shared_reads_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION top_shared_reads_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -1734,27 +1786,31 @@ DECLARE
     --Cursor for top(cnt) queries ordered by reads
     c_sh_reads CURSOR FOR
     SELECT * FROM (SELECT
-        COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid,
+        COALESCE(st1.queryid,st2.queryid) as queryid,
+        COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid_md5,
         COALESCE(st1.dbname,st2.dbname) as dbname,
-        st1.total_time as total_time1,
-        st1.rows as rows1,
-        st1.shared_blks_read as shared_blks_read1,
-        st1.read_pct as read_pct1,
-        st1.shared_hit_pct as shared_hit_pct1,
-        st1.calls as calls1,
-        st2.total_time as total_time2,
-        st2.rows as rows2,
-        st2.shared_blks_read as shared_blks_read2,
-        st2.read_pct as read_pct2,
-        st2.shared_hit_pct as shared_hit_pct2,
-        st2.calls as calls2,
+        NULLIF(st1.total_time, 0.0) as total_time1,
+        NULLIF(st1.rows, 0) as rows1,
+        NULLIF(st1.shared_blks_read, 0.0) as shared_blks_read1,
+        NULLIF(st1.read_pct, 0.0) as read_pct1,
+        NULLIF(st1.shared_hit_pct, 0.0) as shared_hit_pct1,
+        NULLIF(st1.calls, 0) as calls1,
+        NULLIF(st2.total_time, 0.0) as total_time2,
+        NULLIF(st2.rows, 0) as rows2,
+        NULLIF(st2.shared_blks_read, 0) as shared_blks_read2,
+        NULLIF(st2.read_pct, 0.0) as read_pct2,
+        NULLIF(st2.shared_hit_pct, 0.0) as shared_hit_pct2,
+        NULLIF(st2.calls, 0) as calls2,
         row_number() over (ORDER BY st1.shared_blks_read DESC NULLS LAST) as rn_reads1,
         row_number() over (ORDER BY st2.shared_blks_read DESC NULLS LAST) as rn_reads2
     FROM top_statements(sserver_id, start1_id, end1_id) st1
-        FULL OUTER JOIN top_statements(sserver_id, start2_id, end2_id) st2 USING (server_id, datid, userid, queryid_md5)
-    WHERE COALESCE(st1.shared_blks_read,st2.shared_blks_read) > 0
-    ORDER BY COALESCE(st1.shared_blks_read,0) + COALESCE(st2.shared_blks_read,0) DESC ) t1
-    WHERE LEAST(rn_reads1, rn_reads2) <= topn;
+        FULL OUTER JOIN top_statements(sserver_id, start2_id, end2_id) st2 USING (server_id, datid, userid, queryid)
+    WHERE COALESCE(st1.shared_blks_read, 0) + COALESCE(st2.shared_blks_read, 0) > 0
+    ORDER BY COALESCE(st1.shared_blks_read, 0) + COALESCE(st2.shared_blks_read, 0) DESC ) t1
+    WHERE least(
+        rn_reads1,
+        rn_reads2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN
@@ -1777,7 +1833,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><a HREF="#%s">%s</a></td>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%1$s</a></p>'
+          '<p><small>[%2$s]</small></p></td>'
           '<td {rowtdspanhdr}>%s</td>'
           '<td {label} {title1}>1</td>'
           '<td {value}>%s</td>'
@@ -1803,8 +1860,8 @@ BEGIN
     FOR r_result IN c_sh_reads LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid,
-            r_result.queryid,
+            r_result.queryid_md5,
+            to_hex(r_result.queryid),
             r_result.dbname,
             r_result.shared_blks_read1,
             round(CAST(r_result.read_pct1 AS numeric),2),
@@ -1820,7 +1877,7 @@ BEGIN
             r_result.calls2
         );
 
-        PERFORM collect_queries(r_result.queryid);
+        PERFORM collect_queries(r_result.queryid_md5);
     END LOOP;
 
     IF report != '' THEN
@@ -1831,7 +1888,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_shared_dirtied_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
+CREATE FUNCTION top_shared_dirtied_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
   RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -1840,14 +1897,15 @@ DECLARE
     --Cursor for top queries ordered by shared dirtied
     c_sh_dirt CURSOR FOR
     SELECT
-        st.queryid_md5 AS queryid,
+        st.queryid_md5 AS queryid_md5,
+        st.queryid AS queryid,
         st.dbname,
-        st.total_time,
-        st.rows,
-        st.shared_blks_dirtied,
-        st.dirtied_pct,
-        st.shared_hit_pct,
-        st.calls
+        NULLIF(st.total_time, 0.0) as total_time,
+        NULLIF(st.rows, 0) as rows,
+        NULLIF(st.shared_blks_dirtied, 0) as shared_blks_dirtied,
+        NULLIF(st.dirtied_pct, 0.0) as dirtied_pct,
+        NULLIF(st.shared_hit_pct, 0.0) as shared_hit_pct,
+        NULLIF(st.calls, 0) as calls
     FROM top_statements(sserver_id, start_id, end_id) st
     WHERE st.shared_blks_dirtied > 0
     ORDER BY st.shared_blks_dirtied DESC
@@ -1872,7 +1930,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><a HREF="#%s">%s</a></td>'
+          '<td {mono}><p><a HREF="#%1$s">%1$s</a></p>'
+          '<p><small>[%2$s]</small></p></td>'
           '<td>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
@@ -1888,8 +1947,8 @@ BEGIN
     FOR r_result IN c_sh_dirt LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid,
-            r_result.queryid,
+            r_result.queryid_md5,
+            to_hex(r_result.queryid),
             r_result.dbname,
             r_result.shared_blks_dirtied,
             round(CAST(r_result.dirtied_pct AS numeric),2),
@@ -1898,7 +1957,7 @@ BEGIN
             r_result.rows,
             r_result.calls
         );
-      PERFORM collect_queries(r_result.queryid);
+      PERFORM collect_queries(r_result.queryid_md5);
     END LOOP;
 
     IF report != '' THEN
@@ -1909,7 +1968,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_shared_dirtied_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION top_shared_dirtied_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -1918,27 +1977,31 @@ DECLARE
     --Cursor for top queries ordered by shared dirtied
     c_sh_dirt CURSOR FOR
     SELECT * FROM (SELECT
-        COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid,
+        COALESCE(st1.queryid,st2.queryid) as queryid,
+        COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid_md5,
         COALESCE(st1.dbname,st2.dbname) as dbname,
-        st1.total_time as total_time1,
-        st1.rows as rows1,
-        st1.shared_blks_dirtied as shared_blks_dirtied1,
-        st1.dirtied_pct as dirtied_pct1,
-        st1.shared_hit_pct as shared_hit_pct1,
-        st1.calls as calls1,
-        st2.total_time as total_time2,
-        st2.rows as rows2,
-        st2.shared_blks_dirtied as shared_blks_dirtied2,
-        st2.dirtied_pct as dirtied_pct2,
-        st2.shared_hit_pct as shared_hit_pct2,
-        st2.calls as calls2,
+        NULLIF(st1.total_time, 0.0) as total_time1,
+        NULLIF(st1.rows, 0) as rows1,
+        NULLIF(st1.shared_blks_dirtied, 0) as shared_blks_dirtied1,
+        NULLIF(st1.dirtied_pct, 0.0) as dirtied_pct1,
+        NULLIF(st1.shared_hit_pct, 0.0) as shared_hit_pct1,
+        NULLIF(st1.calls, 0) as calls1,
+        NULLIF(st2.total_time, 0.0) as total_time2,
+        NULLIF(st2.rows, 0) as rows2,
+        NULLIF(st2.shared_blks_dirtied, 0) as shared_blks_dirtied2,
+        NULLIF(st2.dirtied_pct, 0.0) as dirtied_pct2,
+        NULLIF(st2.shared_hit_pct, 0.0) as shared_hit_pct2,
+        NULLIF(st2.calls, 0) as calls2,
         row_number() over (ORDER BY st1.shared_blks_dirtied DESC NULLS LAST) as rn_dirtied1,
         row_number() over (ORDER BY st2.shared_blks_dirtied DESC NULLS LAST) as rn_dirtied2
     FROM top_statements(sserver_id, start1_id, end1_id) st1
-        FULL OUTER JOIN top_statements(sserver_id, start2_id, end2_id) st2 USING (server_id, datid, userid, queryid_md5)
-    WHERE COALESCE(st1.shared_blks_dirtied,st2.shared_blks_dirtied) > 0
-    ORDER BY COALESCE(st1.shared_blks_dirtied,0) + COALESCE(st2.shared_blks_dirtied,0) DESC ) t1
-    WHERE LEAST(rn_dirtied1, rn_dirtied2) <= topn;
+        FULL OUTER JOIN top_statements(sserver_id, start2_id, end2_id) st2 USING (server_id, datid, userid, queryid)
+    WHERE COALESCE(st1.shared_blks_dirtied, 0) + COALESCE(st2.shared_blks_dirtied, 0) > 0
+    ORDER BY COALESCE(st1.shared_blks_dirtied, 0) + COALESCE(st2.shared_blks_dirtied, 0) DESC ) t1
+    WHERE least(
+        rn_dirtied1,
+        rn_dirtied2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN
@@ -1961,7 +2024,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><a HREF="#%s">%s</a></td>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%1$s</a></p>'
+          '<p><small>[%2$s]</small></p></td>'
           '<td {rowtdspanhdr}>%s</td>'
           '<td {label} {title1}>1</td>'
           '<td {value}>%s</td>'
@@ -1987,8 +2051,8 @@ BEGIN
     FOR r_result IN c_sh_dirt LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid,
-            r_result.queryid,
+            r_result.queryid_md5,
+            to_hex(r_result.queryid),
             r_result.dbname,
             r_result.shared_blks_dirtied1,
             round(CAST(r_result.dirtied_pct1 AS numeric),2),
@@ -2004,7 +2068,7 @@ BEGIN
             r_result.calls2
         );
 
-        PERFORM collect_queries(r_result.queryid);
+        PERFORM collect_queries(r_result.queryid_md5);
     END LOOP;
 
     IF report != '' THEN
@@ -2015,7 +2079,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_shared_written_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
+CREATE FUNCTION top_shared_written_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
   RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -2024,15 +2088,16 @@ DECLARE
     --Cursor for top queries ordered by shared written
     c_sh_wr CURSOR FOR
     SELECT
-        st.queryid_md5 AS queryid,
+        st.queryid_md5 AS queryid_md5,
+        st.queryid AS queryid,
         st.dbname,
-        st.total_time,
-        st.rows,
-        st.shared_blks_written,
-        st.tot_written_pct,
-        st.backend_written_pct,
-        st.shared_hit_pct,
-        st.calls
+        NULLIF(st.total_time, 0.0) as total_time,
+        NULLIF(st.rows, 0) as rows,
+        NULLIF(st.shared_blks_written, 0) as shared_blks_written,
+        NULLIF(st.tot_written_pct, 0.0) as tot_written_pct,
+        NULLIF(st.backend_written_pct, 0.0) as backend_written_pct,
+        NULLIF(st.shared_hit_pct, 0.0) as shared_hit_pct,
+        NULLIF(st.calls, 0) as calls
     FROM top_statements(sserver_id, start_id, end_id) st
     WHERE st.shared_blks_written > 0
     ORDER BY st.shared_blks_written DESC
@@ -2058,7 +2123,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><a HREF="#%s">%s</a></td>'
+          '<td {mono}><p><a HREF="#%1$s">%1$s</a></p>'
+          '<p><small>[%2$s]</small></p></td>'
           '<td>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
@@ -2075,8 +2141,8 @@ BEGIN
     FOR r_result IN c_sh_wr LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid,
-            r_result.queryid,
+            r_result.queryid_md5,
+            to_hex(r_result.queryid),
             r_result.dbname,
             r_result.shared_blks_written,
             round(CAST(r_result.tot_written_pct AS numeric),2),
@@ -2086,7 +2152,7 @@ BEGIN
             r_result.rows,
             r_result.calls
         );
-      PERFORM collect_queries(r_result.queryid);
+      PERFORM collect_queries(r_result.queryid_md5);
     END LOOP;
 
     IF report != '' THEN
@@ -2097,7 +2163,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_shared_written_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION top_shared_written_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -2106,29 +2172,33 @@ DECLARE
     --Cursor for top(cnt) queries ordered by shared written
     c_sh_wr CURSOR FOR
     SELECT * FROM (SELECT
-        COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid,
+        COALESCE(st1.queryid,st2.queryid) as queryid,
+        COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid_md5,
         COALESCE(st1.dbname,st2.dbname) as dbname,
-        st1.total_time as total_time1,
-        st1.rows as rows1,
-        st1.shared_blks_written as shared_blks_written1,
-        st1.tot_written_pct as tot_written_pct1,
-        st1.backend_written_pct as backend_written_pct1,
-        st1.shared_hit_pct as shared_hit_pct1,
-        st1.calls as calls1,
-        st2.total_time as total_time2,
-        st2.rows as rows2,
-        st2.shared_blks_written as shared_blks_written2,
-        st2.tot_written_pct as tot_written_pct2,
-        st2.backend_written_pct as backend_written_pct2,
-        st2.shared_hit_pct as shared_hit_pct2,
-        st2.calls as calls2,
+        NULLIF(st1.total_time, 0.0) as total_time1,
+        NULLIF(st1.rows, 0) as rows1,
+        NULLIF(st1.shared_blks_written, 0) as shared_blks_written1,
+        NULLIF(st1.tot_written_pct, 0.0) as tot_written_pct1,
+        NULLIF(st1.backend_written_pct, 0.0) as backend_written_pct1,
+        NULLIF(st1.shared_hit_pct, 0.0) as shared_hit_pct1,
+        NULLIF(st1.calls, 0) as calls1,
+        NULLIF(st2.total_time, 0.0) as total_time2,
+        NULLIF(st2.rows, 0) as rows2,
+        NULLIF(st2.shared_blks_written, 0) as shared_blks_written2,
+        NULLIF(st2.tot_written_pct, 0.0) as tot_written_pct2,
+        NULLIF(st2.backend_written_pct, 0.0) as backend_written_pct2,
+        NULLIF(st2.shared_hit_pct, 0.0) as shared_hit_pct2,
+        NULLIF(st2.calls, 0) as calls2,
         row_number() over (ORDER BY st1.shared_blks_written DESC NULLS LAST) as rn_written1,
         row_number() over (ORDER BY st2.shared_blks_written DESC NULLS LAST) as rn_written2
     FROM top_statements(sserver_id, start1_id, end1_id) st1
-        FULL OUTER JOIN top_statements(sserver_id, start2_id, end2_id) st2 USING (server_id, datid, userid, queryid_md5)
-    WHERE COALESCE(st1.shared_blks_written,st2.shared_blks_written) > 0
-    ORDER BY COALESCE(st1.shared_blks_written,0) + COALESCE(st2.shared_blks_written,0) DESC ) t1
-    WHERE LEAST(rn_written1, rn_written2) <= topn;
+        FULL OUTER JOIN top_statements(sserver_id, start2_id, end2_id) st2 USING (server_id, datid, userid, queryid)
+    WHERE COALESCE(st1.shared_blks_written, 0) + COALESCE(st2.shared_blks_written, 0) > 0
+    ORDER BY COALESCE(st1.shared_blks_written, 0) + COALESCE(st2.shared_blks_written, 0) DESC ) t1
+    WHERE least(
+        rn_written1,
+        rn_written2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN
@@ -2152,7 +2222,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><a HREF="#%s">%s</a></td>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%1$s</a></p>'
+          '<p><small>[%2$s]</small></p></td>'
           '<td {rowtdspanhdr}>%s</td>'
           '<td {label} {title1}>1</td>'
           '<td {value}>%s</td>'
@@ -2180,8 +2251,8 @@ BEGIN
     FOR r_result IN c_sh_wr LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid,
-            r_result.queryid,
+            r_result.queryid_md5,
+            to_hex(r_result.queryid),
             r_result.dbname,
             r_result.shared_blks_written1,
             round(CAST(r_result.tot_written_pct1 AS numeric),2),
@@ -2199,7 +2270,7 @@ BEGIN
             r_result.calls2
         );
 
-        PERFORM collect_queries(r_result.queryid);
+        PERFORM collect_queries(r_result.queryid_md5);
     END LOOP;
 
     IF report != '' THEN
@@ -2210,7 +2281,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_wal_size_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION top_wal_size_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -2218,13 +2289,14 @@ DECLARE
     --Cursor for queries ordered by WAL bytes
     c_wal_size CURSOR FOR
     SELECT
-        st.queryid_md5 as queryid,
+        st.queryid,
+        st.queryid_md5,
         st.dbname,
-        st.wal_bytes,
-        st.wal_bytes_pct,
-        st.shared_blks_dirtied,
-        st.wal_fpi,
-        st.wal_records
+        NULLIF(st.wal_bytes, 0) as wal_bytes,
+        NULLIF(st.wal_bytes_pct, 0.0) as wal_bytes_pct,
+        NULLIF(st.shared_blks_dirtied, 0) as shared_blks_dirtied,
+        NULLIF(st.wal_fpi, 0) as wal_fpi,
+        NULLIF(st.wal_records, 0) as wal_records
     FROM top_statements(sserver_id, start_id, end_id) st
     WHERE st.wal_bytes > 0
     ORDER BY st.wal_bytes DESC
@@ -2244,7 +2316,7 @@ BEGIN
             '<th>Query ID</th>'
             '<th>Database</th>'
             '<th title="Total amount of WAL bytes generated by the statement">WAL</th>'
-            '<th title="WAL bytes of this statement as a percentage of total WAL bytes for all statements in a cluster">%Total</th>'
+            '<th title="WAL bytes of this statement as a percentage of total WAL bytes generated by a cluster">%Total</th>'
             '<th title="Total number of shared blocks dirtied by the statement">Dirtied</th>'
             '<th title="Total number of WAL full page images generated by the statement">WAL FPI</th>'
             '<th title="Total number of WAL records generated by the statement">WAL records</th>'
@@ -2253,13 +2325,14 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><a HREF="#%1$s">%1$s</a></td>'
-          '<td>%2$s</td>'
-          '<td {value}>%3$s</td>'
+          '<td {mono}><p><a HREF="#%1$s">%1$s</a></p>'
+          '<p><small>[%2$s]</small></p></td>'
+          '<td>%3$s</td>'
           '<td {value}>%4$s</td>'
           '<td {value}>%5$s</td>'
           '<td {value}>%6$s</td>'
           '<td {value}>%7$s</td>'
+          '<td {value}>%8$s</td>'
         '</tr>'
       );
     -- apply settings to templates
@@ -2268,7 +2341,8 @@ BEGIN
     FOR r_result IN c_wal_size LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid,
+            r_result.queryid_md5,
+            to_hex(r_result.queryid),
             r_result.dbname,
             pg_size_pretty(r_result.wal_bytes),
             round(CAST(r_result.wal_bytes_pct AS numeric),2),
@@ -2276,7 +2350,7 @@ BEGIN
             r_result.wal_fpi,
             r_result.wal_records
         );
-        PERFORM collect_queries(r_result.queryid);
+        PERFORM collect_queries(r_result.queryid_md5);
     END LOOP;
 
     IF report != '' THEN
@@ -2287,7 +2361,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_wal_size_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION top_wal_size_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -2296,25 +2370,29 @@ DECLARE
     --Cursor for top queries ordered by WAL bytes
     c_wal_size CURSOR FOR
     SELECT * FROM (SELECT
-        COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid,
+        COALESCE(st1.queryid,st2.queryid) as queryid,
+        COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid_md5,
         COALESCE(st1.dbname,st2.dbname) as dbname,
-        st1.wal_bytes as wal_bytes1,
-        st1.wal_bytes_pct as wal_bytes_pct1,
-        st1.shared_blks_dirtied as shared_blks_dirtied1,
-        st1.wal_fpi as wal_fpi1,
-        st1.wal_records as wal_records1,
-        st2.wal_bytes as wal_bytes2,
-        st2.wal_bytes_pct as wal_bytes_pct2,
-        st2.shared_blks_dirtied as shared_blks_dirtied2,
-        st2.wal_fpi as wal_fpi2,
-        st2.wal_records as wal_records2,
+        NULLIF(st1.wal_bytes, 0) as wal_bytes1,
+        NULLIF(st1.wal_bytes_pct, 0.0) as wal_bytes_pct1,
+        NULLIF(st1.shared_blks_dirtied, 0) as shared_blks_dirtied1,
+        NULLIF(st1.wal_fpi, 0) as wal_fpi1,
+        NULLIF(st1.wal_records, 0) as wal_records1,
+        NULLIF(st2.wal_bytes, 0) as wal_bytes2,
+        NULLIF(st2.wal_bytes_pct, 0.0) as wal_bytes_pct2,
+        NULLIF(st2.shared_blks_dirtied, 0) as shared_blks_dirtied2,
+        NULLIF(st2.wal_fpi, 0) as wal_fpi2,
+        NULLIF(st2.wal_records, 0) as wal_records2,
         row_number() over (ORDER BY st1.wal_bytes DESC NULLS LAST) as rn_wal1,
         row_number() over (ORDER BY st2.wal_bytes DESC NULLS LAST) as rn_wal2
     FROM top_statements(sserver_id, start1_id, end1_id) st1
-        FULL OUTER JOIN top_statements(sserver_id, start2_id, end2_id) st2 USING (server_id, datid, userid, queryid_md5)
-    WHERE COALESCE(st1.wal_bytes,st2.wal_bytes) > 0
-    ORDER BY COALESCE(st1.wal_bytes,0) + COALESCE(st2.wal_bytes,0) DESC ) t1
-    WHERE rn_wal1 <= topn OR rn_wal2 <= topn;
+        FULL OUTER JOIN top_statements(sserver_id, start2_id, end2_id) st2 USING (server_id, datid, userid, queryid)
+    WHERE COALESCE(st1.wal_bytes, 0) + COALESCE(st2.wal_bytes, 0) > 0
+    ORDER BY COALESCE(st1.wal_bytes, 0) + COALESCE(st2.wal_bytes, 0) DESC ) t1
+    WHERE least(
+        rn_wal1,
+        rn_wal2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN
@@ -2327,7 +2405,7 @@ BEGIN
             '<th>Database</th>'
             '<th>I</th>'
             '<th title="Total amount of WAL bytes generated by the statement">WAL</th>'
-            '<th title="WAL bytes of this statement as a percentage of total WAL bytes for all statements in a cluster">%Total</th>'
+            '<th title="WAL bytes of this statement as a percentage of total WAL bytes generated by a cluster">%Total</th>'
             '<th title="Total number of shared blocks dirtied by the statement">Dirtied</th>'
             '<th title="Total number of WAL full page images generated by the statement">WAL FPI</th>'
             '<th title="Total number of WAL records generated by the statement">WAL records</th>'
@@ -2336,22 +2414,23 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><a HREF="#%1$s">%1$s</a></td>'
-          '<td {rowtdspanhdr}>%2$s</td>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%1$s</a></p>'
+          '<p><small>[%2$s]</small></p></td>'
+          '<td {rowtdspanhdr}>%3$s</td>'
           '<td {label} {title1}>1</td>'
-          '<td {value}>%3$s</td>'
           '<td {value}>%4$s</td>'
           '<td {value}>%5$s</td>'
           '<td {value}>%6$s</td>'
           '<td {value}>%7$s</td>'
+          '<td {value}>%8$s</td>'
         '</tr>'
         '<tr {interval2}>'
           '<td {label} {title2}>2</td>'
-          '<td {value}>%8$s</td>'
           '<td {value}>%9$s</td>'
           '<td {value}>%10$s</td>'
           '<td {value}>%11$s</td>'
           '<td {value}>%12$s</td>'
+          '<td {value}>%13$s</td>'
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
@@ -2360,7 +2439,8 @@ BEGIN
     FOR r_result IN c_wal_size LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid,
+            r_result.queryid_md5,
+            to_hex(r_result.queryid),
             r_result.dbname,
             pg_size_pretty(r_result.wal_bytes1),
             round(CAST(r_result.wal_bytes_pct1 AS numeric),2),
@@ -2374,7 +2454,7 @@ BEGIN
             r_result.wal_records2
         );
 
-        PERFORM collect_queries(r_result.queryid);
+        PERFORM collect_queries(r_result.queryid_md5);
     END LOOP;
 
     IF report != '' THEN
@@ -2385,7 +2465,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_temp_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION top_temp_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -2393,24 +2473,27 @@ DECLARE
     --Cursor for top(cnt) querues ordered by temp usage
     c_temp CURSOR FOR
     SELECT
-        st.queryid_md5 AS queryid,
+        st.queryid_md5 AS queryid_md5,
+        st.queryid AS queryid,
         st.dbname,
-        st.total_time,
-        st.rows,
-        st.local_blks_fetched,
-        st.local_hit_pct,
-        st.temp_blks_written,
-        st.temp_write_total_pct,
-        st.temp_blks_read,
-        st.temp_read_total_pct,
-        st.local_blks_written,
-        st.local_write_total_pct,
-        st.local_blks_read,
-        st.local_read_total_pct,
-        st.calls
+        NULLIF(st.total_time, 0.0) as total_time,
+        NULLIF(st.rows, 0) as rows,
+        NULLIF(st.local_blks_fetched, 0) as local_blks_fetched,
+        NULLIF(st.local_hit_pct, 0.0) as local_hit_pct,
+        NULLIF(st.temp_blks_written, 0) as temp_blks_written,
+        NULLIF(st.temp_write_total_pct, 0.0) as temp_write_total_pct,
+        NULLIF(st.temp_blks_read, 0) as temp_blks_read,
+        NULLIF(st.temp_read_total_pct, 0.0) as temp_read_total_pct,
+        NULLIF(st.local_blks_written, 0) as local_blks_written,
+        NULLIF(st.local_write_total_pct, 0.0) as local_write_total_pct,
+        NULLIF(st.local_blks_read, 0) as local_blks_read,
+        NULLIF(st.local_read_total_pct, 0.0) as local_read_total_pct,
+        NULLIF(st.calls, 0) as calls
     FROM top_statements(sserver_id, start_id, end_id) st
-    WHERE st.temp_blks_read + st.temp_blks_written + st.local_blks_read + st.local_blks_written > 0
-    ORDER BY st.temp_blks_read + st.temp_blks_written + st.local_blks_read + st.local_blks_written DESC
+    WHERE COALESCE(st.temp_blks_read, 0) + COALESCE(st.temp_blks_written, 0) +
+        COALESCE(st.local_blks_read, 0) + COALESCE(st.local_blks_written, 0) > 0
+    ORDER BY COALESCE(st.temp_blks_read, 0) + COALESCE(st.temp_blks_written, 0) +
+        COALESCE(st.local_blks_read, 0) + COALESCE(st.local_blks_written, 0) DESC
     LIMIT topn;
 
     r_result RECORD;
@@ -2444,7 +2527,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><a HREF="#%s">%s</a></td>'
+          '<td {mono}><p><a HREF="#%1$s">%1$s</a></p>'
+          '<p><small>[%2$s]</small></p></td>'
           '<td>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
@@ -2467,8 +2551,8 @@ BEGIN
     FOR r_result IN c_temp LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid,
-            r_result.queryid,
+            r_result.queryid_md5,
+            to_hex(r_result.queryid),
             r_result.dbname,
             r_result.local_blks_fetched,
             round(CAST(r_result.local_hit_pct AS numeric),2),
@@ -2484,7 +2568,7 @@ BEGIN
             r_result.rows,
             r_result.calls
         );
-        PERFORM collect_queries(r_result.queryid);
+        PERFORM collect_queries(r_result.queryid_md5);
     END LOOP;
 
     IF report != '' THEN
@@ -2495,7 +2579,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION top_temp_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION top_temp_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -2504,43 +2588,53 @@ DECLARE
     --Cursor for top(cnt) querues ordered by temp usage
     c_temp CURSOR FOR
     SELECT * FROM (SELECT
-        COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid,
+        COALESCE(st1.queryid,st2.queryid) as queryid,
+        COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid_md5,
         COALESCE(st1.dbname,st2.dbname) as dbname,
-        st1.total_time as total_time1,
-        st1.rows as rows1,
-        st1.local_blks_fetched as local_blks_fetched1,
-        st1.local_hit_pct as local_hit_pct1,
-        st1.temp_blks_written as temp_blks_written1,
-        st1.temp_write_total_pct as temp_write_total_pct1,
-        st1.temp_blks_read as temp_blks_read1,
-        st1.temp_read_total_pct as temp_read_total_pct1,
-        st1.local_blks_written as local_blks_written1,
-        st1.local_write_total_pct as local_write_total_pct1,
-        st1.local_blks_read as local_blks_read1,
-        st1.local_read_total_pct as local_read_total_pct1,
-        st1.calls as calls1,
-        st2.total_time as total_time2,
-        st2.rows as rows2,
-        st2.local_blks_fetched as local_blks_fetched2,
-        st2.local_hit_pct as local_hit_pct2,
-        st2.temp_blks_written as temp_blks_written2,
-        st2.temp_write_total_pct as temp_write_total_pct2,
-        st2.temp_blks_read as temp_blks_read2,
-        st2.temp_read_total_pct as temp_read_total_pct2,
-        st2.local_blks_written as local_blks_written2,
-        st2.local_write_total_pct as local_write_total_pct2,
-        st2.local_blks_read as local_blks_read2,
-        st2.local_read_total_pct as local_read_total_pct2,
-        st2.calls as calls2,
-        row_number() over (ORDER BY st1.temp_blks_read + st1.temp_blks_written + st1.local_blks_read + st1.local_blks_written DESC NULLS LAST) as rn_temp1,
-        row_number() over (ORDER BY st2.temp_blks_read + st2.temp_blks_written + st2.local_blks_read + st2.local_blks_written DESC NULLS LAST) as rn_temp2
+        NULLIF(st1.total_time, 0.0) as total_time1,
+        NULLIF(st1.rows, 0) as rows1,
+        NULLIF(st1.local_blks_fetched, 0) as local_blks_fetched1,
+        NULLIF(st1.local_hit_pct, 0.0) as local_hit_pct1,
+        NULLIF(st1.temp_blks_written, 0) as temp_blks_written1,
+        NULLIF(st1.temp_write_total_pct, 0.0) as temp_write_total_pct1,
+        NULLIF(st1.temp_blks_read, 0) as temp_blks_read1,
+        NULLIF(st1.temp_read_total_pct, 0.0) as temp_read_total_pct1,
+        NULLIF(st1.local_blks_written, 0) as local_blks_written1,
+        NULLIF(st1.local_write_total_pct, 0.0) as local_write_total_pct1,
+        NULLIF(st1.local_blks_read, 0) as local_blks_read1,
+        NULLIF(st1.local_read_total_pct, 0.0) as local_read_total_pct1,
+        NULLIF(st1.calls, 0) as calls1,
+        NULLIF(st2.total_time, 0.0) as total_time2,
+        NULLIF(st2.rows, 0) as rows2,
+        NULLIF(st2.local_blks_fetched, 0) as local_blks_fetched2,
+        NULLIF(st2.local_hit_pct, 0.0) as local_hit_pct2,
+        NULLIF(st2.temp_blks_written, 0) as temp_blks_written2,
+        NULLIF(st2.temp_write_total_pct, 0.0) as temp_write_total_pct2,
+        NULLIF(st2.temp_blks_read, 0) as temp_blks_read2,
+        NULLIF(st2.temp_read_total_pct, 0.0) as temp_read_total_pct2,
+        NULLIF(st2.local_blks_written, 0) as local_blks_written2,
+        NULLIF(st2.local_write_total_pct, 0.0) as local_write_total_pct2,
+        NULLIF(st2.local_blks_read, 0) as local_blks_read2,
+        NULLIF(st2.local_read_total_pct, 0.0) as local_read_total_pct2,
+        NULLIF(st2.calls, 0) as calls2,
+        row_number() over (ORDER BY COALESCE(st1.temp_blks_read, 0)+ COALESCE(st1.temp_blks_written, 0)+
+          COALESCE(st1.local_blks_read, 0)+ COALESCE(st1.local_blks_written, 0)DESC NULLS LAST) as rn_temp1,
+        row_number() over (ORDER BY COALESCE(st2.temp_blks_read, 0)+ COALESCE(st2.temp_blks_written, 0)+
+          COALESCE(st2.local_blks_read, 0)+ COALESCE(st2.local_blks_written, 0)DESC NULLS LAST) as rn_temp2
     FROM top_statements(sserver_id, start1_id, end1_id) st1
-        FULL OUTER JOIN top_statements(sserver_id, start2_id, end2_id) st2 USING (server_id, datid, userid, queryid_md5)
-    WHERE COALESCE(st1.temp_blks_read + st1.temp_blks_written + st1.local_blks_read + st1.local_blks_written,
-        st2.temp_blks_read + st2.temp_blks_written + st2.local_blks_read + st2.local_blks_written) > 0
-    ORDER BY COALESCE(st1.temp_blks_read + st1.temp_blks_written + st1.local_blks_read + st1.local_blks_written,0) +
-        COALESCE(st2.temp_blks_read + st2.temp_blks_written + st2.local_blks_read + st2.local_blks_written,0) DESC ) t1
-    WHERE rn_temp1 <= topn OR rn_temp2 <= topn;
+        FULL OUTER JOIN top_statements(sserver_id, start2_id, end2_id) st2 USING (server_id, datid, userid, queryid)
+    WHERE COALESCE(st1.temp_blks_read, 0) + COALESCE(st1.temp_blks_written, 0) +
+        COALESCE(st1.local_blks_read, 0) + COALESCE(st1.local_blks_written, 0) +
+        COALESCE(st2.temp_blks_read, 0) + COALESCE(st2.temp_blks_written, 0) +
+        COALESCE(st2.local_blks_read, 0) + COALESCE(st2.local_blks_written, 0) > 0
+    ORDER BY COALESCE(st1.temp_blks_read, 0) + COALESCE(st1.temp_blks_written, 0) +
+        COALESCE(st1.local_blks_read, 0) + COALESCE(st1.local_blks_written, 0) +
+        COALESCE(st2.temp_blks_read, 0) + COALESCE(st2.temp_blks_written, 0) +
+        COALESCE(st2.local_blks_read, 0) + COALESCE(st2.local_blks_written, 0) DESC ) t1
+    WHERE least(
+        rn_temp1,
+        rn_temp2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN
@@ -2574,7 +2668,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><a HREF="#%s">%s</a></td>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%1$s</a></p>'
+          '<p><small>[%2$s]</small></p></td>'
           '<td {rowtdspanhdr}>%s</td>'
           '<td {label} {title1}>1</td>'
           '<td {value}>%s</td>'
@@ -2615,8 +2710,8 @@ BEGIN
     FOR r_result IN c_temp LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid,
-            r_result.queryid,
+            r_result.queryid_md5,
+            to_hex(r_result.queryid),
             r_result.dbname,
             r_result.local_blks_fetched1,
             round(CAST(r_result.local_hit_pct1 AS numeric),2),
@@ -2646,7 +2741,7 @@ BEGIN
             r_result.calls2
         );
 
-        PERFORM collect_queries(r_result.queryid);
+        PERFORM collect_queries(r_result.queryid_md5);
     END LOOP;
 
     IF report != '' THEN
@@ -2657,7 +2752,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION collect_queries(IN query_id char(10)) RETURNS integer SET search_path=@extschema@,public AS $$
+CREATE FUNCTION collect_queries(IN query_id char(10)) RETURNS integer SET search_path=@extschema@,public AS $$
 BEGIN
     INSERT INTO queries_list(
       queryid_md5
@@ -2669,7 +2764,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION report_queries(IN jreportset jsonb) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION report_queries(IN jreportset jsonb) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     c_queries CURSOR FOR
     SELECT queryid_md5 AS queryid, query AS querytext

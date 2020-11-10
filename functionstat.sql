@@ -1,6 +1,6 @@
 /* ===== Function stats functions ===== */
 
-CREATE OR REPLACE FUNCTION top_functions(IN sserver_id integer, IN start_id integer, IN end_id integer, IN trigger_fn boolean)
+CREATE FUNCTION top_functions(IN sserver_id integer, IN start_id integer, IN end_id integer, IN trigger_fn boolean)
 RETURNS TABLE(
     server_id     integer,
     datid       oid,
@@ -27,8 +27,8 @@ SET search_path=@extschema@,public AS $$
         sum(st.calls)::bigint AS calls,
         sum(st.total_time)/1000 AS total_time,
         sum(st.self_time)/1000 AS self_time,
-        sum(st.total_time)/sum(st.calls)/1000 AS m_time,
-        sum(st.self_time)/sum(st.calls)/1000 AS m_stime
+        sum(st.total_time)/NULLIF(sum(st.calls),0)/1000 AS m_time,
+        sum(st.self_time)/NULLIF(sum(st.calls),0)/1000 AS m_stime
     FROM v_sample_stat_user_functions st
         -- Database name
         JOIN sample_stat_database sample_db
@@ -50,7 +50,7 @@ SET search_path=@extschema@,public AS $$
     GROUP BY st.server_id,st.datid,st.funcid,sample_db.datname,st.schemaname,st.funcname,st.funcargs
 $$ LANGUAGE sql;
 
-CREATE OR REPLACE FUNCTION func_top_time_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION func_top_time_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -61,12 +61,13 @@ DECLARE
         schemaname,
         funcname,
         funcargs,
-        calls,
-        total_time,
-        self_time,
-        m_time,
-        m_stime
+        NULLIF(calls, 0) as calls,
+        NULLIF(total_time, 0.0) as total_time,
+        NULLIF(self_time, 0.0) as self_time,
+        NULLIF(m_time, 0.0) as m_time,
+        NULLIF(m_stime, 0.0) as m_stime
     FROM top_functions(sserver_id, start_id, end_id, false)
+    WHERE total_time > 0
     ORDER BY total_time DESC
     LIMIT topn;
 
@@ -126,7 +127,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION func_top_time_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION func_top_time_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -138,22 +139,26 @@ DECLARE
         COALESCE(f1.schemaname,f2.schemaname) as schemaname,
         COALESCE(f1.funcname,f2.funcname) as funcname,
         COALESCE(f1.funcargs,f2.funcargs) as funcargs,
-        f1.calls as calls1,
-        f1.total_time as total_time1,
-        f1.self_time as self_time1,
-        f1.m_time as m_time1,
-        f1.m_stime as m_stime1,
-        f2.calls as calls2,
-        f2.total_time as total_time2,
-        f2.self_time as self_time2,
-        f2.m_time as m_time2,
-        f2.m_stime as m_stime2,
+        NULLIF(f1.calls, 0) as calls1,
+        NULLIF(f1.total_time, 0.0) as total_time1,
+        NULLIF(f1.self_time, 0.0) as self_time1,
+        NULLIF(f1.m_time, 0.0) as m_time1,
+        NULLIF(f1.m_stime, 0.0) as m_stime1,
+        NULLIF(f2.calls, 0) as calls2,
+        NULLIF(f2.total_time, 0.0) as total_time2,
+        NULLIF(f2.self_time, 0.0) as self_time2,
+        NULLIF(f2.m_time, 0.0) as m_time2,
+        NULLIF(f2.m_stime, 0.0) as m_stime2,
         row_number() OVER (ORDER BY f1.total_time DESC NULLS LAST) as rn_time1,
         row_number() OVER (ORDER BY f2.total_time DESC NULLS LAST) as rn_time2
     FROM top_functions(sserver_id, start1_id, end1_id, false) f1
         FULL OUTER JOIN top_functions(sserver_id, start2_id, end2_id, false) f2 USING (server_id, datid, funcid)
-    ORDER BY COALESCE(f1.total_time,0) + COALESCE(f2.total_time,0) DESC) t1
-    WHERE rn_time1 <= topn OR rn_time2 <= topn;
+    ORDER BY COALESCE(f1.total_time, 0.0) + COALESCE(f2.total_time, 0.0) DESC) t1
+    WHERE COALESCE(total_time1, 0.0) + COALESCE(total_time2, 0.0) > 0.0
+      AND least(
+        rn_time1,
+        rn_time2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN
@@ -227,7 +232,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION func_top_calls_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION func_top_calls_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -238,12 +243,13 @@ DECLARE
         schemaname,
         funcname,
         funcargs,
-        calls,
-        total_time,
-        self_time,
-        m_time,
-        m_stime
+        NULLIF(calls, 0) as calls,
+        NULLIF(total_time, 0.0) as total_time,
+        NULLIF(self_time, 0.0) as self_time,
+        NULLIF(m_time, 0.0) as m_time,
+        NULLIF(m_stime, 0.0) as m_stime
     FROM top_functions(sserver_id, start_id, end_id, false)
+    WHERE calls > 0
     ORDER BY calls DESC
     LIMIT topn;
 
@@ -303,7 +309,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION func_top_calls_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION func_top_calls_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -315,22 +321,26 @@ DECLARE
         COALESCE(f1.schemaname,f2.schemaname) as schemaname,
         COALESCE(f1.funcname,f2.funcname) as funcname,
         COALESCE(f1.funcargs,f2.funcargs) as funcargs,
-        f1.calls as calls1,
-        f1.total_time as total_time1,
-        f1.self_time as self_time1,
-        f1.m_time as m_time1,
-        f1.m_stime as m_stime1,
-        f2.calls as calls2,
-        f2.total_time as total_time2,
-        f2.self_time as self_time2,
-        f2.m_time as m_time2,
-        f2.m_stime as m_stime2,
+        NULLIF(f1.calls, 0) as calls1,
+        NULLIF(f1.total_time, 0.0) as total_time1,
+        NULLIF(f1.self_time, 0.0) as self_time1,
+        NULLIF(f1.m_time, 0.0) as m_time1,
+        NULLIF(f1.m_stime, 0.0) as m_stime1,
+        NULLIF(f2.calls, 0) as calls2,
+        NULLIF(f2.total_time, 0.0) as total_time2,
+        NULLIF(f2.self_time, 0.0) as self_time2,
+        NULLIF(f2.m_time, 0.0) as m_time2,
+        NULLIF(f2.m_stime, 0.0) as m_stime2,
         row_number() OVER (ORDER BY f1.calls DESC NULLS LAST) as rn_calls1,
         row_number() OVER (ORDER BY f2.calls DESC NULLS LAST) as rn_calls2
     FROM top_functions(sserver_id, start1_id, end1_id, false) f1
         FULL OUTER JOIN top_functions(sserver_id, start2_id, end2_id, false) f2 USING (server_id, datid, funcid)
-    ORDER BY COALESCE(f1.calls,0) + COALESCE(f2.calls,0) DESC) t1
-    WHERE rn_calls1 <= topn OR rn_calls2 <= topn;
+    ORDER BY COALESCE(f1.calls, 0) + COALESCE(f2.calls, 0) DESC) t1
+    WHERE COALESCE(calls1, 0) + COALESCE(calls2, 0) > 0
+      AND least(
+        rn_calls1,
+        rn_calls2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN
@@ -406,7 +416,7 @@ $$ LANGUAGE plpgsql;
 
 /* ==== Trigger report functions ==== */
 
-CREATE OR REPLACE FUNCTION func_top_trg_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
+CREATE FUNCTION func_top_trg_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -417,12 +427,13 @@ DECLARE
         schemaname,
         funcname,
         funcargs,
-        calls,
-        total_time,
-        self_time,
-        m_time,
-        m_stime
+        NULLIF(calls, 0) as calls,
+        NULLIF(total_time, 0.0) as total_time,
+        NULLIF(self_time, 0.0) as self_time,
+        NULLIF(m_time, 0.0) as m_time,
+        NULLIF(m_stime, 0.0) as m_stime
     FROM top_functions(sserver_id, start_id, end_id, true)
+    WHERE total_time > 0
     ORDER BY total_time DESC
     LIMIT topn;
 
@@ -482,7 +493,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION func_top_trg_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+CREATE FUNCTION func_top_trg_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@,public AS $$
 DECLARE
     report text := '';
@@ -494,22 +505,26 @@ DECLARE
         COALESCE(f1.schemaname,f2.schemaname) as schemaname,
         COALESCE(f1.funcname,f2.funcname) as funcname,
         COALESCE(f1.funcargs,f2.funcargs) as funcargs,
-        f1.calls as calls1,
-        f1.total_time as total_time1,
-        f1.self_time as self_time1,
-        f1.m_time as m_time1,
-        f1.m_stime as m_stime1,
-        f2.calls as calls2,
-        f2.total_time as total_time2,
-        f2.self_time as self_time2,
-        f2.m_time as m_time2,
-        f2.m_stime as m_stime2,
+        NULLIF(f1.calls, 0) as calls1,
+        NULLIF(f1.total_time, 0.0) as total_time1,
+        NULLIF(f1.self_time, 0.0) as self_time1,
+        NULLIF(f1.m_time, 0.0) as m_time1,
+        NULLIF(f1.m_stime, 0.0) as m_stime1,
+        NULLIF(f2.calls, 0) as calls2,
+        NULLIF(f2.total_time, 0.0) as total_time2,
+        NULLIF(f2.self_time, 0.0) as self_time2,
+        NULLIF(f2.m_time, 0.0) as m_time2,
+        NULLIF(f2.m_stime, 0.0) as m_stime2,
         row_number() OVER (ORDER BY f1.total_time DESC NULLS LAST) as rn_time1,
         row_number() OVER (ORDER BY f2.total_time DESC NULLS LAST) as rn_time2
     FROM top_functions(sserver_id, start1_id, end1_id, true) f1
         FULL OUTER JOIN top_functions(sserver_id, start2_id, end2_id, true) f2 USING (server_id, datid, funcid)
-    ORDER BY COALESCE(f1.total_time,0) + COALESCE(f2.total_time,0) DESC) t1
-    WHERE least(rn_time1, rn_time2) <= topn;
+    ORDER BY COALESCE(f1.total_time, 0.0) + COALESCE(f2.total_time, 0.0) DESC) t1
+    WHERE COALESCE(total_time1, 0.0) + COALESCE(total_time2, 0.0) > 0.0
+      AND least(
+        rn_time1,
+        rn_time2
+      ) <= topn;
 
     r_result RECORD;
 BEGIN
