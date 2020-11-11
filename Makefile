@@ -51,6 +51,7 @@ sqlfile: $(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql
 $(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql: $(script)
 	cat $(script) | sed -e 's/SET search_path=@extschema@,public //' \
 	-e "s/{pg_profile}/$(EXTENSION)/" \
+	-e "s/{extension_version}/$(PGPROFILE_VERSION)/" \
 	> $(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql
 
 $(EXTENSION).control: control.tpl

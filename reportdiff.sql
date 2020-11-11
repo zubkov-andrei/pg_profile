@@ -58,8 +58,12 @@ BEGIN
     END IF;
 
     -- {pg_profile} version
-    SELECT extversion INTO STRICT r_result FROM pg_catalog.pg_extension WHERE extname = '{pg_profile}';
-    report := replace(report,'{pgprofile_version}',r_result.extversion);
+    IF (SELECT count(*) = 1 FROM pg_catalog.pg_extension WHERE extname = '{pg_profile}') THEN
+      SELECT extversion INTO STRICT r_result FROM pg_catalog.pg_extension WHERE extname = '{pg_profile}';
+      report := replace(report,'{pgprofile_version}',r_result.extversion);
+    ELSE
+      report := replace(report,'{pgprofile_version}','{extension_version}');
+    END IF;
 
     -- Server name substitution
     SELECT server_name INTO STRICT r_result FROM servers WHERE server_id = sserver_id;
