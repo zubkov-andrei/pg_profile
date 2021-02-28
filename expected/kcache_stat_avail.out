@@ -1,0 +1,12 @@
+SELECT count(1) > 0 FROM profile.sample_kcache;
+ ?column? 
+----------
+ t
+(1 row)
+
+SELECT count(1) > 0 FROM profile.sample_kcache_total;
+ ?column? 
+----------
+ t
+(1 row)
+

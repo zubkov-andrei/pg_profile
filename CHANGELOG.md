@@ -1,5 +1,12 @@
 # pg_profile changelog
 
+## 0.3.1
+- relation sizes collection policy added
+- data export and import feature added
+- support of pg_stat_kcache extension version 2.2.0
+- server description added
+- FIX: template databases are now detected by pg_database.datistemplate field
+
 ## 0.2.1
 - detailed sample taking timings collection feature.
 - removed unmeaning zeros from report tables
@@ -14,7 +21,7 @@
 
 ## 0.1.4
 - snapshot() function now tracks time elapsed taking sample on each server
-- Top indexes by blocks fetched/read report section now conains indecs scan count field
+- Top indexes by blocks fetched/read report section now contains index scan count field
 - New _take_sample_subset()_ function can be used in parallel samples collection in case of many servers.
 - fix of #9 reported by @Guzya - incorrect database and tablespace size in report
 
@@ -31,7 +38,7 @@
 - CPU timings are now shown in "Top SQL by elapsed time" if kcache extension was available
 - I/O timing statistics added to "Statements statistics by database" section
 - "WAL segments archived" and "WAL segments archive failed" statistics added to "Cluster statistics" section
-- Workaround for pg_table_size and AccessExclusiveLocks. Now in many cases snapshot will be taken successifuly without size of locked relation.
+- Workaround for pg_table_size and AccessExclusiveLocks. Now in many cases snapshot will be taken successfully without size of locked relation.
 - Top vacuum and analyze count tables in reports
 - Implicit index vacuum I/O load estimation
 - Added trigger functions timing statistics

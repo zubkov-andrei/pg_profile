@@ -1,0 +1,6 @@
+CREATE SCHEMA IF NOT EXISTS profile;
+CREATE SCHEMA IF NOT EXISTS dblink;
+CREATE SCHEMA IF NOT EXISTS statements;
+CREATE EXTENSION dblink SCHEMA dblink;
+CREATE EXTENSION pg_stat_statements SCHEMA statements;
+CREATE EXTENSION pg_profile SCHEMA profile;

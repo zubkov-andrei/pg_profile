@@ -8,7 +8,7 @@ Extension is based on statistic views of PostgreSQL and contrib extension *pg_st
 
 Historic repository will be created in your database by this extension. This repository will hold statistic "samples" for your postgres clusters. Sample is taken by calling _take_sample()_ function. PostgreSQL doesn't have any job-like engine, so you'll need to use *cron*.
 
-Periodic samples can help you finding most resource intensive activities in the past. Suppose, you were reported performance degradation several hours ago. Resolving such issue, you can build a report between two samples bounding performance issue period to see load profile of your database. It's worse using a monitoring tool such as Zabbix to know exact time when performance issues was happening.
+Periodic samples can help you finding most resource intensive activities in the past. Suppose, you were reported performance degradation several hours ago. Resolving such issue, you can build a report between two samples bounding performance issue period to see load profile of your database. It's worth using a monitoring tool such as Zabbix to know exact time when performance issues was happening.
 
 You can take an explicit sample before running any batch processing, and after it will be done.
 
@@ -124,8 +124,13 @@ Once installed, extension will create one enabled *local* server - this is for c
 
 Servers management functions:
 
-* **create_server(server name, server_connstr text, server_enabled boolean = TRUE, max_sample_age integer = NULL)**
-  Creates a new server with *server* name (must be unique) and connection string. If _enabled_ is set, server will be included in the common _take_sample()_ call. *max_sample_age* parameter will override global _pg_profile.max_sample_age_ setting for this server.
+* **create_server(server name, server_connstr text, server_enabled boolean = TRUE, max_sample_age integer = NULL, description text = NULL)** - creates a new server description
+Function arguments:
+  * *server* - server name (must be unique)
+  * *server_connstr* - server connection string
+  * *enabled* - server enable flag. When is set, server will be included in the common _take_sample()_ call
+  * *max_sample_age* - server sample retention parameter overrides global _pg_profile.max_sample_age_ setting for this server
+  * *description* - server description text. Will be included in reports
 
 * **drop_server(server name)**
   Drops a server and all its samples.
@@ -148,6 +153,9 @@ Servers management functions:
 * **set_server_connstr(server name, new_connstr text)**
   Set new connection string for a server.
 
+* **set_server_description(server name, description text)**
+  Set new server description.
+
 * **show_servers()**
 Display existing servers.
 
@@ -156,6 +164,31 @@ Server creation example:
 ```
 SELECT profile.server_new('omega','host=name_or_ip dbname=postgres port=5432');
 ```
+### Rare relation sizes collection
+Postgres relation size functions may take considerable amount of time to collect sizes of all relations in a database. Also those functions require *AccessExclusiveLock* on a relation. However daily relation sizes collection may be quite enough for you. *pg_profile* can skip relation sizes collection while taking samples guided by server size collection policy. Policy is defined as a daily window when relation size collection is permitted, and a minimal gap between two samples with relation sizes collected. Thus when size collection policy is defined sample taking function will collect relation sizes only when sample is taken in a window and previous sample with sizes is older then gap.
+Function *set_server_size_sampling* defines this policy:
+* *set_server_size_sampling(server name, window_start time with time zone = NULL, window_duration interval hour to second = NULL, sample_interval interval day to minute = NULL)*
+  * *server* - server name
+  * *window_start* - size collection window start time
+  * *window_duration* - size collection window duration
+  * *sample_interval* - minimum time gap between two samples with relation sizes collected
+Size collection policy is defined only when all three parameters are set.
+
+Example:
+```
+SELECT set_server_size_sampling('local','23:00+03',interval '2 hour',interval '8 hour');
+```
+
+Function *show_servers_size_sampling* show defined sizes collection policy for all servers:
+```
+postgres=# SELECT * FROM show_servers_size_sampling();
+ server_name | window_start | window_end  | window_duration | sample_interval
+-------------+--------------+-------------+-----------------+-----------------
+ local       | 23:00:00+03  | 01:00:00+03 | 02:00:00        | 08:00:00
+```
+
+When you build a report between samples either of which lacks relation sizes data then relation growth sections will be excluded from report. However, *with_growth* parameter of report generation functions will expand report bounds to nearest samples with relation sizes data collected.
+Relation sizes is needed for calculating sequentially scanned volume for tables and explicit vacuum load for indexes. When rare relation sizes collection is used, corresponding report sections data is based on linear interpolation.
 
 ### Samples
 
@@ -187,8 +220,10 @@ Every sample contains statistic information about database workload since previo
   * *server* is a server name
   * *result* is a result of taken sample. It can be 'OK' if sample was taken successively, and will contain error text in case of exception
   * *elapsed* is a time elapsed taking a sample for *server*
-* **take_sample(server name)**
-  Will collect a sample for specified server. Use it, for example, when you want to use different sampling frequencies, or if you want to take samples in parallel using several sessions.
+* **take_sample(server name [, skip_sizes boolean])**
+  Will collect a sample for specified server. Use it, for example, when you want to use different sampling frequencies, or if you want to take explicit sample on a server.
+  * *server* - name of a server to take sample
+  * *skip_sizes* - override server relation size collection policy. Policy applies only when *skip_size* argument is omitted or set to null. *false* value of *skip_sizes* argument cause take sample with relation sizes, while *true* will cause skipping relation sizes collection during a sample.
 * **show_samples([server name,] [days integer])**
   Returns a table, containing existing samples of a *server* (*local* server assumed if *server* is omitted) for *days* last days (all existing samples if omitted):
   ```
@@ -307,6 +342,40 @@ Baseline management functions:
   postgres=# SELECT * FROM profile.baseline_show('local');
   ```
 
+### Data export and import
+Collected samples can be exported from instance of *pg_profile* extension and than loaded into another one. This feature is useful when you want to move servers from one instance to another, or when you need to send collected data to your support team.
+
+#### Data export
+Data is exported as a regular table by function export_data(). You can use any method to export this table from your database. For example, you can use *copy* command of psql to obtain single .csv file:
+```
+postgres=# \copy (select * from export_data()) to 'export.csv'
+```
+By default *export_data()* function will export all samples of all configured servers. However you can limit export to only one server, and further limit sample range too:
+
+* **export_data([server name, [min_sample_id integer,] [max_sample_id integer]] [, obfuscate_queries boolean])** - export collected data
+  * *server* is a server name. All servers is assumed if omitted
+  * *min_sample_id* and *max_sample_id* - export bounding sample identifiers (inclusive). Null value of *min_sample_id* bound cause export of all samples till *max_sample_id*, and null value of *max_sample_id* cause export of all samples since *min_sample_id*.
+  * *obfuscate_queries* - use this parameter only when you want to hide query texts - they will be exported as MD5 hash.
+
+#### Data import
+Data can be imported from local table only, thus previously exported data is need to be loaded first. In our case with *copy* command:
+```
+postgres=# CREATE TABLE import (section_id bigint, row_data json);
+CREATE TABLE
+postgres=# \copy import from 'export.csv'
+COPY 6437
+```
+Now we can perform data import, providing this table to *import_data()* function:
+```
+postgres=# SELECT * FROM import_data('import');
+```
+Although server descriptions is also imported, your local *pg_profile* servers with matching names will prohibit import operations. Consider temporarily rename those servers. If you'll need to import new data for previously imported servers, they will be matched by system identifier, so fell free to rename imported sever as you wish. All servers are imported in *disabled* state.
+*import_data()* function takes only the imported table:
+* **import_data(data regclass)**
+  * *data* - table containing exported data
+This function returns number of rows actually loaded in extension tables.
+After successful import operation you can drop *import* table.
+
 ### Reports
 
 Reports are generated in HTML markup by reporting functions. There are two types of reports available in *pg_profile*:
@@ -316,59 +385,42 @@ Reports are generated in HTML markup by reporting functions. There are two types
 
 #### Regular report functions
 
-* **get_report([server name,] start_id integer, end_id integer [, description text])** - generate report by sample identifiers
-
-  * *server* is server name. *local* server is assumed if omitted
-  * *start_id* is interval begin sample identifier
-  * *end_id* is interval end sample identifier
-  * *description* is a text memo - it will be included in report as a report description
-
-* **get_report([server name,] time_range tstzrange [, description text])** - generate report for a time range.
-
-  * *server* is server name. *local* server is assumed if omitted
-  * *time_range* is time range (*tstzrange* type)
-  * *description* is a text memo - it will be included in report as report description
-
-  This function will generate report for the shortest sample interval, covering provided *time_range*.
-
-* **get_report([server name], baseline varchar(25) [, description text])** - generate report, using baseline as samples interval
-
-  * *server* is server name. *local* server assumed if omitted
-  * *baseline* is a baseline name
-  * *description* is a text memo - it will be included in report as report description
-
+* **get_report([server name,] start_id integer, end_id integer [, description text [, with_growth boolean]])** - generate report by sample identifiers
+* **get_report([server name,] time_range tstzrange [, description text [, with_growth boolean]])** - generate report for the shortest sample interval, covering provided *time_range*.
+* **get_report([server name], baseline varchar(25) [, description text [, with_growth boolean]])** - generate report, using baseline as samples interval
 * **get_report_latest([server name])** - generate report for two latest samples
-
-  * *server* is server name. *local* server assumed if omitted
+Function arguments:
+  * *server* - server name. *local* server is assumed if omitted
+  * *start_id* - interval begin sample identifier
+  * *end_id* - interval end sample identifier
+  * *time_range* - time range (*tstzrange* type)
+  * *baseline* - a baseline name
+  * *with_growth* - a flag, requesting interval expansion to nearest bounds with relation growth data available. Default value is *false*
+  * *description* - a text memo, it will be included in report as a report description
 
 #### Differential report functions
 
 You can generate differential report using sample identifiers, baselines and time ranges as interval bounds:
 
-* **get_diffreport([server name,] start1_id integer, end1_id integer, start2_id integer, end2_id integer [, description text])** - generate differential report on two intervals by sample identifiers
+* **get_diffreport([server name,] start1_id integer, end1_id integer, start2_id integer, end2_id integer [, description text [, with_growth boolean]])** - generate differential report on two intervals by sample identifiers
+* **get_diffreport([server name,] baseline1 varchar(25), baseline2 varchar(25) [, description text [, with_growth boolean]])** - generate differential report on two intervals, defined by basename names
+* **get_diffreport([server name,] time_range1 tstzrange, time_range2 tstzrange [, description text [, with_growth boolean]])** - generate differential report on two intervals, defined by time ranges
   * *server* is server name. *local* server is assumed if omitted
   * *start1_id*, *end1_id* - sample identifiers of first interval
   * *start2_id*, *end2_id* - sample identifiers of second interval
-  * *description* is a text memo - it will be included in report as report description
-
-* **get_diffreport([server name,] baseline1 varchar(25), baseline2 varchar(25) [, description text])** - generate differential report on two intervals, defined by basename names
-  * *server* is server name. *local* server assumed if omitted
   * *baseline1* - baseline name of first interval
   * *baseline2* - baseline name of second interval
-  * *description* is a text memo - it will be included in report as report description
-
-* **get_diffreport([server name,] time_range1 tstzrange, time_range2 tstzrange [, description text])** - generate differential report on two intervals, defined by time ranges
-  * *server* is server name. *local* server assumed if omitted
   * *time_range1* - first interval time range
   * *time_range2* - second interval time range
   * *description* is a text memo - it will be included in report as report description
+  * *with_growth* is a flag, requesting both intervals expansion to nearest bounds with relation growth data available. Default value is *false*
 
 Also, you can use some combinations of the above:
 
-* **get_diffreport([server name,] baseline varchar(25), time_range tstzrange [, description text])**
-* **get_diffreport([server name,] time_range tstzrange, baseline varchar(25) [, description text])**
-* **get_diffreport([server name,] start1_id integer, end1_id integer, baseline varchar(25) [, description text])**
-* **get_diffreport([server name,] baseline varchar(25), start2_id integer, end2_id integer [, description text])**
+* **get_diffreport([server name,] baseline varchar(25), time_range tstzrange [, description text [, with_growth boolean]])**
+* **get_diffreport([server name,] time_range tstzrange, baseline varchar(25) [, description text [, with_growth boolean]])**
+* **get_diffreport([server name,] start1_id integer, end1_id integer, baseline varchar(25) [, description text [, with_growth boolean]])**
+* **get_diffreport([server name,] baseline varchar(25), start2_id integer, end2_id integer [, description text [, with_growth boolean]])**
 
 Report generation example:
 ```
@@ -511,7 +563,7 @@ Top _pg_profile.topn_ statements sorted by *total_plan_time* field of *pg_stat_s
   * *Min* - minimum time spent planning this statement (*min_plan_time* field)
   * *Max* - maximum time spent planning this statement (*max_plan_time* field)
   * *StdErr* - population standard deviation of time spent planning this statement (*stddev_plan_time* field)
-* *Plans* - number of times this statement was planned (*plans* lield)
+* *Plans* - number of times this statement was planned (*plans* field)
 * *Executions* - number of times this statement was executed (*calls* field)
 
 #### Top SQL by execution time
@@ -667,10 +719,14 @@ Top _pg_profile.topn_ statements sorted by sum of fields *user_time* and *system
 
 * *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
-* *User time(s)* - User CPU time used (*user_time* field)
-* *%Total* - *user_time* of this statement as a percentage of a summary *user_time* for all statements
-* *System time(s)* - System CPU time used (*system_time* field)
-* *%Total* - *system_time* of this statement as a percentage of a summary *system_time* for all statements
+* *User Time* - User CPU time used
+  * *Plan (s)* - User CPU time elapsed during planning in seconds (*plan_user_time* field)
+  * *Exec (s)* - User CPU time elapsed during execution in seconds (*exec_user_time* or *user_time* field)
+  * *%Total* - User CPU time of this statement as a percentage of a summary user CPU time for all statements
+* *System Time* - System CPU time used
+  * *Plan (s)* - System CPU time elapsed during planning in seconds (*plan_system_time* field)
+  * *Exec (s)* - System CPU time elapsed during execution in seconds (*exec_system_time* or *system_time* field)
+  * *%Total* - System CPU time of this statement as a percentage of a summary system CPU time for all statements
 
 ##### Top SQL by reads/writes done by filesystem layer
 
@@ -678,28 +734,32 @@ Top _pg_profile.topn_ statements sorted by sum of fields *reads* and *writes* fi
 
 * *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
-* *Reads* - Number of bytes read by the filesystem layer (*reads* field)
-* *%Total* - *reads* of this statement as a percentage of a summary *reads* for all statements
+* *Read Bytes* - Number of bytes read by the filesystem layer
+  * *Plan* - bytes read during planning (*plan_reads* field)
+  * *Exec* - bytes read during execution (*exec_reads* field)
+  * *%Total* - Bytes read of this statement as a percentage of a summary read bytes for all statements
 * *Writes* - Number of bytes written by the filesystem layer (*writes* field)
-* *%Total* - *writes* of this statement as a percentage of a summary *writes* for all statements
+  * *Plan* - bytes written during planning (*plan_writes* field)
+  * *Exec* - bytes written during execution (*exec_writes* field)
+  * *%Total* - Bytes written of this statement as a percentage of a summary written bytes for all statements
 
 #### Complete list of SQL texts
 
 Query texts of all statements mentioned in report. You can use *Query ID* link in any statistic table to get there and see query text.
 
-### Schema object statisctics
+### Schema object statistics
 
 This section of report contains top database objects, using statistics from Statistics Collector views.
 
-#### Top tables by estimated number of sequentially scanned blocks
+#### Top tables by estimated sequentially scanned volume
 
-Top database tables sorted by estimated count of blocks, read by sequential scans. Based on *pg_stat_all_tables* view. Here you can search for tables, possibly lacks some index on it.
+Top database tables sorted by estimated volume, read by sequential scans. Based on *pg_stat_all_tables* view. Here you can search for tables, possibly lacks some index on it.
 
 * *DB* - database name of the table
 * *Tablespace* - tablespace name, where the table is located
 * *Schema* - schema name of the table
 * *Table* - table name
-* *~SeqBlks* - estimated number of blocks, read by sequential scans. Calculated as a sum of *relation size* multiplied by *seq_scan* for all samples of a report.
+* *~SeqBytes* - estimated volume, read by sequential scans. Calculated as a sum of *relation size* multiplied by *seq_scan* for all samples of a report.
 * *SeqScan* - number of sequential scans performed on the table (*seq_scan* field)
 * *IxScan* - number of index scans initiated on this table (*idx_scan* field)
 * *IxFet* - number of live rows fetched by index scans (*idx_tup_fetch* field)
@@ -759,7 +819,7 @@ Top tables sorted by amount of DML-affected rows, i.e. sum of *n_tup_ins*, *n_tu
 * *IxScan* - number of index scans initiated on this table (*idx_scan* field)
 * *IxFet* - number of live rows fetched by index scans (*idx_tup_fetch* field)
 
-#### Top tables by Delete/Update operations
+#### Top tables by updated/deleted tuples
 
 Top tables sorted by amount of operations, causing autovacuum load, i.e. sum of *n_tup_upd* and *n_tup_del* (including TOAST tables). Consider fine-tune of vacuum-related parameters based on provided vacuum and analyze run statistics.
 
@@ -941,6 +1001,8 @@ This table provides estimation of implicit vacuum load caused by table indexes. 
 * *~Vacuum bytes* - vacuum load estimation calculated as (*vacuum_count* + *autovacuum_count*) * *index_size*
 * *Vacuum cnt* - number of times this table has been manually vacuumed (not counting VACUUM FULL) (*vacuum_count* field)
 * *Autovacuum cnt* - number of times this table has been vacuumed by the autovacuum daemon (*autovacuum_count* field)
+* *IX size* - average index size during report interval
+* *Relsize* - average relation size during report interval
 
 #### Top tables by dead tuples ratio
 This section contains modified tables with last vacuum run. Statistics is valid for last sample in report interval. Based on *pg_stat_all_tables* view.

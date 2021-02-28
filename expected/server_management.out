@@ -1,0 +1,93 @@
+/* == Testing server management functions == */
+SELECT profile.create_server('srvtest','dbname=postgres host=localhost port=5432', TRUE, NULL, 'Server description 1');
+ create_server 
+---------------
+             2
+(1 row)
+
+SELECT server_id, server_name, server_description, db_exclude,
+  enabled, connstr, max_sample_age, last_sample_id
+FROM profile.servers WHERE server_name != 'local';
+ server_id | server_name |  server_description  | db_exclude | enabled |                 connstr                  | max_sample_age | last_sample_id 
+-----------+-------------+----------------------+------------+---------+------------------------------------------+----------------+----------------
+         2 | srvtest     | Server description 1 |            | t       | dbname=postgres host=localhost port=5432 |                |              0
+(1 row)
+
+SELECT profile.rename_server('srvtest','srvtestrenamed');
+ rename_server 
+---------------
+             1
+(1 row)
+
+SELECT profile.set_server_connstr('srvtestrenamed','dbname=postgres host=localhost port=5433');
+ set_server_connstr 
+--------------------
+                  1
+(1 row)
+
+SELECT profile.set_server_description('srvtestrenamed','Server description 2');
+ set_server_description 
+------------------------
+                      1
+(1 row)
+
+SELECT profile.set_server_db_exclude('srvtestrenamed',ARRAY['db1','db2','db3']);
+ set_server_db_exclude 
+-----------------------
+                     1
+(1 row)
+
+SELECT profile.set_server_max_sample_age('srvtestrenamed',3);
+ set_server_max_sample_age 
+---------------------------
+                         1
+(1 row)
+
+SELECT server_id, server_name, server_description, db_exclude,
+  enabled, connstr, max_sample_age, last_sample_id
+FROM profile.servers WHERE server_name != 'local';
+ server_id |  server_name   |  server_description  |  db_exclude   | enabled |                 connstr                  | max_sample_age | last_sample_id 
+-----------+----------------+----------------------+---------------+---------+------------------------------------------+----------------+----------------
+         2 | srvtestrenamed | Server description 2 | {db1,db2,db3} | t       | dbname=postgres host=localhost port=5433 |              3 |              0
+(1 row)
+
+SELECT profile.disable_server('srvtestrenamed');
+ disable_server 
+----------------
+              1
+(1 row)
+
+SELECT server_id, server_name, server_description, db_exclude,
+  enabled, connstr, max_sample_age, last_sample_id
+FROM profile.servers WHERE server_name != 'local';
+ server_id |  server_name   |  server_description  |  db_exclude   | enabled |                 connstr                  | max_sample_age | last_sample_id 
+-----------+----------------+----------------------+---------------+---------+------------------------------------------+----------------+----------------
+         2 | srvtestrenamed | Server description 2 | {db1,db2,db3} | f       | dbname=postgres host=localhost port=5433 |              3 |              0
+(1 row)
+
+SELECT profile.enable_server('srvtestrenamed');
+ enable_server 
+---------------
+             1
+(1 row)
+
+SELECT server_id, server_name, server_description, db_exclude,
+  enabled, connstr, max_sample_age, last_sample_id
+FROM profile.servers WHERE server_name != 'local';
+ server_id |  server_name   |  server_description  |  db_exclude   | enabled |                 connstr                  | max_sample_age | last_sample_id 
+-----------+----------------+----------------------+---------------+---------+------------------------------------------+----------------+----------------
+         2 | srvtestrenamed | Server description 2 | {db1,db2,db3} | t       | dbname=postgres host=localhost port=5433 |              3 |              0
+(1 row)
+
+SELECT * FROM profile.show_servers() where server_name != 'local';
+  server_name   |                 connstr                  | enabled |     description      
+----------------+------------------------------------------+---------+----------------------
+ srvtestrenamed | dbname=postgres host=localhost port=5433 | t       | Server description 2
+(1 row)
+
+SELECT * FROM profile.drop_server('srvtestrenamed');
+ drop_server 
+-------------
+           1
+(1 row)
+
