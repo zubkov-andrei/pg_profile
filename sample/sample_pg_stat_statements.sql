@@ -26,7 +26,7 @@ BEGIN
         'st.userid,'
         'st.dbid,'
         'st.queryid,'
-        'left(md5(db.datname || r.rolname || st.query ), 10) AS queryid_md5,'
+        'md5(st.query) AS queryid_md5,'
         '{statements_fields}'
         '{kcache_fields}'
       ' FROM '
@@ -431,7 +431,7 @@ BEGIN
             userid              oid,
             datid               oid,
             queryid             bigint,
-            queryid_md5         char(10),
+            queryid_md5         char(32),
             plans               bigint,
             total_plan_time     double precision,
             min_plan_time       double precision,

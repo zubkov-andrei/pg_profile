@@ -141,6 +141,92 @@ RETURNS TABLE(
     relid
 $$ LANGUAGE sql;
 
+CREATE OR REPLACE FUNCTION tab_size_interpolated(IN server_id integer, sample_id integer,
+  IN datid oid, IN relid oid
+) RETURNS bigint
+STABLE
+RETURNS NULL ON NULL INPUT
+AS
+$$
+DECLARE
+  r_current   record;
+  r_left      record;
+  r_right     record;
+
+  c_before CURSOR FOR
+  SELECT sample_time,relsize
+  FROM sample_stat_tables t
+    JOIN samples s USING (server_id, sample_id)
+  WHERE (t.server_id, t.datid, t.relid) =
+    (tab_size_interpolated.server_id,
+    tab_size_interpolated.datid, tab_size_interpolated.relid)
+    AND relsize IS NOT NULL
+    AND t.sample_id < tab_size_interpolated.sample_id
+  ORDER BY t.sample_id DESC
+  LIMIT 2;
+
+  c_after CURSOR FOR
+  SELECT sample_time,relsize
+  FROM sample_stat_tables t
+    JOIN samples s USING (server_id, sample_id)
+  WHERE (t.server_id, t.datid, t.relid) =
+    (tab_size_interpolated.server_id,
+    tab_size_interpolated.datid, tab_size_interpolated.relid)
+    AND relsize IS NOT NULL
+    AND t.sample_id > tab_size_interpolated.sample_id
+  ORDER BY t.sample_id ASC
+  LIMIT 2;
+BEGIN
+	/* If raw data exists, return it as is */
+	SELECT relsize INTO r_current
+	FROM sample_stat_tables t
+	WHERE (t.server_id,t.sample_id,t.datid,t.relid) =
+		(tab_size_interpolated.server_id,tab_size_interpolated.sample_id,
+		tab_size_interpolated.datid, tab_size_interpolated.relid);
+	IF FOUND THEN
+		IF r_current.relsize IS NOT NULL THEN
+			RETURN r_current.relsize;
+		END IF;
+	ELSE
+		RETURN NULL;
+	END IF;
+
+	/* We need to use interpolation here */
+	OPEN c_before;
+	FETCH c_before INTO r_left;
+
+	OPEN c_after;
+	FETCH c_after INTO r_right;
+
+	SELECT s.sample_time,relsize INTO STRICT r_current
+	FROM sample_stat_tables t
+	JOIN samples s USING (server_id, sample_id)
+	WHERE (t.server_id, t.sample_id, t.datid, t.relid) =
+		(tab_size_interpolated.server_id, tab_size_interpolated.sample_id,
+		tab_size_interpolated.datid, tab_size_interpolated.relid);
+
+	CASE
+		WHEN r_left.sample_time IS NOT NULL AND r_right.sample_time IS NULL THEN
+			r_right := r_left;
+			FETCH c_before INTO r_left;
+		WHEN r_left.sample_time IS NULL AND r_right.sample_time IS NOT NULL THEN
+			r_left := r_right;
+			FETCH c_after INTO r_right;
+		ELSE
+			NULL;
+	END CASE;
+
+	CLOSE c_after;
+	CLOSE c_before;
+
+	RETURN r_left.relsize +
+		round(extract(epoch from r_current.sample_time - r_left.sample_time) *
+			(r_right.relsize - r_left.relsize) /
+			extract(epoch from r_right.sample_time - r_left.sample_time)
+		);
+END;
+$$ LANGUAGE plpgsql;
+
 /* ===== Tables report functions ===== */
 CREATE FUNCTION top_scan_tables_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
@@ -181,9 +267,11 @@ DECLARE
         server_id,
         datid,
         relid,
-        round(sum(seq_scan * relsize))::bigint as seq_scan_bytes,
-        bool_or(relsize_approximated) as approximated
-      FROM v_sample_stat_tables_interpolated
+        round(sum(seq_scan *
+			COALESCE(relsize,tab_size_interpolated(server_id,sample_id,datid,relid))
+		))::bigint as seq_scan_bytes,
+        count(relsize) != count(*) as approximated
+      FROM sample_stat_tables
       WHERE server_id = sserver_id AND sample_id BETWEEN start_id + 1 AND end_id
       GROUP BY
         server_id,
@@ -196,9 +284,11 @@ DECLARE
         server_id,
         datid,
         relid,
-        round(sum(seq_scan * relsize))::bigint as seq_scan_bytes,
-        bool_or(relsize_approximated) as approximated
-      FROM v_sample_stat_tables_interpolated
+        round(sum(seq_scan *
+			COALESCE(relsize,tab_size_interpolated(server_id,sample_id,datid,relid))
+		))::bigint as seq_scan_bytes,
+        count(relsize) != count(*) as approximated
+      FROM sample_stat_tables
       WHERE server_id = sserver_id AND sample_id BETWEEN start_id + 1 AND end_id
       GROUP BY
         server_id,
@@ -390,9 +480,11 @@ DECLARE
         server_id,
         datid,
         relid,
-        round(sum(seq_scan * relsize))::bigint as seq_scan_bytes,
-        bool_or(relsize_approximated) as approximated
-      FROM v_sample_stat_tables_interpolated
+        round(sum(seq_scan *
+			COALESCE(relsize,tab_size_interpolated(server_id,sample_id,datid,relid))
+		))::bigint as seq_scan_bytes,
+        count(relsize) != count(*) as approximated
+      FROM sample_stat_tables
       WHERE server_id = sserver_id AND sample_id BETWEEN start1_id + 1 AND end1_id
       GROUP BY
         server_id,
@@ -405,9 +497,11 @@ DECLARE
         server_id,
         datid,
         relid,
-        round(sum(seq_scan * relsize))::bigint as seq_scan_bytes,
-        bool_or(relsize_approximated) as approximated
-      FROM v_sample_stat_tables_interpolated
+        round(sum(seq_scan *
+			COALESCE(relsize,tab_size_interpolated(server_id,sample_id,datid,relid))
+		))::bigint as seq_scan_bytes,
+        count(relsize) != count(*) as approximated
+      FROM sample_stat_tables
       WHERE server_id = sserver_id AND sample_id BETWEEN start1_id + 1 AND end1_id
       GROUP BY
         server_id,
@@ -420,9 +514,11 @@ DECLARE
         server_id,
         datid,
         relid,
-        round(sum(seq_scan * relsize))::bigint as seq_scan_bytes,
-        bool_or(relsize_approximated) as approximated
-      FROM v_sample_stat_tables_interpolated
+        round(sum(seq_scan *
+			COALESCE(relsize,tab_size_interpolated(server_id,sample_id,datid,relid))
+		))::bigint as seq_scan_bytes,
+        count(relsize) != count(*) as approximated
+      FROM sample_stat_tables
       WHERE server_id = sserver_id AND sample_id BETWEEN start1_id + 1 AND end1_id
       GROUP BY
         server_id,
@@ -435,9 +531,11 @@ DECLARE
         server_id,
         datid,
         relid,
-        round(sum(seq_scan * relsize))::bigint as seq_scan_bytes,
-        bool_or(relsize_approximated) as approximated
-      FROM v_sample_stat_tables_interpolated
+        round(sum(seq_scan *
+			COALESCE(relsize,tab_size_interpolated(server_id,sample_id,datid,relid))
+		))::bigint as seq_scan_bytes,
+        count(relsize) != count(*) as approximated
+      FROM sample_stat_tables
       WHERE server_id = sserver_id AND sample_id BETWEEN start1_id + 1 AND end1_id
       GROUP BY
         server_id,

@@ -1,4 +1,4 @@
-PGPROFILE_VERSION = 0.3.1
+PGPROFILE_VERSION = 0.3.2
 EXTENSION = pg_profile
 
 include migration/Makefile
@@ -44,7 +44,8 @@ schema = schema/schema.sql \
 data = data/import_queries.sql
 common = management/internal.sql
 adm_funcs = management/baseline.sql \
-	management/server.sql \
+	management/server.sql
+export_funcs = \
 	management/export.sql
 sample = \
 	sample/sample_pg_stat_statements.sql \
@@ -53,8 +54,14 @@ sample = \
 report = report/functions/*.sql \
 	report/report.sql \
 	report/reportdiff.sql
-functions = $(common) $(adm_funcs) $(sample) $(report)
+
+# Extension script contents
+functions = $(common) $(adm_funcs) $(export_funcs) $(sample) $(report)
 script = $(schema) $(data) $(functions)
+
+# Manual script contents
+functions_man = $(common) $(adm_funcs) $(sample) $(report)
+script_man = $(schema) $(functions_man)
 
 sqlfile: $(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql
 
@@ -62,7 +69,7 @@ $(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql: $(script)
 	sed -e 's/SET search_path=@extschema@ //' \
 	-e "s/{pg_profile}/$(EXTENSION)/" \
 	-e "s/{extension_version}/$(PGPROFILE_VERSION)/" \
-	$(script) \
+	$(script_man) \
 	> $(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql
 
 $(EXTENSION).control: control.tpl

@@ -78,7 +78,7 @@ COMMENT ON TABLE bl_samples IS 'Samples in baselines';
 
 CREATE TABLE stmt_list(
     server_id      integer NOT NULL REFERENCES servers(server_id) ON DELETE CASCADE,
-    queryid_md5    char(10),
+    queryid_md5    char(32),
     query          text,
     CONSTRAINT pk_stmt_list PRIMARY KEY (server_id, queryid_md5)
 );
@@ -128,7 +128,7 @@ CREATE TABLE sample_statements (
     userid              oid,
     datid               oid,
     queryid             bigint,
-    queryid_md5         char(10),
+    queryid_md5         char(32),
     plans               bigint,
     total_plan_time     double precision,
     min_plan_time       double precision,
@@ -203,7 +203,7 @@ CREATE TABLE sample_kcache (
     userid              oid,
     datid               oid,
     queryid             bigint,
-    queryid_md5         char(10),
+    queryid_md5         char(32),
     plan_user_time      double precision, --  User CPU time used
     plan_system_time    double precision, --  System CPU time used
     plan_minflts         bigint, -- Number of page reclaims (soft page faults)
@@ -229,6 +229,8 @@ CREATE TABLE sample_kcache (
     exec_nvcsws         bigint, -- Number of voluntary context switches
     exec_nivcsws        bigint,
     CONSTRAINT pk_sample_kcache_n PRIMARY KEY (server_id,sample_id,datid,userid,queryid),
+    CONSTRAINT fk_kcache_stmt_list FOREIGN KEY (server_id,queryid_md5)
+      REFERENCES stmt_list (server_id,queryid_md5) ON DELETE RESTRICT ON UPDATE CASCADE,
     CONSTRAINT fk_kcache_st FOREIGN KEY (server_id, sample_id, datid,userid,queryid)
       REFERENCES sample_statements(server_id, sample_id, datid,userid,queryid) ON DELETE CASCADE
 );

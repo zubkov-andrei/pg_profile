@@ -534,7 +534,8 @@ This report section contains tables of top statements during report interval sor
 
 This table contains top _pg_profile.topn_ statements sorted by elapsed time *total_plan_time* + *total_exec_time* of *pg_stat_statements* view
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
+notation is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
 * *%Total* - total time of this statement as a percentage of total time of all statements in a cluster
 * *Time (s)* - time spent in this statement (in seconds)
@@ -554,7 +555,8 @@ This table contains top _pg_profile.topn_ statements sorted by elapsed time *tot
 
 Top _pg_profile.topn_ statements sorted by *total_plan_time* field of *pg_stat_statements* view
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
+notation is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
 * *Plan elapsed (s)* - time spent in planning this statement (*total_plan_time* field)
 * *%Elapsed* - plan time of this statement as a percentage of statement elapsed time
@@ -570,7 +572,8 @@ Top _pg_profile.topn_ statements sorted by *total_plan_time* field of *pg_stat_s
 
 Top _pg_profile.topn_ statements sorted by *total_time* (or *total_exec_time*) field of *pg_stat_statements* view
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
+notation is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
 * *Exec (s)* - time spent executing this statement (*total_exec_time* field)
 * *%Elapsed* - execution time of this statement as a percentage of statement elapsed time
@@ -590,7 +593,8 @@ Top _pg_profile.topn_ statements sorted by *total_time* (or *total_exec_time*) f
 
 Top _pg_profile.topn_ statements sorted by *calls* field of *pg_stat_statements* view
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
+notation is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
 * *Executions* - count of statement executions (*calls* field)
 * *%Total* - *calls* of this statement as a percentage of total *calls* of all statements in a cluster
@@ -605,7 +609,8 @@ Top _pg_profile.topn_ statements sorted by *calls* field of *pg_stat_statements*
 
 Top _pg_profile.topn_ statements sorted by read and write time (*blk_read_time* + *blk_write_time*)
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
+notation is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
 * *IO(s)* - amount of time spent on reading and writing (I/O time) by this statement in seconds (*blk_read_time* + *blk_write_time*)
 * *R(s)* - amount of time spent on reading by this statement in seconds (*blk_read_time*)
@@ -626,7 +631,8 @@ Top _pg_profile.topn_ statements sorted by read and write time (*blk_read_time* 
 
 Top _pg_profile.topn_ statements sorted by read and hit blocks, helping to detect the most data processing statements.
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
+notation is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
 * *blks fetched* - number of fetched blocks (expression: *shared_blks_hit* + *shared_blks_read*)
 * *%Total* - blocks fetched for this statement as a percentage of total blocks fetched for all statements in a cluster
@@ -639,7 +645,8 @@ Top _pg_profile.topn_ statements sorted by read and hit blocks, helping to detec
 
 Top _pg_profile.topn_ statements sorted by shared reads, helping to detect most read intensive statements.
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
+notation is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
 * *Reads* - number of shared read blocks for this statement (*shared_blks_read* field)
 * *%Total* - shared reads for this statement as a percentage of total shared reads for all statements in a cluster
@@ -652,7 +659,8 @@ Top _pg_profile.topn_ statements sorted by shared reads, helping to detect most 
 
 Top _pg_profile.topn_ statements sorted by shared dirtied buffer count, helping to detect most data changing statements.
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
+notation is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
 * *Dirtied* - number of shared blocks dirtied by this statement (*shared_blks_dirtied* field)
 * *%Total* - shared blocks dirtied by this statement as a percentage of total shared blocks dirtied by all statements in a cluster
@@ -665,7 +673,8 @@ Top _pg_profile.topn_ statements sorted by shared dirtied buffer count, helping 
 
 Top _pg_profile.topn_ statements, which had to perform writes sorted by written blocks count.
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
+notation is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
 * *Written* - number of blocks written by this statement (*shared_blks_written* field)
 * *%Total* - number of blocks written by this statement as a percentage of total blocks written by all statements in a cluster
@@ -679,7 +688,8 @@ Top _pg_profile.topn_ statements, which had to perform writes sorted by written 
 
 Top _pg_profile.topn_ statements, sorted by WAL generated (available since *pg_stat_statements* v1.8)
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
+notation is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
 * *WAL* - amount of WAL generated by the statement (*wal_bytes* field)
 * *%Total* - amount of WAL generated by the statement as a percentage of total WAL generated in cluster (*pg_current_wal_lsn()* increment)
@@ -691,7 +701,8 @@ Top _pg_profile.topn_ statements, sorted by WAL generated (available since *pg_s
 
 Top _pg_profile.topn_ statements sorted by temp I/O, calculated as the sum of *temp_blks_read*, *temp_blks_written*, *local_blks_read* and *local_blks_written* fields
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
+notation is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
 * *Local fetched* - number of retrieved local blocks (expression: *local_blks_hit* + *local_blks_read*)
 * *Hits(%)* - percentage of local blocks got from temp buffers within all local blocks got
@@ -717,7 +728,8 @@ This section contains resource usage statistics provided by *pg_stat_kcache* ext
 
 Top _pg_profile.topn_ statements sorted by sum of fields *user_time* and *system_time* fields of *pg_stat_kcache*.
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
+notation is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
 * *User Time* - User CPU time used
   * *Plan (s)* - User CPU time elapsed during planning in seconds (*plan_user_time* field)
@@ -732,7 +744,8 @@ Top _pg_profile.topn_ statements sorted by sum of fields *user_time* and *system
 
 Top _pg_profile.topn_ statements sorted by sum of fields *reads* and *writes* fields of *pg_stat_kcache*.
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hex is shown in square brackets.
+* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
+notation is shown in square brackets.
 * *Database* - Statement database name (derived from *dbid* field)
 * *Read Bytes* - Number of bytes read by the filesystem layer
   * *Plan* - bytes read during planning (*plan_reads* field)

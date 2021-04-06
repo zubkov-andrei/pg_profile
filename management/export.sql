@@ -188,7 +188,7 @@ DECLARE
 
   r_result        RECORD;
 BEGIN
-  -- Get import metagata
+  -- Get import metadata
   EXECUTE format('SELECT row_data::jsonb FROM %s WHERE section_id = 0',data)
   INTO STRICT import_meta;
 
@@ -266,13 +266,13 @@ BEGIN
           AND (d.row_data->>'server_id')::integer = imp_srv.server_id)
       LEFT OUTER JOIN (
         SELECT
-          server_id,
-          server_name,
-          server_created,
-          reset_val as system_identifier
-        FROM servers
-          JOIN sample_settings USING (server_id)
-        WHERE name = 'system_identifier') ls ON
+          srv.server_id,
+          srv.server_name,
+          srv.server_created,
+          set.reset_val as system_identifier
+        FROM servers srv
+          LEFT OUTER JOIN sample_settings set ON (set.server_id = srv.server_id AND set.name = 'system_identifier')
+        ) ls ON
         ((imp_srv.server_created = ls.server_created AND d.row_data->>'reset_val' = ls.system_identifier)
           OR imp_srv.server_name = ls.server_name)
     $q$,
@@ -371,15 +371,16 @@ BEGIN
       tbllist.relname
     FROM
       ver_order vo JOIN
-      (SELECT min(o.level) as level,q.extension, q.relname FROM ver_order o
-      JOIN import_queries q ON (o.extension, o.version) = (q.extension, q.from_version)
-      GROUP BY q.extension, q.relname) as min_level ON
+      (SELECT min(o.level) as level,vq.extension, vq.relname FROM ver_order o
+      JOIN import_queries vq ON (o.extension, o.version) = (vq.extension, vq.from_version)
+      GROUP BY vq.extension, vq.relname) as min_level ON
         (vo.extension,vo.level) = (min_level.extension,min_level.level)
       JOIN import_queries q ON
         (q.extension,q.from_version,q.relname) = (vo.extension,vo.version,min_level.relname)
       RIGHT OUTER JOIN jsonb_to_recordset(tables_list) as tbllist(section_id integer, relname text) ON
         (tbllist.relname = q.relname)
     WHERE tbllist.relname NOT IN ('servers')
+    ORDER BY tbllist.section_id ASC, q.exec_order ASC
   )
   LOOP
     -- Forgotten query for table check

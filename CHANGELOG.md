@@ -1,5 +1,10 @@
 # pg_profile changelog
 
+## 0.3.2
+- restored statements _queryid_ compatibility with current version of pgcenter utility
+- query text storage improved
+- linear interpolation of relation sizes slightly optimized
+
 ## 0.3.1
 - relation sizes collection policy added
 - data export and import feature added

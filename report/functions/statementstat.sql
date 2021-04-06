@@ -7,7 +7,7 @@ RETURNS TABLE(
     dbname                  name,
     userid                  oid,
     queryid                 bigint,
-    queryid_md5             char(10),
+    queryid_md5             char(32),
     plans                   bigint,
     plans_pct               float,
     calls                   bigint,
@@ -167,12 +167,15 @@ $$ LANGUAGE sql;
 
 CREATE FUNCTION top_elapsed_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
-    report text := '';
+    report      text := '';
+    tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) queries ordered by elapsed time
     c_elapsed_time CURSOR FOR
     SELECT
+        st.datid,
+        st.userid,
         st.queryid,
         st.queryid_md5,
         st.dbname,
@@ -224,18 +227,18 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><p><a HREF="#%1$s">%1$s</a></p>'
-          '<p><small>[%2$s]</small></p></td>'
-          '<td>%3$s</td>'
-          '<td {value}>%4$s</td>'
+          '<td {mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small></p></td>'
+          '<td>%4$s</td>'
           '<td {value}>%5$s</td>'
           '<td {value}>%6$s</td>'
           '<td {value}>%7$s</td>'
           '<td {value}>%8$s</td>'
           '<td {value}>%9$s</td>'
+          '<td {value}>%10$s</td>'
           '{kcache_row}'
-          '<td {value}>%12$s</td>'
           '<td {value}>%13$s</td>'
+          '<td {value}>%14$s</td>'
         '</tr>',
       'kcache_hdr1',
         '<th colspan="2">CPU time (s)</th>',
@@ -243,8 +246,8 @@ BEGIN
         '<th>Usr</th>'
         '<th>Sys</th>',
       'kcache_row',
-        '<td {value}>%10$s</td>'
         '<td {value}>%11$s</td>'
+        '<td {value}>%12$s</td>'
       );
     -- Conditional template
     IF jsonb_extract_path_text(jreportset, 'report_features', 'kcachestatements')::boolean THEN
@@ -260,9 +263,10 @@ BEGIN
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
     -- Reporting on top queries by elapsed time
     FOR r_result IN c_elapsed_time LOOP
-        report := report||format(
+        tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
             r_result.queryid_md5,
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
             round(CAST(r_result.total_time_pct AS numeric),2),
@@ -276,7 +280,11 @@ BEGIN
             r_result.plans,
             r_result.calls
         );
-        PERFORM collect_queries(r_result.queryid_md5);
+
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+        );
     END LOOP;
 
     IF report != '' THEN
@@ -290,12 +298,15 @@ $$ LANGUAGE plpgsql;
 CREATE FUNCTION top_elapsed_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
-    report text := '';
+    report      text := '';
+    tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) queries ordered by elapsed time
     c_elapsed_time CURSOR FOR
     SELECT * FROM (SELECT
+        COALESCE(st1.datid,st2.datid) as datid,
+        COALESCE(st1.userid,st2.userid) as userid,
         COALESCE(st1.queryid,st2.queryid) as queryid,
         COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid_md5,
         COALESCE(st1.dbname,st2.dbname) as dbname,
@@ -366,31 +377,31 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%1$s</a></p>'
-          '<p><small>[%2$s]</small></p></td>'
-          '<td {rowtdspanhdr}>%3$s</td>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small></p></td>'
+          '<td {rowtdspanhdr}>%4$s</td>'
           '<td {label} {title1}>1</td>'
-          '<td {value}>%4$s</td>'
           '<td {value}>%5$s</td>'
           '<td {value}>%6$s</td>'
           '<td {value}>%7$s</td>'
           '<td {value}>%8$s</td>'
           '<td {value}>%9$s</td>'
+          '<td {value}>%10$s</td>'
           '{kcache_row1}'
-          '<td {value}>%12$s</td>'
           '<td {value}>%13$s</td>'
+          '<td {value}>%14$s</td>'
         '</tr>'
         '<tr {interval2}>'
           '<td {label} {title2}>2</td>'
-          '<td {value}>%14$s</td>'
           '<td {value}>%15$s</td>'
           '<td {value}>%16$s</td>'
           '<td {value}>%17$s</td>'
           '<td {value}>%18$s</td>'
           '<td {value}>%19$s</td>'
+          '<td {value}>%20$s</td>'
           '{kcache_row2}'
-          '<td {value}>%22$s</td>'
           '<td {value}>%23$s</td>'
+          '<td {value}>%24$s</td>'
         '</tr>'
         '<tr style="visibility:collapse"></tr>',
       'kcache_hdr1',
@@ -399,11 +410,11 @@ BEGIN
         '<th>Usr</th>'
         '<th>Sys</th>',
       'kcache_row1',
-        '<td {value}>%10$s</td>'
-        '<td {value}>%11$s</td>',
+        '<td {value}>%11$s</td>'
+        '<td {value}>%12$s</td>',
       'kcache_row2',
-        '<td {value}>%20$s</td>'
         '<td {value}>%21$s</td>'
+        '<td {value}>%22$s</td>'
       );
     -- Conditional template
     IF jsonb_extract_path_text(jreportset, 'report_features', 'kcachestatements')::boolean THEN
@@ -422,9 +433,10 @@ BEGIN
 
     -- Reporting on top queries by elapsed time
     FOR r_result IN c_elapsed_time LOOP
-        report := report||format(
+        tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
             r_result.queryid_md5,
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
             round(CAST(r_result.total_time_pct1 AS numeric),2),
@@ -449,7 +461,10 @@ BEGIN
             r_result.calls2
         );
 
-        PERFORM collect_queries(r_result.queryid_md5);
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+        );
     END LOOP;
 
     IF report != '' THEN
@@ -463,12 +478,15 @@ $$ LANGUAGE plpgsql;
 
 CREATE FUNCTION top_plan_time_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
-    report text := '';
+    report      text := '';
+    tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for queries ordered by planning time
     c_elapsed_time CURSOR FOR
     SELECT
+        st.datid,
+        st.userid,
         st.queryid,
         st.queryid_md5,
         st.dbname,
@@ -516,10 +534,9 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><p><a HREF="#%1$s">%1$s</a></p>'
-          '<p><small>[%2$s]</small></p></td>'
-          '<td>%3$s</td>'
-          '<td {value}>%4$s</td>'
+          '<td {mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small></p></td>'
+          '<td>%4$s</td>'
           '<td {value}>%5$s</td>'
           '<td {value}>%6$s</td>'
           '<td {value}>%7$s</td>'
@@ -527,15 +544,17 @@ BEGIN
           '<td {value}>%9$s</td>'
           '<td {value}>%10$s</td>'
           '<td {value}>%11$s</td>'
+          '<td {value}>%12$s</td>'
         '</tr>'
       );
     -- apply settings to templates
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
     -- Reporting on top queries by elapsed time
     FOR r_result IN c_elapsed_time LOOP
-        report := report||format(
+        tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
             r_result.queryid_md5,
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
             round(CAST(r_result.total_plan_time AS numeric),2),
@@ -547,7 +566,11 @@ BEGIN
             r_result.plans,
             r_result.calls
         );
-        PERFORM collect_queries(r_result.queryid_md5);
+
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+        );
     END LOOP;
 
     IF report != '' THEN
@@ -561,12 +584,15 @@ $$ LANGUAGE plpgsql;
 CREATE FUNCTION top_plan_time_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
-    report text := '';
+    report      text := '';
+    tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) queries ordered by elapsed time
     c_elapsed_time CURSOR FOR
     SELECT * FROM (SELECT
+        COALESCE(st1.datid,st2.datid) as datid,
+        COALESCE(st1.userid,st2.userid) as userid,
         COALESCE(st1.queryid,st2.queryid) as queryid,
         COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid_md5,
         COALESCE(st1.dbname,st2.dbname) as dbname,
@@ -626,11 +652,10 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%1$s</a></p>'
-          '<p><small>[%2$s]</small></p></td>'
-          '<td {rowtdspanhdr}>%3$s</td>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small></p></td>'
+          '<td {rowtdspanhdr}>%4$s</td>'
           '<td {label} {title1}>1</td>'
-          '<td {value}>%4$s</td>'
           '<td {value}>%5$s</td>'
           '<td {value}>%6$s</td>'
           '<td {value}>%7$s</td>'
@@ -638,10 +663,10 @@ BEGIN
           '<td {value}>%9$s</td>'
           '<td {value}>%10$s</td>'
           '<td {value}>%11$s</td>'
+          '<td {value}>%12$s</td>'
         '</tr>'
         '<tr {interval2}>'
           '<td {label} {title2}>2</td>'
-          '<td {value}>%12$s</td>'
           '<td {value}>%13$s</td>'
           '<td {value}>%14$s</td>'
           '<td {value}>%15$s</td>'
@@ -649,6 +674,7 @@ BEGIN
           '<td {value}>%17$s</td>'
           '<td {value}>%18$s</td>'
           '<td {value}>%19$s</td>'
+          '<td {value}>%20$s</td>'
         '</tr>'
         '<tr style="visibility:collapse"></tr>'
       );
@@ -657,9 +683,10 @@ BEGIN
 
     -- Reporting on top queries by elapsed time
     FOR r_result IN c_elapsed_time LOOP
-        report := report||format(
+        tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
             r_result.queryid_md5,
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
             round(CAST(r_result.total_plan_time1 AS numeric),2),
@@ -680,7 +707,10 @@ BEGIN
             r_result.calls2
         );
 
-        PERFORM collect_queries(r_result.queryid_md5);
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+        );
     END LOOP;
 
     IF report != '' THEN
@@ -693,12 +723,15 @@ $$ LANGUAGE plpgsql;
 
 CREATE FUNCTION top_exec_time_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
-    report text := '';
+    report      text := '';
+    tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for queries ordered by execution time
     c_elapsed_time CURSOR FOR
     SELECT
+        st.datid,
+        st.userid,
         st.queryid,
         st.queryid_md5,
         st.dbname,
@@ -752,34 +785,34 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><p><a HREF="#%1$s">%1$s</a></p>'
-          '<p><small>[%2$s]</small></p></td>'
-          '<td>%3$s</td>'
-          '<td {value}>%4$s</td>'
-          '{elapsed_pct_row}'
+          '<td {mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small></p></td>'
+          '<td>%4$s</td>'
           '<td {value}>%5$s</td>'
+          '{elapsed_pct_row}'
           '<td {value}>%6$s</td>'
           '<td {value}>%7$s</td>'
+          '<td {value}>%8$s</td>'
           '{kcache_row}'
-          '<td {value}>%10$s</td>'
           '<td {value}>%11$s</td>'
           '<td {value}>%12$s</td>'
           '<td {value}>%13$s</td>'
           '<td {value}>%14$s</td>'
           '<td {value}>%15$s</td>'
+          '<td {value}>%16$s</td>'
         '</tr>',
       'elapsed_pct_hdr',
         '<th rowspan="2" title="Exec time as a percentage of statement elapsed time">%Elapsed</th>',
       'elapsed_pct_row',
-        '<td {value}>%16$s</td>',
+        '<td {value}>%17$s</td>',
       'kcache_hdr1',
         '<th colspan="2">CPU time (s)</th>',
       'kcache_hdr2',
         '<th>Usr</th>'
         '<th>Sys</th>',
       'kcache_row',
-        '<td {value}>%8$s</td>'
         '<td {value}>%9$s</td>'
+        '<td {value}>%10$s</td>'
       );
     -- Conditional template
     -- kcache
@@ -807,9 +840,10 @@ BEGIN
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
     -- Reporting on top queries by elapsed time
     FOR r_result IN c_elapsed_time LOOP
-        report := report||format(
+        tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
             r_result.queryid_md5,
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
             round(CAST(r_result.total_exec_time AS numeric),2),
@@ -826,7 +860,11 @@ BEGIN
             r_result.calls,
             round(CAST(r_result.exec_time_pct AS numeric),2)
         );
-        PERFORM collect_queries(r_result.queryid_md5);
+
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+        );
     END LOOP;
 
     IF report != '' THEN
@@ -840,12 +878,15 @@ $$ LANGUAGE plpgsql;
 CREATE FUNCTION top_exec_time_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
-    report text := '';
+    report      text := '';
+    tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) queries ordered by elapsed time
     c_elapsed_time CURSOR FOR
     SELECT * FROM (SELECT
+        COALESCE(st1.datid,st2.datid) as datid,
+        COALESCE(st1.userid,st2.userid) as userid,
         COALESCE(st1.queryid,st2.queryid) as queryid,
         COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid_md5,
         COALESCE(st1.dbname,st2.dbname) as dbname,
@@ -921,56 +962,56 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%1$s</a></p>'
-          '<p><small>[%2$s]</small></p></td>'
-          '<td {rowtdspanhdr}>%3$s</td>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small></p></td>'
+          '<td {rowtdspanhdr}>%4$s</td>'
           '<td {label} {title1}>1</td>'
-          '<td {value}>%4$s</td>'
-          '{elapsed_pct_row1}'
           '<td {value}>%5$s</td>'
+          '{elapsed_pct_row1}'
           '<td {value}>%6$s</td>'
           '<td {value}>%7$s</td>'
+          '<td {value}>%8$s</td>'
           '{kcache_row1}'
-          '<td {value}>%10$s</td>'
           '<td {value}>%11$s</td>'
           '<td {value}>%12$s</td>'
           '<td {value}>%13$s</td>'
           '<td {value}>%14$s</td>'
           '<td {value}>%15$s</td>'
+          '<td {value}>%16$s</td>'
         '</tr>'
         '<tr {interval2}>'
           '<td {label} {title2}>2</td>'
-          '<td {value}>%16$s</td>'
-          '{elapsed_pct_row2}'
           '<td {value}>%17$s</td>'
+          '{elapsed_pct_row2}'
           '<td {value}>%18$s</td>'
           '<td {value}>%19$s</td>'
+          '<td {value}>%20$s</td>'
           '{kcache_row2}'
-          '<td {value}>%22$s</td>'
           '<td {value}>%23$s</td>'
           '<td {value}>%24$s</td>'
           '<td {value}>%25$s</td>'
           '<td {value}>%26$s</td>'
           '<td {value}>%27$s</td>'
+          '<td {value}>%28$s</td>'
         '</tr>'
         '<tr style="visibility:collapse"></tr>',
       'elapsed_pct_hdr',
         '<th rowspan="2" title="Exec time as a percentage of statement elapsed time">%Elapsed</th>',
       'elapsed_pct_row1',
-        '<td {value}>%28$s</td>',
-      'elapsed_pct_row2',
         '<td {value}>%29$s</td>',
+      'elapsed_pct_row2',
+        '<td {value}>%30$s</td>',
       'kcache_hdr1',
         '<th colspan="2">CPU time (s)</th>',
       'kcache_hdr2',
         '<th>Usr</th>'
         '<th>Sys</th>',
       'kcache_row1',
-        '<td {value}>%8$s</td>'
-        '<td {value}>%9$s</td>',
+        '<td {value}>%9$s</td>'
+        '<td {value}>%10$s</td>',
       'kcache_row2',
-        '<td {value}>%20$s</td>'
         '<td {value}>%21$s</td>'
+        '<td {value}>%22$s</td>'
       );
     -- Conditional template
     IF jsonb_extract_path_text(jreportset, 'report_features', 'kcachestatements')::boolean AND
@@ -1002,9 +1043,10 @@ BEGIN
 
     -- Reporting on top queries by elapsed time
     FOR r_result IN c_elapsed_time LOOP
-        report := report||format(
+        tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
             r_result.queryid_md5,
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
             round(CAST(r_result.total_exec_time1 AS numeric),2),
@@ -1035,7 +1077,10 @@ BEGIN
             round(CAST(r_result.exec_time_pct2 AS numeric),2)
         );
 
-        PERFORM collect_queries(r_result.queryid_md5);
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+        );
     END LOOP;
 
     IF report != '' THEN
@@ -1048,12 +1093,15 @@ $$ LANGUAGE plpgsql;
 
 CREATE FUNCTION top_exec_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
-    report text := '';
+    report      text := '';
+    tab_row     text := '';
     jtab_tpl    jsonb;
 
     -- Cursor for topn querues ordered by executions
     c_calls CURSOR FOR
     SELECT
+        st.datid,
+        st.userid,
         st.queryid,
         st.queryid_md5,
         st.dbname,
@@ -1093,8 +1141,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><p><a HREF="#%1$s">%1$s</a></p>'
-          '<p><small>[%2$s]</small></p></td>'
+          '<td {mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small></p></td>'
           '<td>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
@@ -1109,9 +1157,10 @@ BEGIN
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
     -- Reporting on top 10 queries by executions
     FOR r_result IN c_calls LOOP
-        report := report||format(
+        tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
             r_result.queryid_md5,
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
             r_result.calls,
@@ -1123,7 +1172,11 @@ BEGIN
             round(CAST(r_result.stddev_exec_time AS numeric),3),
             round(CAST(r_result.total_exec_time AS numeric),1)
         );
-        PERFORM collect_queries(r_result.queryid_md5);
+
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+        );
     END LOOP;
 
     IF report != '' THEN
@@ -1137,12 +1190,15 @@ $$ LANGUAGE plpgsql;
 CREATE FUNCTION top_exec_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
-    report text := '';
+    report      text := '';
+    tab_row     text := '';
     jtab_tpl    jsonb;
 
     -- Cursor for topn querues ordered by executions
     c_calls CURSOR FOR
     SELECT * FROM (SELECT
+        COALESCE(st1.datid,st2.datid) as datid,
+        COALESCE(st1.userid,st2.userid) as userid,
         COALESCE(st1.queryid,st2.queryid) as queryid,
         COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid_md5,
         COALESCE(st1.dbname,st2.dbname) as dbname,
@@ -1199,8 +1255,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%1$s</a></p>'
-          '<p><small>[%2$s]</small></p></td>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small></p></td>'
           '<td {rowtdspanhdr}>%s</td>'
           '<td {label} {title1}>1</td>'
           '<td {value}>%s</td>'
@@ -1229,9 +1285,10 @@ BEGIN
 
     -- Reporting on top 10 queries by executions
     FOR r_result IN c_calls LOOP
-        report := report||format(
+        tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
             r_result.queryid_md5,
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
             r_result.calls1,
@@ -1252,7 +1309,10 @@ BEGIN
             round(CAST(r_result.total_exec_time2 AS numeric),1)
         );
 
-        PERFORM collect_queries(r_result.queryid_md5);
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+        );
     END LOOP;
 
     IF report != '' THEN
@@ -1265,14 +1325,17 @@ $$ LANGUAGE plpgsql;
 
 CREATE FUNCTION top_iowait_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
-    report text := '';
+    report      text := '';
+    tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) querues ordered by I/O Wait time
     c_iowait_time CURSOR FOR
     SELECT
+        st.datid,
+        st.userid,
+        st.queryid,
         st.queryid_md5 AS queryid_md5,
-        st.queryid AS queryid,
         st.dbname,
         NULLIF(st.total_time, 0.0) as total_time,
         NULLIF(st.io_time, 0.0) as io_time,
@@ -1323,8 +1386,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><p><a HREF="#%1$s">%1$s</a></p>'
-          '<p><small>[%2$s]</small></p></td>'
+          '<td {mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small></p></td>'
           '<td>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
@@ -1343,9 +1406,10 @@ BEGIN
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
     -- Reporting on top 10 queries by I/O wait time
     FOR r_result IN c_iowait_time LOOP
-        report := report||format(
+        tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
             r_result.queryid_md5,
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
             round(CAST(r_result.io_time AS numeric),3),
@@ -1361,7 +1425,11 @@ BEGIN
             round(CAST(r_result.total_time AS numeric),1),
             r_result.calls
         );
-      PERFORM collect_queries(r_result.queryid_md5);
+
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+        );
     END LOOP;
 
     IF report != '' THEN
@@ -1375,12 +1443,15 @@ $$ LANGUAGE plpgsql;
 CREATE FUNCTION top_iowait_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
-    report text := '';
+    report      text := '';
+    tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) querues ordered by I/O Wait time
     c_iowait_time CURSOR FOR
     SELECT * FROM (SELECT
+        COALESCE(st1.datid,st2.datid) as datid,
+        COALESCE(st1.userid,st2.userid) as userid,
         COALESCE(st1.queryid,st2.queryid) as queryid,
         COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid_md5,
         COALESCE(st1.dbname,st2.dbname) as dbname,
@@ -1454,8 +1525,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%1$s</a></p>'
-          '<p><small>[%2$s]</small></p></td>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small></p></td>'
           '<td {rowtdspanhdr}>%s</td>'
           '<td {label} {title1}>1</td>'
           '<td {value}>%s</td>'
@@ -1491,9 +1562,10 @@ BEGIN
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
     -- Reporting on top 10 queries by I/O wait time
     FOR r_result IN c_iowait_time LOOP
-        report := report||format(
+        tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
             r_result.queryid_md5,
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
             round(CAST(r_result.io_time1 AS numeric),3),
@@ -1522,7 +1594,10 @@ BEGIN
             r_result.calls2
         );
 
-        PERFORM collect_queries(r_result.queryid_md5);
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+        );
     END LOOP;
 
     IF report != '' THEN
@@ -1536,14 +1611,17 @@ $$ LANGUAGE plpgsql;
 CREATE FUNCTION top_shared_blks_fetched_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
   RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
-    report text := '';
+    report      text := '';
+    tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) queries ordered by shared_blks_fetched
     c_shared_blks_fetched CURSOR FOR
     SELECT
+        st.datid,
+        st.userid,
+        st.queryid,
         st.queryid_md5 AS queryid_md5,
-        st.queryid AS queryid,
         st.dbname,
         NULLIF(st.total_time, 0.0) as total_time,
         NULLIF(st.rows, 0) as rows,
@@ -1577,8 +1655,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><p><a HREF="#%1$s">%1$s</a></p>'
-          '<p><small>[%2$s]</small></p></td>'
+          '<td {mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small></p></td>'
           '<td>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
@@ -1592,9 +1670,10 @@ BEGIN
 
     -- Reporting on top queries by shared_blks_fetched
     FOR r_result IN c_shared_blks_fetched LOOP
-        report := report||format(
+        tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
             r_result.queryid_md5,
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
             r_result.shared_blks_fetched,
@@ -1604,7 +1683,11 @@ BEGIN
             r_result.rows,
             r_result.calls
         );
-      PERFORM collect_queries(r_result.queryid_md5);
+
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+        );
     END LOOP;
 
     IF report != '' THEN
@@ -1618,12 +1701,15 @@ $$ LANGUAGE plpgsql;
 CREATE FUNCTION top_shared_blks_fetched_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
-    report text := '';
+    report      text := '';
+    tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) queries ordered by shared_blks_fetched
     c_shared_blks_fetched CURSOR FOR
     SELECT * FROM (SELECT
+        COALESCE(st1.datid,st2.datid) as datid,
+        COALESCE(st1.userid,st2.userid) as userid,
         COALESCE(st1.queryid,st2.queryid) as queryid,
         COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid_md5,
         COALESCE(st1.dbname,st2.dbname) as dbname,
@@ -1674,8 +1760,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%1$s</a></p>'
-          '<p><small>[%2$s]</small></p></td>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small></p></td>'
           '<td {rowtdspanhdr}>%s</td>'
           '<td {label} {title1}>1</td>'
           '<td {value}>%s</td>'
@@ -1699,9 +1785,10 @@ BEGIN
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
     -- Reporting on top queries by shared_blks_fetched
     FOR r_result IN c_shared_blks_fetched LOOP
-        report := report||format(
+        tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
             r_result.queryid_md5,
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
             r_result.shared_blks_fetched1,
@@ -1718,7 +1805,10 @@ BEGIN
             r_result.calls2
         );
 
-        PERFORM collect_queries(r_result.queryid_md5);
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+        );
     END LOOP;
 
     IF report != '' THEN
@@ -1732,14 +1822,17 @@ $$ LANGUAGE plpgsql;
 CREATE FUNCTION top_shared_reads_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
   RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
-    report text := '';
+    report      text := '';
+    tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top queries ordered by reads
     c_sh_reads CURSOR FOR
     SELECT
+        st.datid,
+        st.userid,
+        st.queryid,
         st.queryid_md5 AS queryid_md5,
-        st.queryid AS queryid,
         st.dbname,
         NULLIF(st.total_time, 0.0) as total_time,
         NULLIF(st.rows, 0) as rows,
@@ -1773,8 +1866,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><p><a HREF="#%1$s">%1$s</a></p>'
-          '<p><small>[%2$s]</small></p></td>'
+          '<td {mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small></p></td>'
           '<td>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
@@ -1788,9 +1881,10 @@ BEGIN
 
     -- Reporting on top queries by reads
     FOR r_result IN c_sh_reads LOOP
-        report := report||format(
+        tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
             r_result.queryid_md5,
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
             r_result.shared_blks_read,
@@ -1800,7 +1894,11 @@ BEGIN
             r_result.rows,
             r_result.calls
         );
-      PERFORM collect_queries(r_result.queryid_md5);
+
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+        );
     END LOOP;
 
     IF report != '' THEN
@@ -1814,12 +1912,15 @@ $$ LANGUAGE plpgsql;
 CREATE FUNCTION top_shared_reads_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
-    report text := '';
+    report      text := '';
+    tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) queries ordered by reads
     c_sh_reads CURSOR FOR
     SELECT * FROM (SELECT
+        COALESCE(st1.datid,st2.datid) as datid,
+        COALESCE(st1.userid,st2.userid) as userid,
         COALESCE(st1.queryid,st2.queryid) as queryid,
         COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid_md5,
         COALESCE(st1.dbname,st2.dbname) as dbname,
@@ -1870,8 +1971,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%1$s</a></p>'
-          '<p><small>[%2$s]</small></p></td>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small></p></td>'
           '<td {rowtdspanhdr}>%s</td>'
           '<td {label} {title1}>1</td>'
           '<td {value}>%s</td>'
@@ -1895,9 +1996,10 @@ BEGIN
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
     -- Reporting on top queries by reads
     FOR r_result IN c_sh_reads LOOP
-        report := report||format(
+        tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
             r_result.queryid_md5,
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
             r_result.shared_blks_read1,
@@ -1914,7 +2016,10 @@ BEGIN
             r_result.calls2
         );
 
-        PERFORM collect_queries(r_result.queryid_md5);
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+        );
     END LOOP;
 
     IF report != '' THEN
@@ -1928,14 +2033,17 @@ $$ LANGUAGE plpgsql;
 CREATE FUNCTION top_shared_dirtied_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
   RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
-    report text := '';
+    report      text := '';
+    tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top queries ordered by shared dirtied
     c_sh_dirt CURSOR FOR
     SELECT
+        st.datid,
+        st.userid,
+        st.queryid,
         st.queryid_md5 AS queryid_md5,
-        st.queryid AS queryid,
         st.dbname,
         NULLIF(st.total_time, 0.0) as total_time,
         NULLIF(st.rows, 0) as rows,
@@ -1969,8 +2077,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><p><a HREF="#%1$s">%1$s</a></p>'
-          '<p><small>[%2$s]</small></p></td>'
+          '<td {mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small></p></td>'
           '<td>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
@@ -1984,9 +2092,10 @@ BEGIN
 
     -- Reporting on top queries by shared dirtied
     FOR r_result IN c_sh_dirt LOOP
-        report := report||format(
+        tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
             r_result.queryid_md5,
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
             r_result.shared_blks_dirtied,
@@ -1996,7 +2105,11 @@ BEGIN
             r_result.rows,
             r_result.calls
         );
-      PERFORM collect_queries(r_result.queryid_md5);
+
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+        );
     END LOOP;
 
     IF report != '' THEN
@@ -2010,12 +2123,15 @@ $$ LANGUAGE plpgsql;
 CREATE FUNCTION top_shared_dirtied_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
-    report text := '';
+    report      text := '';
+    tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top queries ordered by shared dirtied
     c_sh_dirt CURSOR FOR
     SELECT * FROM (SELECT
+        COALESCE(st1.datid,st2.datid) as datid,
+        COALESCE(st1.userid,st2.userid) as userid,
         COALESCE(st1.queryid,st2.queryid) as queryid,
         COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid_md5,
         COALESCE(st1.dbname,st2.dbname) as dbname,
@@ -2066,8 +2182,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%1$s</a></p>'
-          '<p><small>[%2$s]</small></p></td>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small></p></td>'
           '<td {rowtdspanhdr}>%s</td>'
           '<td {label} {title1}>1</td>'
           '<td {value}>%s</td>'
@@ -2091,9 +2207,10 @@ BEGIN
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
     -- Reporting on top queries by shared dirtied
     FOR r_result IN c_sh_dirt LOOP
-        report := report||format(
+        tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
             r_result.queryid_md5,
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
             r_result.shared_blks_dirtied1,
@@ -2110,7 +2227,10 @@ BEGIN
             r_result.calls2
         );
 
-        PERFORM collect_queries(r_result.queryid_md5);
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+        );
     END LOOP;
 
     IF report != '' THEN
@@ -2124,14 +2244,17 @@ $$ LANGUAGE plpgsql;
 CREATE FUNCTION top_shared_written_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
   RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
-    report text := '';
+    report      text := '';
+    tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top queries ordered by shared written
     c_sh_wr CURSOR FOR
     SELECT
+        st.datid,
+        st.userid,
+        st.queryid,
         st.queryid_md5 AS queryid_md5,
-        st.queryid AS queryid,
         st.dbname,
         NULLIF(st.total_time, 0.0) as total_time,
         NULLIF(st.rows, 0) as rows,
@@ -2167,8 +2290,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><p><a HREF="#%1$s">%1$s</a></p>'
-          '<p><small>[%2$s]</small></p></td>'
+          '<td {mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small></p></td>'
           '<td>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
@@ -2183,9 +2306,10 @@ BEGIN
 
     -- Reporting on top queries by shared written
     FOR r_result IN c_sh_wr LOOP
-        report := report||format(
+        tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
             r_result.queryid_md5,
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
             r_result.shared_blks_written,
@@ -2196,7 +2320,11 @@ BEGIN
             r_result.rows,
             r_result.calls
         );
-      PERFORM collect_queries(r_result.queryid_md5);
+
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+        );
     END LOOP;
 
     IF report != '' THEN
@@ -2210,12 +2338,15 @@ $$ LANGUAGE plpgsql;
 CREATE FUNCTION top_shared_written_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
-    report text := '';
+    report      text := '';
+    tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) queries ordered by shared written
     c_sh_wr CURSOR FOR
     SELECT * FROM (SELECT
+        COALESCE(st1.datid,st2.datid) as datid,
+        COALESCE(st1.userid,st2.userid) as userid,
         COALESCE(st1.queryid,st2.queryid) as queryid,
         COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid_md5,
         COALESCE(st1.dbname,st2.dbname) as dbname,
@@ -2269,8 +2400,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%1$s</a></p>'
-          '<p><small>[%2$s]</small></p></td>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small></p></td>'
           '<td {rowtdspanhdr}>%s</td>'
           '<td {label} {title1}>1</td>'
           '<td {value}>%s</td>'
@@ -2296,9 +2427,10 @@ BEGIN
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
     -- Reporting on top queries by shared written
     FOR r_result IN c_sh_wr LOOP
-        report := report||format(
+        tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
             r_result.queryid_md5,
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
             r_result.shared_blks_written1,
@@ -2317,7 +2449,10 @@ BEGIN
             r_result.calls2
         );
 
-        PERFORM collect_queries(r_result.queryid_md5);
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+        );
     END LOOP;
 
     IF report != '' THEN
@@ -2330,12 +2465,15 @@ $$ LANGUAGE plpgsql;
 
 CREATE FUNCTION top_wal_size_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
-    report text := '';
+    report      text := '';
+    tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for queries ordered by WAL bytes
     c_wal_size CURSOR FOR
     SELECT
+        st.datid,
+        st.userid,
         st.queryid,
         st.queryid_md5,
         st.dbname,
@@ -2374,23 +2512,24 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><p><a HREF="#%1$s">%1$s</a></p>'
-          '<p><small>[%2$s]</small></p></td>'
-          '<td>%3$s</td>'
-          '<td {value}>%4$s</td>'
-          '<td {value}>%5$s</td>'
-          '<td {value}>%6$s</td>'
-          '<td {value}>%7$s</td>'
-          '<td {value}>%8$s</td>'
+          '<td {mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small></p></td>'
+          '<td>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
         '</tr>'
       );
     -- apply settings to templates
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
     -- Reporting on top queries by elapsed time
     FOR r_result IN c_wal_size LOOP
-        report := report||format(
+        tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
             r_result.queryid_md5,
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
             pg_size_pretty(r_result.wal_bytes),
@@ -2399,7 +2538,11 @@ BEGIN
             r_result.wal_fpi,
             r_result.wal_records
         );
-        PERFORM collect_queries(r_result.queryid_md5);
+
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+        );
     END LOOP;
 
     IF report != '' THEN
@@ -2413,12 +2556,15 @@ $$ LANGUAGE plpgsql;
 CREATE FUNCTION top_wal_size_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
-    report text := '';
+    report      text := '';
+    tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top queries ordered by WAL bytes
     c_wal_size CURSOR FOR
     SELECT * FROM (SELECT
+        COALESCE(st1.datid,st2.datid) as datid,
+        COALESCE(st1.userid,st2.userid) as userid,
         COALESCE(st1.queryid,st2.queryid) as queryid,
         COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid_md5,
         COALESCE(st1.dbname,st2.dbname) as dbname,
@@ -2471,32 +2617,33 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%1$s</a></p>'
-          '<p><small>[%2$s]</small></p></td>'
-          '<td {rowtdspanhdr}>%3$s</td>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small></p></td>'
+          '<td {rowtdspanhdr}>%s</td>'
           '<td {label} {title1}>1</td>'
-          '<td {value}>%4$s</td>'
-          '<td {value}>%5$s</td>'
-          '<td {value}>%6$s</td>'
-          '<td {value}>%7$s</td>'
-          '<td {value}>%8$s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
         '</tr>'
         '<tr {interval2}>'
           '<td {label} {title2}>2</td>'
-          '<td {value}>%9$s</td>'
-          '<td {value}>%10$s</td>'
-          '<td {value}>%11$s</td>'
-          '<td {value}>%12$s</td>'
-          '<td {value}>%13$s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
     -- Reporting on top queries by shared_blks_fetched
     FOR r_result IN c_wal_size LOOP
-        report := report||format(
+        tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
             r_result.queryid_md5,
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
             pg_size_pretty(r_result.wal_bytes1),
@@ -2511,7 +2658,10 @@ BEGIN
             r_result.wal_records2
         );
 
-        PERFORM collect_queries(r_result.queryid_md5);
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+        );
     END LOOP;
 
     IF report != '' THEN
@@ -2524,14 +2674,17 @@ $$ LANGUAGE plpgsql;
 
 CREATE FUNCTION top_temp_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
-    report text := '';
+    report      text := '';
+    tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) querues ordered by temp usage
     c_temp CURSOR FOR
     SELECT
+        st.datid,
+        st.userid,
+        st.queryid,
         st.queryid_md5 AS queryid_md5,
-        st.queryid AS queryid,
         st.dbname,
         NULLIF(st.total_time, 0.0) as total_time,
         NULLIF(st.rows, 0) as rows,
@@ -2586,8 +2739,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><p><a HREF="#%1$s">%1$s</a></p>'
-          '<p><small>[%2$s]</small></p></td>'
+          '<td {mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small></p></td>'
           '<td>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
@@ -2608,9 +2761,10 @@ BEGIN
 
     -- Reporting on top queries by temp usage
     FOR r_result IN c_temp LOOP
-        report := report||format(
+        tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
             r_result.queryid_md5,
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
             r_result.local_blks_fetched,
@@ -2627,7 +2781,11 @@ BEGIN
             r_result.rows,
             r_result.calls
         );
-        PERFORM collect_queries(r_result.queryid_md5);
+
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+        );
     END LOOP;
 
     IF report != '' THEN
@@ -2641,12 +2799,15 @@ $$ LANGUAGE plpgsql;
 CREATE FUNCTION top_temp_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
     IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
-    report text := '';
+    report      text := '';
+    tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) querues ordered by temp usage
     c_temp CURSOR FOR
     SELECT * FROM (SELECT
+        COALESCE(st1.datid,st2.datid) as datid,
+        COALESCE(st1.userid,st2.userid) as userid,
         COALESCE(st1.queryid,st2.queryid) as queryid,
         COALESCE(st1.queryid_md5,st2.queryid_md5) as queryid_md5,
         COALESCE(st1.dbname,st2.dbname) as dbname,
@@ -2730,8 +2891,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%1$s</a></p>'
-          '<p><small>[%2$s]</small></p></td>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small></p></td>'
           '<td {rowtdspanhdr}>%s</td>'
           '<td {label} {title1}>1</td>'
           '<td {value}>%s</td>'
@@ -2770,9 +2931,10 @@ BEGIN
 
     -- Reporting on top queries by temp usage
     FOR r_result IN c_temp LOOP
-        report := report||format(
+        tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
             r_result.queryid_md5,
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
             r_result.local_blks_fetched1,
@@ -2803,7 +2965,10 @@ BEGIN
             r_result.calls2
         );
 
-        PERFORM collect_queries(r_result.queryid_md5);
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+        );
     END LOOP;
 
     IF report != '' THEN
@@ -2814,12 +2979,21 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION collect_queries(IN query_id char(10)) RETURNS integer SET search_path=@extschema@ AS $$
+CREATE FUNCTION collect_queries(IN userid oid, IN datid oid, queryid bigint,
+  IN queryid_md5 char(32)) RETURNS integer SET search_path=@extschema@ AS $$
 BEGIN
     INSERT INTO queries_list(
+      userid,
+      datid,
+      queryid,
       queryid_md5
     )
-    VALUES (query_id)
+    VALUES (
+      collect_queries.userid,
+      collect_queries.datid,
+      collect_queries.queryid,
+      collect_queries.queryid_md5
+    )
     ON CONFLICT DO NOTHING;
 
     RETURN 0;
@@ -2829,9 +3003,26 @@ $$ LANGUAGE plpgsql;
 CREATE FUNCTION report_queries(IN jreportset jsonb, IN sserver_id integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     c_queries CURSOR FOR
-    SELECT sl.queryid_md5 AS queryid, sl.query AS querytext
-    FROM queries_list ql JOIN stmt_list sl ON (sl.queryid_md5 = ql.queryid_md5 AND sl.server_id = sserver_id)
-    ORDER BY sl.queryid_md5;
+    SELECT
+      '<p>' ||
+        string_agg(left(md5(
+            ql.userid::text ||
+            ql.datid::text ||
+            ql.queryid::text
+            ),
+          10),
+        '</p><p>' ORDER BY ql.userid, ql.datid, ql.queryid)
+      || '</p>' AS queryids,
+      queryid_md5,
+      sl.query AS querytext
+    FROM
+      queries_list ql
+      JOIN stmt_list sl USING (queryid_md5)
+    WHERE
+      server_id = sserver_id
+    GROUP BY queryid_md5, querytext
+    ORDER BY queryid_md5;
+
     qr_result   RECORD;
     report      text := '';
     query_text  text := '';
@@ -2848,8 +3039,8 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr id="%1$s">'
-          '<td {mono}>%1$s</td>'
           '<td {mono}>%2$s</td>'
+          '<td {mono}>%3$s</td>'
         '</tr>');
     -- apply settings to templates
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
@@ -2859,7 +3050,8 @@ BEGIN
         query_text := replace(query_text,'>','&gt;');
         report := report||format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            qr_result.queryid,
+            qr_result.queryid_md5,
+            qr_result.queryids,
             query_text
         );
     END LOOP;

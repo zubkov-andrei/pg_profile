@@ -64,8 +64,11 @@ BEGIN
     END IF;
     -- Creating temporary table for reported queries
     CREATE TEMPORARY TABLE IF NOT EXISTS queries_list (
-      queryid_md5       char(10),
-      CONSTRAINT pk_queries_list PRIMARY KEY (queryid_md5))
+      userid              oid,
+      datid               oid,
+      queryid             bigint,
+      queryid_md5       char(32),
+      CONSTRAINT pk_queries_list PRIMARY KEY (userid, datid, queryid))
     ON COMMIT DELETE ROWS;
 
     -- CSS

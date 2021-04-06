@@ -76,6 +76,92 @@ RETURNS TABLE(
     indexrelid
 $$ LANGUAGE sql;
 
+CREATE OR REPLACE FUNCTION ix_size_interpolated(IN server_id integer, sample_id integer,
+  IN datid oid, IN indexrelid oid
+) RETURNS bigint
+STABLE
+RETURNS NULL ON NULL INPUT
+AS
+$$
+DECLARE
+  r_current   record;
+  r_left      record;
+  r_right     record;
+
+  c_before CURSOR FOR
+  SELECT sample_time,relsize
+  FROM sample_stat_indexes i
+    JOIN samples s USING (server_id, sample_id)
+  WHERE (i.server_id, i.datid, i.indexrelid) =
+    (ix_size_interpolated.server_id,
+    ix_size_interpolated.datid, ix_size_interpolated.indexrelid)
+    AND relsize IS NOT NULL
+    AND i.sample_id < ix_size_interpolated.sample_id
+  ORDER BY i.sample_id DESC
+  LIMIT 2;
+
+  c_after CURSOR FOR
+  SELECT sample_time,relsize
+  FROM sample_stat_indexes i
+    JOIN samples s USING (server_id, sample_id)
+  WHERE (i.server_id, i.datid, i.indexrelid) =
+    (ix_size_interpolated.server_id,
+    ix_size_interpolated.datid, ix_size_interpolated.indexrelid)
+    AND relsize IS NOT NULL
+    AND i.sample_id > ix_size_interpolated.sample_id
+  ORDER BY i.sample_id ASC
+  LIMIT 2;
+BEGIN
+	/* If raw data exists, return it as is */
+	SELECT relsize INTO r_current
+	FROM sample_stat_indexes i
+	WHERE (i.server_id,i.sample_id,i.datid,i.indexrelid) =
+		(ix_size_interpolated.server_id,ix_size_interpolated.sample_id,
+		ix_size_interpolated.datid, ix_size_interpolated.indexrelid);
+	IF FOUND THEN
+		IF r_current.relsize IS NOT NULL THEN
+			RETURN r_current.relsize;
+		END IF;
+	ELSE
+		RETURN NULL;
+	END IF;
+
+	/* We need to use interpolation here */
+	OPEN c_before;
+	FETCH c_before INTO r_left;
+
+	OPEN c_after;
+	FETCH c_after INTO r_right;
+
+	SELECT s.sample_time,relsize INTO STRICT r_current
+	FROM sample_stat_indexes i
+	JOIN samples s USING (server_id, sample_id)
+	WHERE (i.server_id, i.sample_id, i.datid, i.indexrelid) =
+		(ix_size_interpolated.server_id, ix_size_interpolated.sample_id,
+		ix_size_interpolated.datid, ix_size_interpolated.indexrelid);
+
+	CASE
+		WHEN r_left.sample_time IS NOT NULL AND r_right.sample_time IS NULL THEN
+			r_right := r_left;
+			FETCH c_before INTO r_left;
+		WHEN r_left.sample_time IS NULL AND r_right.sample_time IS NOT NULL THEN
+			r_left := r_right;
+			FETCH c_after INTO r_right;
+		ELSE
+			NULL;
+	END CASE;
+
+	CLOSE c_after;
+	CLOSE c_before;
+
+	RETURN r_left.relsize +
+		round(extract(epoch from r_current.sample_time - r_left.sample_time) *
+			(r_right.relsize - r_left.relsize) /
+			extract(epoch from r_right.sample_time - r_left.sample_time)
+		);
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE FUNCTION top_growth_indexes_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer,
   IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
@@ -433,12 +519,14 @@ DECLARE
           indexrelid,
           sum(vacuum_count) as vacuum_count,
           sum(autovacuum_count) as autovacuum_count,
-          round(sum(indexrelsize * (COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0))))::bigint as vacuum_bytes,
-          round(avg(indexrelsize))::bigint as avg_indexrelsize,
-          round(avg(relsize))::bigint as avg_relsize
-        FROM v_sample_stat_indexes_interpolated i
-          JOIN v_sample_stat_tables_interpolated t USING
-            (server_id, sample_id, datid, relid)
+          round(sum(COALESCE(i.relsize,ix_size_interpolated(server_id,sample_id,datid,indexrelid))
+			* (COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0))))::bigint as vacuum_bytes,
+          round(avg(COALESCE(i.relsize,ix_size_interpolated(server_id,sample_id,datid,indexrelid))))::bigint as avg_indexrelsize,
+          round(avg(COALESCE(t.relsize,tab_size_interpolated(server_id,sample_id,datid,relid))))::bigint as avg_relsize
+        FROM sample_stat_indexes i
+			JOIN indexes_list il USING (server_id,datid,indexrelid)
+			JOIN sample_stat_tables t USING
+				(server_id, sample_id, datid, relid)
         WHERE
           server_id = sserver_id AND
           sample_id BETWEEN start_id + 1 AND end_id
@@ -544,43 +632,47 @@ DECLARE
         FULL OUTER JOIN top_indexes(sserver_id, start2_id, end2_id) ix2 USING (server_id, datid, indexrelid)
         -- Join interpolated data of interval 1
         LEFT OUTER JOIN (
-          SELECT
-            server_id,
-            datid,
-            indexrelid,
-            sum(vacuum_count) as vacuum_count,
-            sum(autovacuum_count) as autovacuum_count,
-            round(sum(indexrelsize * (COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0))))::bigint as vacuum_bytes,
-            round(avg(indexrelsize))::bigint as avg_indexrelsize,
-            round(avg(relsize))::bigint as avg_relsize
-          FROM v_sample_stat_indexes_interpolated i
-            JOIN v_sample_stat_tables_interpolated t USING
-              (server_id, sample_id, datid, relid)
-          WHERE
-            server_id = sserver_id AND
-            sample_id BETWEEN start1_id + 1 AND end1_id
-          GROUP BY
-            server_id, datid, indexrelid
+			SELECT
+				server_id,
+				datid,
+				indexrelid,
+				sum(vacuum_count) as vacuum_count,
+				sum(autovacuum_count) as autovacuum_count,
+				round(sum(COALESCE(i.relsize,ix_size_interpolated(server_id,sample_id,datid,indexrelid))
+					* (COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0))))::bigint as vacuum_bytes,
+				round(avg(COALESCE(i.relsize,ix_size_interpolated(server_id,sample_id,datid,indexrelid))))::bigint as avg_indexrelsize,
+				round(avg(COALESCE(t.relsize,tab_size_interpolated(server_id,sample_id,datid,relid))))::bigint as avg_relsize
+			FROM sample_stat_indexes i
+				JOIN indexes_list il USING (server_id,datid,indexrelid)
+				JOIN sample_stat_tables t USING
+					(server_id, sample_id, datid, relid)
+			WHERE
+				server_id = sserver_id AND
+				sample_id BETWEEN start1_id + 1 AND end1_id
+			GROUP BY
+				server_id, datid, indexrelid
         ) vac1 USING (server_id, datid, indexrelid)
         -- Join interpolated data of interval 2
         LEFT OUTER JOIN (
-          SELECT
-            server_id,
-            datid,
-            indexrelid,
-            sum(vacuum_count) as vacuum_count,
-            sum(autovacuum_count) as autovacuum_count,
-            round(sum(indexrelsize * (COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0))))::bigint as vacuum_bytes,
-            round(avg(indexrelsize))::bigint as avg_indexrelsize,
-            round(avg(relsize))::bigint as avg_relsize
-          FROM v_sample_stat_indexes_interpolated i
-            JOIN v_sample_stat_tables_interpolated t USING
-              (server_id, sample_id, datid, relid)
-          WHERE
-            server_id = sserver_id AND
-            sample_id BETWEEN start2_id + 1 AND end2_id
-          GROUP BY
-            server_id, datid, indexrelid
+			SELECT
+				server_id,
+				datid,
+				indexrelid,
+				sum(vacuum_count) as vacuum_count,
+				sum(autovacuum_count) as autovacuum_count,
+				round(sum(COALESCE(i.relsize,ix_size_interpolated(server_id,sample_id,datid,indexrelid))
+					* (COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0))))::bigint as vacuum_bytes,
+				round(avg(COALESCE(i.relsize,ix_size_interpolated(server_id,sample_id,datid,indexrelid))))::bigint as avg_indexrelsize,
+				round(avg(COALESCE(t.relsize,tab_size_interpolated(server_id,sample_id,datid,relid))))::bigint as avg_relsize
+			FROM sample_stat_indexes i
+				JOIN indexes_list il USING (server_id,datid,indexrelid)
+				JOIN sample_stat_tables t USING
+					(server_id, sample_id, datid, relid)
+			WHERE
+				server_id = sserver_id AND
+				sample_id BETWEEN start2_id + 1 AND end2_id
+			GROUP BY
+				server_id, datid, indexrelid
         ) vac2 USING (server_id, datid, indexrelid)
     WHERE COALESCE(vac1.vacuum_bytes, 0) + COALESCE(vac2.vacuum_bytes, 0) > 0
     ORDER BY
