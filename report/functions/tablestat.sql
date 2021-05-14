@@ -519,7 +519,7 @@ DECLARE
 		))::bigint as seq_scan_bytes,
         count(relsize) != count(*) as approximated
       FROM sample_stat_tables
-      WHERE server_id = sserver_id AND sample_id BETWEEN start1_id + 1 AND end1_id
+      WHERE server_id = sserver_id AND sample_id BETWEEN start2_id + 1 AND end2_id
       GROUP BY
         server_id,
         datid,
@@ -536,7 +536,7 @@ DECLARE
 		))::bigint as seq_scan_bytes,
         count(relsize) != count(*) as approximated
       FROM sample_stat_tables
-      WHERE server_id = sserver_id AND sample_id BETWEEN start1_id + 1 AND end1_id
+      WHERE server_id = sserver_id AND sample_id BETWEEN start2_id + 1 AND end2_id
       GROUP BY
         server_id,
         datid,

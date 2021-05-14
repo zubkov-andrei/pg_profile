@@ -1,4 +1,4 @@
-PGPROFILE_VERSION = 0.3.2
+PGPROFILE_VERSION = 0.3.3
 EXTENSION = pg_profile
 
 include migration/Makefile

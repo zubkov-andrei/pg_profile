@@ -1,5 +1,8 @@
 # pg_profile changelog
 
+## 0.3.3
+- minor fix: Field _~SeqBytes_ of report section "Top tables by estimated sequentially scanned volume" was having value of first interval in cells of first and second interval.
+
 ## 0.3.2
 - restored statements _queryid_ compatibility with current version of pgcenter utility
 - query text storage improved

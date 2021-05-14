@@ -1,7 +1,8 @@
 /* ==== Version history table data ==== */
 INSERT INTO import_queries_version_order VALUES
 ('pg_profile','0.3.1',NULL,NULL),
-('pg_profile','0.3.2','pg_profile','0.3.1')
+('pg_profile','0.3.2','pg_profile','0.3.1'),
+('pg_profile','0.3.3','pg_profile','0.3.2')
 ;
 
 /* ==== Data importing queries ==== */
