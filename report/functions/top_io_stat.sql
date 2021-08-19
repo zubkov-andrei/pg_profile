@@ -16,15 +16,15 @@ RETURNS TABLE(
     idx_blks_read               bigint,
     idx_blks_read_pct           numeric,
     idx_blks_fetch              bigint,
-    idx_blks_proc_pct           numeric,
+    idx_blks_fetch_pct           numeric,
     toast_blks_read             bigint,
     toast_blks_read_pct         numeric,
     toast_blks_fetch            bigint,
-    toast_blks_proc_pct         numeric,
+    toast_blks_fetch_pct        numeric,
     tidx_blks_read              bigint,
     tidx_blks_read_pct          numeric,
     tidx_blks_fetch             bigint,
-    tidx_blks_proc_pct          numeric,
+    tidx_blks_fetch_pct         numeric,
     seq_scan                    bigint,
     idx_scan                    bigint
 ) SET search_path=@extschema@ AS $$
@@ -50,15 +50,15 @@ RETURNS TABLE(
         sum(st.idx_blks_read)::bigint AS idx_blks_read,
         sum(st.idx_blks_read) * 100 / NULLIF(min(total.total_blks_read), 0) AS idx_blks_read_pct,
         COALESCE(sum(st.idx_blks_read), 0)::bigint + COALESCE(sum(st.idx_blks_hit), 0)::bigint AS idx_blks_fetch,
-        (COALESCE(sum(st.idx_blks_read), 0) + COALESCE(sum(st.idx_blks_hit), 0)) * 100 / NULLIF(min(total.total_blks_fetch), 0) AS idx_blks_proc_pct,
+        (COALESCE(sum(st.idx_blks_read), 0) + COALESCE(sum(st.idx_blks_hit), 0)) * 100 / NULLIF(min(total.total_blks_fetch), 0) AS idx_blks_fetch_pct,
         sum(st.toast_blks_read)::bigint AS toast_blks_read,
         sum(st.toast_blks_read) * 100 / NULLIF(min(total.total_blks_read), 0) AS toast_blks_read_pct,
         COALESCE(sum(st.toast_blks_read), 0)::bigint + COALESCE(sum(st.toast_blks_hit), 0)::bigint AS toast_blks_fetch,
-        (COALESCE(sum(st.toast_blks_read), 0) + COALESCE(sum(st.toast_blks_hit), 0)) * 100 / NULLIF(min(total.total_blks_fetch), 0) AS toast_blks_proc_pct,
+        (COALESCE(sum(st.toast_blks_read), 0) + COALESCE(sum(st.toast_blks_hit), 0)) * 100 / NULLIF(min(total.total_blks_fetch), 0) AS toast_blks_fetch_pct,
         sum(st.tidx_blks_read)::bigint AS tidx_blks_read,
         sum(st.tidx_blks_read) * 100 / NULLIF(min(total.total_blks_read), 0) AS tidx_blks_read_pct,
         COALESCE(sum(st.tidx_blks_read), 0)::bigint + COALESCE(sum(st.tidx_blks_hit), 0)::bigint AS tidx_blks_fetch,
-        (COALESCE(sum(st.tidx_blks_read), 0) + COALESCE(sum(st.tidx_blks_hit), 0)) * 100 / NULLIF(min(total.total_blks_fetch), 0) AS tidx_blks_proc_pct,
+        (COALESCE(sum(st.tidx_blks_read), 0) + COALESCE(sum(st.tidx_blks_hit), 0)) * 100 / NULLIF(min(total.total_blks_fetch), 0) AS tidx_blks_fetch_pct,
         sum(st.seq_scan)::bigint AS seq_scan,
         sum(st.idx_scan)::bigint AS idx_scan
     FROM v_sample_stat_tables st
@@ -91,11 +91,12 @@ RETURNS TABLE(
     idx_blks_read_pct   numeric,
     idx_blks_hit_pct    numeric,
     idx_blks_fetch  bigint,
-    idx_blks_proc_pct   numeric
+    idx_blks_fetch_pct   numeric
 ) SET search_path=@extschema@ AS $$
     WITH total AS (SELECT
-      sum(heap_blks_read + idx_blks_read) AS total_blks_read,
-      sum(heap_blks_read + idx_blks_read + heap_blks_hit + idx_blks_hit) AS total_blks_fetch
+      COALESCE(sum(heap_blks_read)) + COALESCE(sum(idx_blks_read)) AS total_blks_read,
+      COALESCE(sum(heap_blks_read)) + COALESCE(sum(idx_blks_read)) +
+      COALESCE(sum(heap_blks_hit)) + COALESCE(sum(idx_blks_hit)) AS total_blks_fetch
     FROM sample_stat_tables_total
     WHERE server_id = sserver_id AND sample_id BETWEEN start_id + 1 AND end_id
     )
@@ -114,7 +115,7 @@ RETURNS TABLE(
         sum(st.idx_blks_read) * 100 / NULLIF(min(total.total_blks_read), 0) AS idx_blks_read_pct,
         sum(st.idx_blks_hit) * 100 / NULLIF(COALESCE(sum(st.idx_blks_hit), 0) + COALESCE(sum(st.idx_blks_read), 0), 0) AS idx_blks_hit_pct,
         COALESCE(sum(st.idx_blks_read), 0)::bigint + COALESCE(sum(st.idx_blks_hit), 0)::bigint AS idx_blks_fetch,
-        (COALESCE(sum(st.idx_blks_read), 0) + COALESCE(sum(st.idx_blks_hit), 0)) * 100 / NULLIF(min(total_blks_fetch), 0) AS idx_blks_proc_pct
+        (COALESCE(sum(st.idx_blks_read), 0) + COALESCE(sum(st.idx_blks_hit), 0)) * 100 / NULLIF(min(total_blks_fetch), 0) AS idx_blks_fetch_pct
     FROM v_sample_stat_indexes st
         -- Database name
         JOIN sample_stat_database sample_db
@@ -148,8 +149,12 @@ DECLARE
         NULLIF(toast_blks_read, 0) as toast_blks_read,
         NULLIF(toast_blks_read_pct, 0.0) as toast_blks_read_pct,
         NULLIF(tidx_blks_read, 0) as tidx_blks_read,
-        NULLIF(tidx_blks_read_pct, 0.0) as tidx_blks_read_pct
-    FROM top_io_tables(sserver_id,start_id,end_id)
+        NULLIF(tidx_blks_read_pct, 0.0) as tidx_blks_read_pct,
+        100.0 - (COALESCE(heap_blks_read, 0) + COALESCE(idx_blks_read, 0) +
+          COALESCE(toast_blks_read, 0) + COALESCE(tidx_blks_read, 0)) * 100.0 /
+        NULLIF(heap_blks_fetch + idx_blks_fetch +
+          toast_blks_fetch + tidx_blks_fetch, 0) as hit_pct
+    FROM top_io_tables
     WHERE COALESCE(heap_blks_read, 0) + COALESCE(idx_blks_read, 0) + COALESCE(toast_blks_read, 0) + COALESCE(tidx_blks_read, 0) > 0
     ORDER BY
       COALESCE(heap_blks_read, 0) + COALESCE(idx_blks_read, 0) + COALESCE(toast_blks_read, 0) + COALESCE(tidx_blks_read, 0) DESC,
@@ -161,7 +166,7 @@ DECLARE
 BEGIN
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th rowspan="2">DB</th>'
             '<th rowspan="2">Tablespace</th>'
@@ -171,6 +176,9 @@ BEGIN
             '<th colspan="2">Ix</th>'
             '<th colspan="2">TOAST</th>'
             '<th colspan="2">TOAST-Ix</th>'
+            '<th rowspan="2" title="Number of heap, indexes, toast and toast index blocks '
+              'fetched from shared buffers as a percentage of all their blocks fetched from '
+              'shared buffers and file system">Hit(%)</th>'
           '</tr>'
           '<tr>'
             '<th title="Number of disk blocks read from this table">Blks</th>'
@@ -198,6 +206,7 @@ BEGIN
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
     jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
@@ -216,7 +225,8 @@ BEGIN
             r_result.toast_blks_read,
             round(r_result.toast_blks_read_pct,2),
             r_result.tidx_blks_read,
-            round(r_result.tidx_blks_read_pct,2)
+            round(r_result.tidx_blks_read_pct,2),
+            round(r_result.hit_pct,2)
         );
     END LOOP;
 
@@ -249,6 +259,10 @@ DECLARE
         NULLIF(st1.toast_blks_read_pct, 0.0) AS toast_blks_read_pct1,
         NULLIF(st1.tidx_blks_read, 0) AS tidx_blks_read1,
         NULLIF(st1.tidx_blks_read_pct, 0.0) AS tidx_blks_read_pct1,
+        100.0 - (COALESCE(st1.heap_blks_read, 0) + COALESCE(st1.idx_blks_read, 0) +
+          COALESCE(st1.toast_blks_read, 0) + COALESCE(st1.tidx_blks_read, 0)) * 100.0 /
+        NULLIF(st1.heap_blks_fetch + st1.idx_blks_fetch +
+          st1.toast_blks_fetch + st1.tidx_blks_fetch, 0) as hit_pct1,
         NULLIF(st2.heap_blks_read, 0) AS heap_blks_read2,
         NULLIF(st2.heap_blks_read_pct, 0.0) AS heap_blks_read_pct2,
         NULLIF(st2.idx_blks_read, 0) AS idx_blks_read2,
@@ -257,12 +271,16 @@ DECLARE
         NULLIF(st2.toast_blks_read_pct, 0.0) AS toast_blks_read_pct2,
         NULLIF(st2.tidx_blks_read, 0) AS tidx_blks_read2,
         NULLIF(st2.tidx_blks_read_pct, 0.0) AS tidx_blks_read_pct2,
+        100.0 - (COALESCE(st2.heap_blks_read, 0) + COALESCE(st2.idx_blks_read, 0) +
+          COALESCE(st2.toast_blks_read, 0) + COALESCE(st2.tidx_blks_read, 0)) * 100.0 /
+        NULLIF(st2.heap_blks_fetch + st2.idx_blks_fetch +
+          st2.toast_blks_fetch + st2.tidx_blks_fetch, 0) as hit_pct2,
         row_number() OVER (ORDER BY COALESCE(st1.heap_blks_read, 0) + COALESCE(st1.idx_blks_read, 0) +
           COALESCE(st1.toast_blks_read, 0) + COALESCE(st1.tidx_blks_read, 0) DESC NULLS LAST) rn_read1,
         row_number() OVER (ORDER BY COALESCE(st2.heap_blks_read, 0) + COALESCE(st2.idx_blks_read, 0) +
           COALESCE(st2.toast_blks_read, 0) + COALESCE(st2.tidx_blks_read, 0) DESC NULLS LAST) rn_read2
-    FROM top_io_tables(sserver_id,start1_id,end1_id) st1
-        FULL OUTER JOIN top_io_tables(sserver_id,start2_id,end2_id) st2 USING (server_id, datid, relid)
+    FROM top_io_tables1 st1
+        FULL OUTER JOIN top_io_tables2 st2 USING (server_id, datid, relid)
     WHERE COALESCE(st1.heap_blks_read, 0) + COALESCE(st1.idx_blks_read, 0) +
           COALESCE(st1.toast_blks_read, 0) + COALESCE(st1.tidx_blks_read, 0) +
           COALESCE(st2.heap_blks_read, 0) + COALESCE(st2.idx_blks_read, 0) +
@@ -295,6 +313,9 @@ BEGIN
             '<th colspan="2">Ix</th>'
             '<th colspan="2">TOAST</th>'
             '<th colspan="2">TOAST-Ix</th>'
+            '<th rowspan="2" title="Number of heap, indexes, toast and toast index blocks '
+              'fetched from shared buffers as a percentage of all their blocks fetched from '
+              'shared buffers and file system">Hit(%)</th>'
           '</tr>'
           '<tr>'
             '<th title="Number of disk blocks read from this table">Blks</th>'
@@ -322,9 +343,11 @@ BEGIN
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
         '</tr>'
         '<tr {interval2}>'
           '<td {label} {title2}>2</td>'
+          '<td {value}>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
@@ -352,6 +375,7 @@ BEGIN
             round(r_result.toast_blks_read_pct1,2),
             r_result.tidx_blks_read1,
             round(r_result.tidx_blks_read_pct1,2),
+            round(r_result.hit_pct1,2),
             r_result.heap_blks_read2,
             round(r_result.heap_blks_read_pct2,2),
             r_result.idx_blks_read2,
@@ -359,7 +383,8 @@ BEGIN
             r_result.toast_blks_read2,
             round(r_result.toast_blks_read_pct2,2),
             r_result.tidx_blks_read2,
-            round(r_result.tidx_blks_read_pct2,2)
+            round(r_result.tidx_blks_read_pct2,2),
+            round(r_result.hit_pct2,2)
         );
     END LOOP;
 
@@ -386,12 +411,12 @@ DECLARE
         NULLIF(heap_blks_fetch, 0) as heap_blks_fetch,
         NULLIF(heap_blks_proc_pct, 0.0) as heap_blks_proc_pct,
         NULLIF(idx_blks_fetch, 0) as idx_blks_fetch,
-        NULLIF(idx_blks_proc_pct, 0.0) as idx_blks_proc_pct,
+        NULLIF(idx_blks_fetch_pct, 0.0) as idx_blks_fetch_pct,
         NULLIF(toast_blks_fetch, 0) as toast_blks_fetch,
-        NULLIF(toast_blks_proc_pct, 0.0) as toast_blks_proc_pct,
+        NULLIF(toast_blks_fetch_pct, 0.0) as toast_blks_fetch_pct,
         NULLIF(tidx_blks_fetch, 0) as tidx_blks_fetch,
-        NULLIF(tidx_blks_proc_pct, 0.0) as tidx_blks_proc_pct
-    FROM top_io_tables(sserver_id,start_id,end_id)
+        NULLIF(tidx_blks_fetch_pct, 0.0) as tidx_blks_fetch_pct
+    FROM top_io_tables
     WHERE COALESCE(heap_blks_fetch, 0) + COALESCE(idx_blks_fetch, 0) + COALESCE(toast_blks_fetch, 0) + COALESCE(tidx_blks_fetch, 0) > 0
     ORDER BY
       COALESCE(heap_blks_fetch, 0) + COALESCE(idx_blks_fetch, 0) + COALESCE(toast_blks_fetch, 0) + COALESCE(tidx_blks_fetch, 0) DESC,
@@ -403,7 +428,7 @@ DECLARE
 BEGIN
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th rowspan="2">DB</th>'
             '<th rowspan="2">Tablespace</th>'
@@ -454,11 +479,11 @@ BEGIN
             r_result.heap_blks_fetch,
             round(r_result.heap_blks_proc_pct,2),
             r_result.idx_blks_fetch,
-            round(r_result.idx_blks_proc_pct,2),
+            round(r_result.idx_blks_fetch_pct,2),
             r_result.toast_blks_fetch,
-            round(r_result.toast_blks_proc_pct,2),
+            round(r_result.toast_blks_fetch_pct,2),
             r_result.tidx_blks_fetch,
-            round(r_result.tidx_blks_proc_pct,2)
+            round(r_result.tidx_blks_fetch_pct,2)
         );
     END LOOP;
 
@@ -487,25 +512,25 @@ DECLARE
         NULLIF(st1.heap_blks_fetch, 0) AS heap_blks_fetch1,
         NULLIF(st1.heap_blks_proc_pct, 0.0) AS heap_blks_proc_pct1,
         NULLIF(st1.idx_blks_fetch, 0) AS idx_blks_fetch1,
-        NULLIF(st1.idx_blks_proc_pct, 0.0) AS idx_blks_proc_pct1,
+        NULLIF(st1.idx_blks_fetch_pct, 0.0) AS idx_blks_fetch_pct1,
         NULLIF(st1.toast_blks_fetch, 0) AS toast_blks_fetch1,
-        NULLIF(st1.toast_blks_proc_pct, 0.0) AS toast_blks_proc_pct1,
+        NULLIF(st1.toast_blks_fetch_pct, 0.0) AS toast_blks_fetch_pct1,
         NULLIF(st1.tidx_blks_fetch, 0) AS tidx_blks_fetch1,
-        NULLIF(st1.tidx_blks_proc_pct, 0.0) AS tidx_blks_proc_pct1,
+        NULLIF(st1.tidx_blks_fetch_pct, 0.0) AS tidx_blks_fetch_pct1,
         NULLIF(st2.heap_blks_fetch, 0) AS heap_blks_fetch2,
         NULLIF(st2.heap_blks_proc_pct, 0.0) AS heap_blks_proc_pct2,
         NULLIF(st2.idx_blks_fetch, 0) AS idx_blks_fetch2,
-        NULLIF(st2.idx_blks_proc_pct, 0.0) AS idx_blks_proc_pct2,
+        NULLIF(st2.idx_blks_fetch_pct, 0.0) AS idx_blks_fetch_pct2,
         NULLIF(st2.toast_blks_fetch, 0) AS toast_blks_fetch2,
-        NULLIF(st2.toast_blks_proc_pct, 0.0) AS toast_blks_proc_pct2,
+        NULLIF(st2.toast_blks_fetch_pct, 0.0) AS toast_blks_fetch_pct2,
         NULLIF(st2.tidx_blks_fetch, 0) AS tidx_blks_fetch2,
-        NULLIF(st2.tidx_blks_proc_pct, 0.0) AS tidx_blks_proc_pct2,
+        NULLIF(st2.tidx_blks_fetch_pct, 0.0) AS tidx_blks_fetch_pct2,
         row_number() OVER (ORDER BY COALESCE(st1.heap_blks_fetch, 0) + COALESCE(st1.idx_blks_fetch, 0) +
           COALESCE(st1.toast_blks_fetch, 0) + COALESCE(st1.tidx_blks_fetch, 0) DESC NULLS LAST) rn_fetched1,
         row_number() OVER (ORDER BY COALESCE(st2.heap_blks_fetch, 0) + COALESCE(st2.idx_blks_fetch, 0) +
           COALESCE(st2.toast_blks_fetch, 0) + COALESCE(st2.tidx_blks_fetch, 0) DESC NULLS LAST) rn_fetched2
-    FROM top_io_tables(sserver_id,start1_id,end1_id) st1
-        FULL OUTER JOIN top_io_tables(sserver_id,start2_id,end2_id) st2 USING (server_id, datid, relid)
+    FROM top_io_tables1 st1
+        FULL OUTER JOIN top_io_tables2 st2 USING (server_id, datid, relid)
     WHERE COALESCE(st1.heap_blks_fetch, 0) + COALESCE(st1.idx_blks_fetch, 0) + COALESCE(st1.toast_blks_fetch, 0) + COALESCE(st1.tidx_blks_fetch, 0) +
         COALESCE(st2.heap_blks_fetch, 0) + COALESCE(st2.idx_blks_fetch, 0) + COALESCE(st2.toast_blks_fetch, 0) + COALESCE(st2.tidx_blks_fetch, 0) > 0
     ORDER BY
@@ -589,19 +614,19 @@ BEGIN
             r_result.heap_blks_fetch1,
             round(r_result.heap_blks_proc_pct1,2),
             r_result.idx_blks_fetch1,
-            round(r_result.idx_blks_proc_pct1,2),
+            round(r_result.idx_blks_fetch_pct1,2),
             r_result.toast_blks_fetch1,
-            round(r_result.toast_blks_proc_pct1,2),
+            round(r_result.toast_blks_fetch_pct1,2),
             r_result.tidx_blks_fetch1,
-            round(r_result.tidx_blks_proc_pct1,2),
+            round(r_result.tidx_blks_fetch_pct1,2),
             r_result.heap_blks_fetch2,
             round(r_result.heap_blks_proc_pct2,2),
             r_result.idx_blks_fetch2,
-            round(r_result.idx_blks_proc_pct2,2),
+            round(r_result.idx_blks_fetch_pct2,2),
             r_result.toast_blks_fetch2,
-            round(r_result.toast_blks_proc_pct2,2),
+            round(r_result.toast_blks_fetch_pct2,2),
             r_result.tidx_blks_fetch2,
-            round(r_result.tidx_blks_proc_pct2,2)
+            round(r_result.tidx_blks_fetch_pct2,2)
         );
     END LOOP;
 
@@ -629,7 +654,7 @@ DECLARE
         NULLIF(idx_blks_read, 0) as idx_blks_read,
         NULLIF(idx_blks_read_pct, 0.0) as idx_blks_read_pct,
         NULLIF(idx_blks_hit_pct, 0.0) as idx_blks_hit_pct
-    FROM top_io_indexes(sserver_id,start_id,end_id)
+    FROM top_io_indexes
     WHERE idx_blks_read > 0
     ORDER BY
       idx_blks_read DESC,
@@ -642,7 +667,7 @@ DECLARE
 BEGIN
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th>DB</th>'
             '<th>Tablespace</th>'
@@ -720,8 +745,8 @@ DECLARE
         row_number() OVER (ORDER BY st1.idx_blks_read DESC NULLS LAST) as rn_read1,
         row_number() OVER (ORDER BY st2.idx_blks_read DESC NULLS LAST) as rn_read2
     FROM
-        top_io_indexes(sserver_id,start1_id,end1_id) st1
-        FULL OUTER JOIN top_io_indexes(sserver_id,start2_id,end2_id) st2 USING (server_id, datid, relid, indexrelid)
+        top_io_indexes1 st1
+        FULL OUTER JOIN top_io_indexes2 st2 USING (server_id, datid, relid, indexrelid)
     WHERE COALESCE(st1.idx_blks_read, 0) + COALESCE(st2.idx_blks_read, 0) > 0
     ORDER BY
       COALESCE(st1.idx_blks_read, 0) + COALESCE(st2.idx_blks_read, 0) DESC,
@@ -818,8 +843,8 @@ DECLARE
         indexrelname,
         NULLIF(idx_scan, 0) as idx_scan,
         NULLIF(idx_blks_fetch, 0) as idx_blks_fetch,
-        NULLIF(idx_blks_proc_pct, 0.0) as idx_blks_proc_pct
-    FROM top_io_indexes(sserver_id,start_id,end_id)
+        NULLIF(idx_blks_fetch_pct, 0.0) as idx_blks_fetch_pct
+    FROM top_io_indexes
     WHERE idx_blks_fetch > 0
     ORDER BY
       idx_blks_fetch DESC,
@@ -832,7 +857,7 @@ DECLARE
 BEGIN
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th>DB</th>'
             '<th>Tablespace</th>'
@@ -869,7 +894,7 @@ BEGIN
         r_result.indexrelname,
         r_result.idx_scan,
         r_result.idx_blks_fetch,
-        round(r_result.idx_blks_proc_pct,2)
+        round(r_result.idx_blks_fetch_pct,2)
     );
     END LOOP;
 
@@ -898,15 +923,15 @@ DECLARE
         COALESCE(st1.indexrelname,st2.indexrelname) as indexrelname,
         NULLIF(st1.idx_scan, 0) as idx_scan1,
         NULLIF(st1.idx_blks_fetch, 0) as idx_blks_fetch1,
-        NULLIF(st1.idx_blks_proc_pct, 0.0) as idx_blks_proc_pct1,
+        NULLIF(st1.idx_blks_fetch_pct, 0.0) as idx_blks_fetch_pct1,
         NULLIF(st2.idx_scan, 0) as idx_scan2,
         NULLIF(st2.idx_blks_fetch, 0) as idx_blks_fetch2,
-        NULLIF(st2.idx_blks_proc_pct, 0.0) as idx_blks_proc_pct2,
+        NULLIF(st2.idx_blks_fetch_pct, 0.0) as idx_blks_fetch_pct2,
         row_number() OVER (ORDER BY st1.idx_blks_fetch DESC NULLS LAST) as rn_fetched1,
         row_number() OVER (ORDER BY st2.idx_blks_fetch DESC NULLS LAST) as rn_fetched2
     FROM
-        top_io_indexes(sserver_id,start1_id,end1_id) st1
-        FULL OUTER JOIN top_io_indexes(sserver_id,start2_id,end2_id) st2 USING (server_id, datid, relid, indexrelid)
+        top_io_indexes1 st1
+        FULL OUTER JOIN top_io_indexes2 st2 USING (server_id, datid, relid, indexrelid)
     WHERE COALESCE(st1.idx_blks_fetch, 0) + COALESCE(st2.idx_blks_fetch, 0) > 0
     ORDER BY
       COALESCE(st1.idx_blks_fetch, 0) + COALESCE(st2.idx_blks_fetch, 0) DESC,
@@ -970,10 +995,10 @@ BEGIN
         r_result.indexrelname,
         r_result.idx_scan1,
         r_result.idx_blks_fetch1,
-        round(r_result.idx_blks_proc_pct1,2),
+        round(r_result.idx_blks_fetch_pct1,2),
         r_result.idx_scan2,
         r_result.idx_blks_fetch2,
-        round(r_result.idx_blks_proc_pct2,2)
+        round(r_result.idx_blks_fetch_pct2,2)
     );
     END LOOP;
 

@@ -76,92 +76,6 @@ RETURNS TABLE(
     indexrelid
 $$ LANGUAGE sql;
 
-CREATE OR REPLACE FUNCTION ix_size_interpolated(IN server_id integer, sample_id integer,
-  IN datid oid, IN indexrelid oid
-) RETURNS bigint
-STABLE
-RETURNS NULL ON NULL INPUT
-AS
-$$
-DECLARE
-  r_current   record;
-  r_left      record;
-  r_right     record;
-
-  c_before CURSOR FOR
-  SELECT sample_time,relsize
-  FROM sample_stat_indexes i
-    JOIN samples s USING (server_id, sample_id)
-  WHERE (i.server_id, i.datid, i.indexrelid) =
-    (ix_size_interpolated.server_id,
-    ix_size_interpolated.datid, ix_size_interpolated.indexrelid)
-    AND relsize IS NOT NULL
-    AND i.sample_id < ix_size_interpolated.sample_id
-  ORDER BY i.sample_id DESC
-  LIMIT 2;
-
-  c_after CURSOR FOR
-  SELECT sample_time,relsize
-  FROM sample_stat_indexes i
-    JOIN samples s USING (server_id, sample_id)
-  WHERE (i.server_id, i.datid, i.indexrelid) =
-    (ix_size_interpolated.server_id,
-    ix_size_interpolated.datid, ix_size_interpolated.indexrelid)
-    AND relsize IS NOT NULL
-    AND i.sample_id > ix_size_interpolated.sample_id
-  ORDER BY i.sample_id ASC
-  LIMIT 2;
-BEGIN
-	/* If raw data exists, return it as is */
-	SELECT relsize INTO r_current
-	FROM sample_stat_indexes i
-	WHERE (i.server_id,i.sample_id,i.datid,i.indexrelid) =
-		(ix_size_interpolated.server_id,ix_size_interpolated.sample_id,
-		ix_size_interpolated.datid, ix_size_interpolated.indexrelid);
-	IF FOUND THEN
-		IF r_current.relsize IS NOT NULL THEN
-			RETURN r_current.relsize;
-		END IF;
-	ELSE
-		RETURN NULL;
-	END IF;
-
-	/* We need to use interpolation here */
-	OPEN c_before;
-	FETCH c_before INTO r_left;
-
-	OPEN c_after;
-	FETCH c_after INTO r_right;
-
-	SELECT s.sample_time,relsize INTO STRICT r_current
-	FROM sample_stat_indexes i
-	JOIN samples s USING (server_id, sample_id)
-	WHERE (i.server_id, i.sample_id, i.datid, i.indexrelid) =
-		(ix_size_interpolated.server_id, ix_size_interpolated.sample_id,
-		ix_size_interpolated.datid, ix_size_interpolated.indexrelid);
-
-	CASE
-		WHEN r_left.sample_time IS NOT NULL AND r_right.sample_time IS NULL THEN
-			r_right := r_left;
-			FETCH c_before INTO r_left;
-		WHEN r_left.sample_time IS NULL AND r_right.sample_time IS NOT NULL THEN
-			r_left := r_right;
-			FETCH c_after INTO r_right;
-		ELSE
-			NULL;
-	END CASE;
-
-	CLOSE c_after;
-	CLOSE c_before;
-
-	RETURN r_left.relsize +
-		round(extract(epoch from r_current.sample_time - r_left.sample_time) *
-			(r_right.relsize - r_left.relsize) /
-			extract(epoch from r_right.sample_time - r_left.sample_time)
-		);
-END;
-$$ LANGUAGE plpgsql;
-
 CREATE FUNCTION top_growth_indexes_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer,
   IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
@@ -184,7 +98,7 @@ DECLARE
         NULLIF(tbl_n_tup_ins, 0) as tbl_n_tup_ins,
         NULLIF(tbl_n_tup_upd - COALESCE(tbl_n_tup_hot_upd,0), 0) as tbl_n_tup_upd,
         NULLIF(tbl_n_tup_del, 0) as tbl_n_tup_del
-    FROM top_indexes(sserver_id, start_id, end_id) st
+    FROM top_indexes st
         JOIN v_sample_stat_indexes st_last using (server_id,datid,relid,indexrelid)
         -- Is there any failed size collections on indexes?
         LEFT OUTER JOIN index_size_failures(sserver_id, start_id, end_id) sf
@@ -202,7 +116,7 @@ DECLARE
 BEGIN
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th rowspan="2">DB</th>'
             '<th rowspan="2">Tablespace</th>'
@@ -291,8 +205,8 @@ DECLARE
         NULLIF(ix2.tbl_n_tup_del, 0) as tbl_n_tup_del2,
         row_number() over (ORDER BY ix1.growth DESC NULLS LAST) as rn_growth1,
         row_number() over (ORDER BY ix2.growth DESC NULLS LAST) as rn_growth2
-    FROM top_indexes(sserver_id, start1_id, end1_id) ix1
-        FULL OUTER JOIN top_indexes(sserver_id, start2_id, end2_id) ix2 USING (server_id, datid, indexrelid)
+    FROM top_indexes1 ix1
+        FULL OUTER JOIN top_indexes2 ix2 USING (server_id, datid, indexrelid)
         -- Is there any failed size collections on a indexes of 1st interval?
         LEFT OUTER JOIN index_size_failures(sserver_id, start1_id, end1_id) sf1
           USING (server_id, datid, indexrelid)
@@ -415,7 +329,7 @@ DECLARE
         NULLIF(tbl_n_tup_ins, 0) as tbl_n_tup_ins,
         NULLIF(tbl_n_tup_upd - COALESCE(tbl_n_tup_hot_upd,0), 0) as tbl_n_ind_upd,
         NULLIF(tbl_n_tup_del, 0) as tbl_n_tup_del
-    FROM top_indexes(sserver_id, start_id, end_id) st
+    FROM top_indexes st
         JOIN v_sample_stat_indexes st_last using (server_id,datid,relid,indexrelid)
     WHERE st_last.sample_id=end_id AND COALESCE(st.idx_scan, 0) = 0 AND NOT st.indisunique
       AND COALESCE(tbl_n_tup_ins, 0) + COALESCE(tbl_n_tup_upd, 0) + COALESCE(tbl_n_tup_del, 0) > 0
@@ -430,7 +344,7 @@ DECLARE
 BEGIN
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th rowspan="2">DB</th>'
             '<th rowspan="2">Tablespaces</th>'
@@ -511,7 +425,7 @@ DECLARE
         NULLIF(vac.vacuum_bytes, 0) as vacuum_bytes,
         NULLIF(vac.avg_indexrelsize, 0) as avg_ix_relsize,
         NULLIF(vac.avg_relsize, 0) as avg_relsize
-    FROM top_indexes(sserver_id, start_id, end_id) st
+    FROM top_indexes st
       JOIN (
         SELECT
           server_id,
@@ -519,10 +433,10 @@ DECLARE
           indexrelid,
           sum(vacuum_count) as vacuum_count,
           sum(autovacuum_count) as autovacuum_count,
-          round(sum(COALESCE(i.relsize,ix_size_interpolated(server_id,sample_id,datid,indexrelid))
+          round(sum(i.relsize
 			* (COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0))))::bigint as vacuum_bytes,
-          round(avg(COALESCE(i.relsize,ix_size_interpolated(server_id,sample_id,datid,indexrelid))))::bigint as avg_indexrelsize,
-          round(avg(COALESCE(t.relsize,tab_size_interpolated(server_id,sample_id,datid,relid))))::bigint as avg_relsize
+          round(avg(i.relsize))::bigint as avg_indexrelsize,
+          round(avg(t.relsize))::bigint as avg_relsize
         FROM sample_stat_indexes i
 			JOIN indexes_list il USING (server_id,datid,indexrelid)
 			JOIN sample_stat_tables t USING
@@ -545,7 +459,7 @@ DECLARE
 BEGIN
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th>DB</th>'
             '<th>Tablespace</th>'
@@ -628,8 +542,8 @@ DECLARE
         NULLIF(vac2.avg_relsize, 0) as avg_relsize2,
         row_number() over (ORDER BY vac1.vacuum_bytes DESC NULLS LAST) as rn_vacuum_bytes1,
         row_number() over (ORDER BY vac2.vacuum_bytes DESC NULLS LAST) as rn_vacuum_bytes2
-    FROM top_indexes(sserver_id, start1_id, end1_id) ix1
-        FULL OUTER JOIN top_indexes(sserver_id, start2_id, end2_id) ix2 USING (server_id, datid, indexrelid)
+    FROM top_indexes1 ix1
+        FULL OUTER JOIN top_indexes2 ix2 USING (server_id, datid, indexrelid)
         -- Join interpolated data of interval 1
         LEFT OUTER JOIN (
 			SELECT
@@ -638,10 +552,10 @@ DECLARE
 				indexrelid,
 				sum(vacuum_count) as vacuum_count,
 				sum(autovacuum_count) as autovacuum_count,
-				round(sum(COALESCE(i.relsize,ix_size_interpolated(server_id,sample_id,datid,indexrelid))
+				round(sum(i.relsize
 					* (COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0))))::bigint as vacuum_bytes,
-				round(avg(COALESCE(i.relsize,ix_size_interpolated(server_id,sample_id,datid,indexrelid))))::bigint as avg_indexrelsize,
-				round(avg(COALESCE(t.relsize,tab_size_interpolated(server_id,sample_id,datid,relid))))::bigint as avg_relsize
+				round(avg(i.relsize))::bigint as avg_indexrelsize,
+				round(avg(t.relsize))::bigint as avg_relsize
 			FROM sample_stat_indexes i
 				JOIN indexes_list il USING (server_id,datid,indexrelid)
 				JOIN sample_stat_tables t USING
@@ -660,10 +574,10 @@ DECLARE
 				indexrelid,
 				sum(vacuum_count) as vacuum_count,
 				sum(autovacuum_count) as autovacuum_count,
-				round(sum(COALESCE(i.relsize,ix_size_interpolated(server_id,sample_id,datid,indexrelid))
+				round(sum(i.relsize
 					* (COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0))))::bigint as vacuum_bytes,
-				round(avg(COALESCE(i.relsize,ix_size_interpolated(server_id,sample_id,datid,indexrelid))))::bigint as avg_indexrelsize,
-				round(avg(COALESCE(t.relsize,tab_size_interpolated(server_id,sample_id,datid,relid))))::bigint as avg_relsize
+				round(avg(i.relsize))::bigint as avg_indexrelsize,
+				round(avg(t.relsize))::bigint as avg_relsize
 			FROM sample_stat_indexes i
 				JOIN indexes_list il USING (server_id,datid,indexrelid)
 				JOIN sample_stat_tables t USING

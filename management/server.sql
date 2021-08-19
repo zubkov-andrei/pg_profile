@@ -31,6 +31,7 @@ BEGIN
     SELECT server_id INTO STRICT dserver_id FROM servers WHERE server_name = server;
     DELETE FROM bl_samples WHERE server_id = dserver_id;
     DELETE FROM last_stat_cluster WHERE server_id = dserver_id;
+    DELETE FROM last_stat_wal WHERE server_id = dserver_id;
     DELETE FROM last_stat_tables WHERE server_id = dserver_id;
     DELETE FROM last_stat_indexes WHERE server_id = dserver_id;
     DELETE FROM last_stat_user_functions WHERE server_id = dserver_id;
@@ -138,15 +139,16 @@ $$ LANGUAGE plpgsql;
 COMMENT ON FUNCTION set_server_db_exclude(IN server name, IN exclude_db name[]) IS 'Exclude databases from object stats collection. Useful in RDS.';
 
 CREATE FUNCTION set_server_size_sampling(IN server name, IN window_start time with time zone = NULL,
-  IN window_duration interval hour to second = NULL, IN sample_interval interval day to minute = NULL)
+  IN window_duration interval hour to second = NULL, IN sample_interval interval day to minute = NULL,
+  IN limited_sizes_collection boolean = true)
 RETURNS integer SET search_path=@extschema@ AS $$
 DECLARE
     upd_rows integer;
 BEGIN
     UPDATE servers
     SET
-      (size_smp_wnd_start, size_smp_wnd_dur, size_smp_interval) =
-      (window_start, window_duration, sample_interval)
+      (size_smp_wnd_start, size_smp_wnd_dur, size_smp_interval, sizes_limited) =
+      (window_start, window_duration, sample_interval, limited_sizes_collection)
     WHERE
       server_name = server;
     GET DIAGNOSTICS upd_rows = ROW_COUNT;
@@ -154,7 +156,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 COMMENT ON FUNCTION set_server_size_sampling(IN server name, IN window_start time with time zone,
-  IN window_duration interval hour to second, IN sample_interval interval day to minute) IS
+  IN window_duration interval hour to second, IN sample_interval interval day to minute,
+  IN limited_sizes_collection boolean) IS
   'Set relation sizes sampling settings for a server';
 
 CREATE FUNCTION show_servers()
@@ -170,7 +173,8 @@ RETURNS TABLE (
   window_start time with time zone,
   window_end time with time zone,
   window_duration interval hour to second,
-  sample_interval interval day to minute
+  sample_interval interval day to minute,
+  limited_collection boolean
 )
 SET search_path=@extschema@ AS $$
   SELECT
@@ -178,7 +182,8 @@ SET search_path=@extschema@ AS $$
     size_smp_wnd_start,
     size_smp_wnd_start + size_smp_wnd_dur,
     size_smp_wnd_dur,
-    size_smp_interval
+    size_smp_interval,
+    sizes_limited
   FROM
     servers
 $$ LANGUAGE sql;

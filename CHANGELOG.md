@@ -1,5 +1,14 @@
 # pg_profile changelog
 
+## 0.3.4
+- support of new statistics of Postgres 14 (session and WAL statistics).
+- optimized report building.
+- limited relations sizes collection with defined _size collection policy_ will now collect sizes for only seq-scanned or vacuumed tables in each sample providing useful estimations in reports without overall database objects size collections.
+- fixed incorrect database growth value in case of database statistics reset in a report interval.
+- interval bounds in the report contains timezone now (reported by @antiorum in #21).
+- fixed settings collection. pg_profile dump could not be loaded if there was a postgres updrage on the source system.
+- fixed statements aggregation in report tables. Due to different query texts the same statement could appear several times in one report section making it difficult to realize workload of the statement.
+
 ## 0.3.3
 - minor fix: Field _~SeqBytes_ of report section "Top tables by estimated sequentially scanned volume" was having value of first interval in cells of first and second interval.
 

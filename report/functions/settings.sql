@@ -83,7 +83,7 @@ BEGIN
 
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table class="setlist">'
           '{defined_tpl}'
           '{default_tpl}'
         '</table>',
@@ -220,7 +220,7 @@ DECLARE
 BEGIN
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table class="setlist">'
           '{defined_tpl}'
           '{default_tpl}'
         '</table>',

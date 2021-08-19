@@ -141,92 +141,6 @@ RETURNS TABLE(
     relid
 $$ LANGUAGE sql;
 
-CREATE OR REPLACE FUNCTION tab_size_interpolated(IN server_id integer, sample_id integer,
-  IN datid oid, IN relid oid
-) RETURNS bigint
-STABLE
-RETURNS NULL ON NULL INPUT
-AS
-$$
-DECLARE
-  r_current   record;
-  r_left      record;
-  r_right     record;
-
-  c_before CURSOR FOR
-  SELECT sample_time,relsize
-  FROM sample_stat_tables t
-    JOIN samples s USING (server_id, sample_id)
-  WHERE (t.server_id, t.datid, t.relid) =
-    (tab_size_interpolated.server_id,
-    tab_size_interpolated.datid, tab_size_interpolated.relid)
-    AND relsize IS NOT NULL
-    AND t.sample_id < tab_size_interpolated.sample_id
-  ORDER BY t.sample_id DESC
-  LIMIT 2;
-
-  c_after CURSOR FOR
-  SELECT sample_time,relsize
-  FROM sample_stat_tables t
-    JOIN samples s USING (server_id, sample_id)
-  WHERE (t.server_id, t.datid, t.relid) =
-    (tab_size_interpolated.server_id,
-    tab_size_interpolated.datid, tab_size_interpolated.relid)
-    AND relsize IS NOT NULL
-    AND t.sample_id > tab_size_interpolated.sample_id
-  ORDER BY t.sample_id ASC
-  LIMIT 2;
-BEGIN
-	/* If raw data exists, return it as is */
-	SELECT relsize INTO r_current
-	FROM sample_stat_tables t
-	WHERE (t.server_id,t.sample_id,t.datid,t.relid) =
-		(tab_size_interpolated.server_id,tab_size_interpolated.sample_id,
-		tab_size_interpolated.datid, tab_size_interpolated.relid);
-	IF FOUND THEN
-		IF r_current.relsize IS NOT NULL THEN
-			RETURN r_current.relsize;
-		END IF;
-	ELSE
-		RETURN NULL;
-	END IF;
-
-	/* We need to use interpolation here */
-	OPEN c_before;
-	FETCH c_before INTO r_left;
-
-	OPEN c_after;
-	FETCH c_after INTO r_right;
-
-	SELECT s.sample_time,relsize INTO STRICT r_current
-	FROM sample_stat_tables t
-	JOIN samples s USING (server_id, sample_id)
-	WHERE (t.server_id, t.sample_id, t.datid, t.relid) =
-		(tab_size_interpolated.server_id, tab_size_interpolated.sample_id,
-		tab_size_interpolated.datid, tab_size_interpolated.relid);
-
-	CASE
-		WHEN r_left.sample_time IS NOT NULL AND r_right.sample_time IS NULL THEN
-			r_right := r_left;
-			FETCH c_before INTO r_left;
-		WHEN r_left.sample_time IS NULL AND r_right.sample_time IS NOT NULL THEN
-			r_left := r_right;
-			FETCH c_after INTO r_right;
-		ELSE
-			NULL;
-	END CASE;
-
-	CLOSE c_after;
-	CLOSE c_before;
-
-	RETURN r_left.relsize +
-		round(extract(epoch from r_current.sample_time - r_left.sample_time) *
-			(r_right.relsize - r_left.relsize) /
-			extract(epoch from r_right.sample_time - r_left.sample_time)
-		);
-END;
-$$ LANGUAGE plpgsql;
-
 /* ===== Tables report functions ===== */
 CREATE FUNCTION top_scan_tables_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
@@ -261,16 +175,14 @@ DECLARE
         NULLIF(toastn_tup_upd, 0) as toastn_tup_upd,
         NULLIF(toastn_tup_del, 0) as toastn_tup_del,
         NULLIF(toastn_tup_hot_upd, 0) as toastn_tup_hot_upd
-    FROM top_tables(sserver_id, start_id, end_id) tt
+    FROM top_tables tt
     LEFT OUTER JOIN (
       SELECT
         server_id,
         datid,
         relid,
-        round(sum(seq_scan *
-			COALESCE(relsize,tab_size_interpolated(server_id,sample_id,datid,relid))
-		))::bigint as seq_scan_bytes,
-        count(relsize) != count(*) as approximated
+        round(sum(seq_scan * relsize))::bigint as seq_scan_bytes,
+        count(nullif(relsize, 0)) != count(nullif(seq_scan, 0)) as approximated
       FROM sample_stat_tables
       WHERE server_id = sserver_id AND sample_id BETWEEN start_id + 1 AND end_id
       GROUP BY
@@ -284,10 +196,8 @@ DECLARE
         server_id,
         datid,
         relid,
-        round(sum(seq_scan *
-			COALESCE(relsize,tab_size_interpolated(server_id,sample_id,datid,relid))
-		))::bigint as seq_scan_bytes,
-        count(relsize) != count(*) as approximated
+        round(sum(seq_scan * relsize))::bigint as seq_scan_bytes,
+        count(nullif(relsize, 0)) != count(nullif(seq_scan, 0)) as approximated
       FROM sample_stat_tables
       WHERE server_id = sserver_id AND sample_id BETWEEN start_id + 1 AND end_id
       GROUP BY
@@ -296,7 +206,8 @@ DECLARE
         relid
     ) toast_seq_scan ON (tt.server_id,tt.datid,tt.reltoastrelid) =
       (toast_seq_scan.server_id,toast_seq_scan.datid,toast_seq_scan.relid)
-    WHERE seq_scan + COALESCE(toastseq_scan,0) > 0
+    WHERE
+      COALESCE(tbl_seq_scan.seq_scan_bytes, 0) + COALESCE(toast_seq_scan.seq_scan_bytes, 0) > 0
     ORDER BY
       COALESCE(tbl_seq_scan.seq_scan_bytes, 0) + COALESCE(toast_seq_scan.seq_scan_bytes, 0) DESC,
       tt.datid ASC,
@@ -305,10 +216,11 @@ DECLARE
 
     r_result RECORD;
 BEGIN
+
     --- Populate templates
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th>DB</th>'
             '<th>Tablespace</th>'
@@ -473,17 +385,15 @@ DECLARE
         row_number() over (ORDER BY
           COALESCE(tbl2_seq_scan.seq_scan_bytes, 0) + COALESCE(toast2_seq_scan.seq_scan_bytes, 0)
           DESC NULLS LAST) AS rn_seqpg2
-    FROM top_tables(sserver_id, start1_id, end1_id) tbl1
-        FULL OUTER JOIN top_tables(sserver_id, start2_id, end2_id) tbl2 USING (server_id, datid, relid)
+    FROM top_tables1 tbl1
+        FULL OUTER JOIN top_tables2 tbl2 USING (server_id, datid, relid)
     LEFT OUTER JOIN (
       SELECT
         server_id,
         datid,
         relid,
-        round(sum(seq_scan *
-			COALESCE(relsize,tab_size_interpolated(server_id,sample_id,datid,relid))
-		))::bigint as seq_scan_bytes,
-        count(relsize) != count(*) as approximated
+        round(sum(seq_scan * relsize))::bigint as seq_scan_bytes,
+        count(nullif(relsize, 0)) != count(nullif(seq_scan, 0)) as approximated
       FROM sample_stat_tables
       WHERE server_id = sserver_id AND sample_id BETWEEN start1_id + 1 AND end1_id
       GROUP BY
@@ -497,10 +407,8 @@ DECLARE
         server_id,
         datid,
         relid,
-        round(sum(seq_scan *
-			COALESCE(relsize,tab_size_interpolated(server_id,sample_id,datid,relid))
-		))::bigint as seq_scan_bytes,
-        count(relsize) != count(*) as approximated
+        round(sum(seq_scan * relsize))::bigint as seq_scan_bytes,
+        count(nullif(relsize, 0)) != count(nullif(seq_scan, 0)) as approximated
       FROM sample_stat_tables
       WHERE server_id = sserver_id AND sample_id BETWEEN start1_id + 1 AND end1_id
       GROUP BY
@@ -514,10 +422,8 @@ DECLARE
         server_id,
         datid,
         relid,
-        round(sum(seq_scan *
-			COALESCE(relsize,tab_size_interpolated(server_id,sample_id,datid,relid))
-		))::bigint as seq_scan_bytes,
-        count(relsize) != count(*) as approximated
+        round(sum(seq_scan * relsize))::bigint as seq_scan_bytes,
+        count(nullif(relsize, 0)) != count(nullif(seq_scan, 0)) as approximated
       FROM sample_stat_tables
       WHERE server_id = sserver_id AND sample_id BETWEEN start2_id + 1 AND end2_id
       GROUP BY
@@ -531,10 +437,8 @@ DECLARE
         server_id,
         datid,
         relid,
-        round(sum(seq_scan *
-			COALESCE(relsize,tab_size_interpolated(server_id,sample_id,datid,relid))
-		))::bigint as seq_scan_bytes,
-        count(relsize) != count(*) as approximated
+        round(sum(seq_scan * relsize))::bigint as seq_scan_bytes,
+        count(nullif(relsize, 0)) != count(nullif(seq_scan, 0)) as approximated
       FROM sample_stat_tables
       WHERE server_id = sserver_id AND sample_id BETWEEN start2_id + 1 AND end2_id
       GROUP BY
@@ -691,7 +595,7 @@ DECLARE
         NULLIF(toastn_tup_upd, 0) as toastn_tup_upd,
         NULLIF(toastn_tup_del, 0) as toastn_tup_del,
         NULLIF(toastn_tup_hot_upd, 0) as toastn_tup_hot_upd
-    FROM top_tables(sserver_id, start_id, end_id)
+    FROM top_tables
     WHERE COALESCE(n_tup_ins, 0) + COALESCE(n_tup_upd, 0) + COALESCE(n_tup_del, 0) +
       COALESCE(toastn_tup_ins, 0) + COALESCE(toastn_tup_upd, 0) + COALESCE(toastn_tup_del, 0) > 0
     ORDER BY COALESCE(n_tup_ins, 0) + COALESCE(n_tup_upd, 0) + COALESCE(n_tup_del, 0) +
@@ -706,7 +610,7 @@ BEGIN
     -- Populate templates
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th>DB</th>'
             '<th>Tablespace</th>'
@@ -858,8 +762,8 @@ DECLARE
           COALESCE(tbl1.toastn_tup_ins, 0) + COALESCE(tbl1.toastn_tup_upd, 0) + COALESCE(tbl1.toastn_tup_del, 0) DESC NULLS LAST) AS rn_dml1,
         row_number() OVER (ORDER BY COALESCE(tbl2.n_tup_ins, 0) + COALESCE(tbl2.n_tup_upd, 0) + COALESCE(tbl2.n_tup_del, 0) +
           COALESCE(tbl2.toastn_tup_ins, 0) + COALESCE(tbl2.toastn_tup_upd, 0) + COALESCE(tbl2.toastn_tup_del, 0) DESC NULLS LAST) AS rn_dml2
-    FROM top_tables(sserver_id, start1_id, end1_id) tbl1
-        FULL OUTER JOIN top_tables(sserver_id, start2_id, end2_id) tbl2 USING (server_id, datid, relid)
+    FROM top_tables1 tbl1
+        FULL OUTER JOIN top_tables2 tbl2 USING (server_id, datid, relid)
     WHERE COALESCE(tbl1.n_tup_ins, 0) + COALESCE(tbl1.n_tup_upd, 0) + COALESCE(tbl1.n_tup_del, 0) +
         COALESCE(tbl1.toastn_tup_ins, 0) + COALESCE(tbl1.toastn_tup_upd, 0) + COALESCE(tbl1.toastn_tup_del, 0) +
         COALESCE(tbl2.n_tup_ins, 0) + COALESCE(tbl2.n_tup_upd, 0) + COALESCE(tbl2.n_tup_del, 0) +
@@ -999,7 +903,7 @@ DECLARE
         NULLIF(toastautovacuum_count, 0) as toastautovacuum_count,
         NULLIF(toastanalyze_count, 0) as toastanalyze_count,
         NULLIF(toastautoanalyze_count, 0) as toastautoanalyze_count
-    FROM top_tables(sserver_id, start_id, end_id)
+    FROM top_tables
     WHERE COALESCE(n_tup_upd, 0) + COALESCE(n_tup_del, 0) +
       COALESCE(toastn_tup_upd, 0) + COALESCE(toastn_tup_del, 0) > 0
     ORDER BY COALESCE(n_tup_upd, 0) + COALESCE(n_tup_del, 0) +
@@ -1013,7 +917,7 @@ BEGIN
     -- Populate templates
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th>DB</th>'
             '<th>Tablespace</th>'
@@ -1154,8 +1058,8 @@ DECLARE
         NULLIF(tbl2.autoanalyze_count, 0) as autoanalyze_count2,
         row_number() OVER (ORDER BY COALESCE(tbl1.n_tup_upd, 0) + COALESCE(tbl1.n_tup_del, 0) DESC NULLS LAST) as rn_vactpl1,
         row_number() OVER (ORDER BY COALESCE(tbl2.n_tup_upd, 0) + COALESCE(tbl2.n_tup_del, 0) DESC NULLS LAST) as rn_vactpl2
-    FROM top_tables(sserver_id, start1_id, end1_id) tbl1
-        FULL OUTER JOIN top_tables(sserver_id, start2_id, end2_id) tbl2 USING (server_id, datid, relid)
+    FROM top_tables1 tbl1
+        FULL OUTER JOIN top_tables2 tbl2 USING (server_id, datid, relid)
     WHERE COALESCE(tbl1.n_tup_upd, 0) + COALESCE(tbl1.n_tup_del, 0) +
           COALESCE(tbl2.n_tup_upd, 0) + COALESCE(tbl2.n_tup_del, 0) > 0
     ORDER BY COALESCE(tbl1.n_tup_upd, 0) + COALESCE(tbl1.n_tup_del, 0) +
@@ -1279,7 +1183,7 @@ DECLARE
         CASE WHEN sf.toastsize_failed THEN 'N/A'
           ELSE pg_size_pretty(NULLIF(top.toastgrowth, 0)) END AS toastgrowth,
         pg_size_pretty(NULLIF(stt_last.relsize, 0)) AS toastrelsize
-    FROM top_tables(sserver_id, start_id, end_id) top
+    FROM top_tables top
         JOIN v_sample_stat_tables st_last
           USING (server_id, datid, relid)
         -- Is there any failed size collections on a tables?
@@ -1299,7 +1203,7 @@ BEGIN
     -- Populate templates
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th>DB</th>'
             '<th>Tablespace</th>'
@@ -1448,8 +1352,8 @@ DECLARE
         pg_size_pretty(NULLIF(stt_last2.relsize, 0)) AS toastrelsize2,
         row_number() OVER (ORDER BY COALESCE(tbl1.growth, 0) + COALESCE(tbl1.toastgrowth, 0) DESC NULLS LAST) as rn_growth1,
         row_number() OVER (ORDER BY COALESCE(tbl2.growth, 0) + COALESCE(tbl2.toastgrowth, 0) DESC NULLS LAST) as rn_growth2
-    FROM top_tables(sserver_id, start1_id, end1_id) tbl1
-        FULL OUTER JOIN top_tables(sserver_id, start2_id, end2_id) tbl2 USING (server_id,datid,relid)
+    FROM top_tables1 tbl1
+        FULL OUTER JOIN top_tables2 tbl2 USING (server_id,datid,relid)
         -- Is there any failed size collections on a tables of 1st interval?
         LEFT OUTER JOIN table_size_failures(sserver_id, start1_id, end1_id) sf1
           USING (server_id, datid, relid)
@@ -1611,7 +1515,7 @@ DECLARE
         NULLIF(top.n_tup_upd, 0) as n_tup_upd,
         NULLIF(top.n_tup_del, 0) as n_tup_del,
         NULLIF(top.n_tup_hot_upd, 0) as n_tup_hot_upd
-    FROM top_tables(sserver_id, start_id, end_id) top
+    FROM top_tables top
     WHERE COALESCE(top.vacuum_count, 0) + COALESCE(top.autovacuum_count, 0) > 0
     ORDER BY COALESCE(top.vacuum_count, 0) + COALESCE(top.autovacuum_count, 0) DESC,
       top.datid ASC,
@@ -1624,7 +1528,7 @@ BEGIN
     -- Populate templates
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th>DB</th>'
             '<th>Tablespace</th>'
@@ -1712,8 +1616,8 @@ DECLARE
         NULLIF(tbl2.n_tup_hot_upd, 0) as n_tup_hot_upd2,
         row_number() OVER (ORDER BY COALESCE(tbl1.vacuum_count, 0) + COALESCE(tbl1.autovacuum_count, 0) DESC) as rn_vacuum1,
         row_number() OVER (ORDER BY COALESCE(tbl2.vacuum_count, 0) + COALESCE(tbl2.autovacuum_count, 0) DESC) as rn_vacuum2
-    FROM top_tables(sserver_id, start1_id, end1_id) tbl1
-        FULL OUTER JOIN top_tables(sserver_id, start2_id, end2_id) tbl2 USING (server_id,datid,relid)
+    FROM top_tables1 tbl1
+        FULL OUTER JOIN top_tables2 tbl2 USING (server_id,datid,relid)
     WHERE COALESCE(tbl1.vacuum_count, 0) + COALESCE(tbl1.autovacuum_count, 0) +
           COALESCE(tbl2.vacuum_count, 0) + COALESCE(tbl2.autovacuum_count, 0) > 0
     ORDER BY COALESCE(tbl1.vacuum_count, 0) + COALESCE(tbl1.autovacuum_count, 0) +
@@ -1824,7 +1728,7 @@ DECLARE
         NULLIF(top.n_tup_upd, 0) as n_tup_upd,
         NULLIF(top.n_tup_del, 0) as n_tup_del,
         NULLIF(top.n_tup_hot_upd, 0) as n_tup_hot_upd
-    FROM top_tables(sserver_id, start_id, end_id) top
+    FROM top_tables top
     WHERE COALESCE(top.analyze_count, 0) + COALESCE(top.autoanalyze_count, 0) > 0
     ORDER BY COALESCE(top.analyze_count, 0) + COALESCE(top.autoanalyze_count, 0) DESC,
       top.datid ASC,
@@ -1837,7 +1741,7 @@ BEGIN
     -- Populate templates
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th>DB</th>'
             '<th>Tablespace</th>'
@@ -1925,8 +1829,8 @@ DECLARE
         NULLIF(tbl2.n_tup_hot_upd, 0) as n_tup_hot_upd2,
         row_number() OVER (ORDER BY COALESCE(tbl1.analyze_count, 0) + COALESCE(tbl1.autoanalyze_count, 0) DESC) as rn_analyze1,
         row_number() OVER (ORDER BY COALESCE(tbl2.analyze_count, 0) + COALESCE(tbl2.autoanalyze_count, 0) DESC) as rn_analyze2
-    FROM top_tables(sserver_id, start1_id, end1_id) tbl1
-        FULL OUTER JOIN top_tables(sserver_id, start2_id, end2_id) tbl2 USING (server_id,datid,relid)
+    FROM top_tables1 tbl1
+        FULL OUTER JOIN top_tables2 tbl2 USING (server_id,datid,relid)
     WHERE COALESCE(tbl1.analyze_count, 0) + COALESCE(tbl1.autoanalyze_count, 0) +
           COALESCE(tbl2.analyze_count, 0) + COALESCE(tbl2.autoanalyze_count, 0) > 0
     ORDER BY COALESCE(tbl1.analyze_count, 0) + COALESCE(tbl1.autoanalyze_count, 0) +

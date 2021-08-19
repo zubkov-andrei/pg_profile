@@ -76,7 +76,7 @@ DECLARE
         NULLIF(self_time, 0.0) as self_time,
         NULLIF(m_time, 0.0) as m_time,
         NULLIF(m_stime, 0.0) as m_stime
-    FROM top_functions(sserver_id, start_id, end_id, false)
+    FROM top_functions
     WHERE total_time > 0
     ORDER BY
       total_time DESC,
@@ -88,7 +88,7 @@ DECLARE
 BEGIN
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th rowspan="2">DB</th>'
             '<th rowspan="2">Schema</th>'
@@ -164,8 +164,8 @@ DECLARE
         NULLIF(f2.m_stime, 0.0) as m_stime2,
         row_number() OVER (ORDER BY f1.total_time DESC NULLS LAST) as rn_time1,
         row_number() OVER (ORDER BY f2.total_time DESC NULLS LAST) as rn_time2
-    FROM top_functions(sserver_id, start1_id, end1_id, false) f1
-        FULL OUTER JOIN top_functions(sserver_id, start2_id, end2_id, false) f2 USING (server_id, datid, funcid)
+    FROM top_functions1 f1
+        FULL OUTER JOIN top_functions2 f2 USING (server_id, datid, funcid)
     ORDER BY
       COALESCE(f1.total_time, 0.0) + COALESCE(f2.total_time, 0.0) DESC,
       COALESCE(f1.datid,f2.datid) ASC,
@@ -265,7 +265,7 @@ DECLARE
         NULLIF(self_time, 0.0) as self_time,
         NULLIF(m_time, 0.0) as m_time,
         NULLIF(m_stime, 0.0) as m_stime
-    FROM top_functions(sserver_id, start_id, end_id, false)
+    FROM top_functions
     WHERE calls > 0
     ORDER BY
       calls DESC,
@@ -277,7 +277,7 @@ DECLARE
 BEGIN
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th rowspan="2">DB</th>'
             '<th rowspan="2">Schema</th>'
@@ -353,8 +353,8 @@ DECLARE
         NULLIF(f2.m_stime, 0.0) as m_stime2,
         row_number() OVER (ORDER BY f1.calls DESC NULLS LAST) as rn_calls1,
         row_number() OVER (ORDER BY f2.calls DESC NULLS LAST) as rn_calls2
-    FROM top_functions(sserver_id, start1_id, end1_id, false) f1
-        FULL OUTER JOIN top_functions(sserver_id, start2_id, end2_id, false) f2 USING (server_id, datid, funcid)
+    FROM top_functions1 f1
+        FULL OUTER JOIN top_functions2 f2 USING (server_id, datid, funcid)
     ORDER BY
       COALESCE(f1.calls, 0) + COALESCE(f2.calls, 0) DESC,
       COALESCE(f1.datid,f2.datid) ASC,
@@ -468,7 +468,7 @@ DECLARE
 BEGIN
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th rowspan="2">DB</th>'
             '<th rowspan="2">Schema</th>'

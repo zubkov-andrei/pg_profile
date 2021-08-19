@@ -11,7 +11,8 @@ CREATE TABLE servers (
     last_sample_id      integer DEFAULT 0 NOT NULL,
     size_smp_wnd_start  time with time zone,
     size_smp_wnd_dur    interval hour to second,
-    size_smp_interval   interval day to minute
+    size_smp_interval   interval day to minute,
+    sizes_limited       boolean DEFAULT true
 );
 COMMENT ON TABLE servers IS 'Monitored servers (Postgres clusters) list';
 
@@ -43,6 +44,11 @@ CREATE TABLE sample_settings (
     CONSTRAINT fk_sample_settings_servers FOREIGN KEY (server_id)
       REFERENCES servers(server_id) ON DELETE CASCADE
 );
+-- Unique index on system_identifier to ensure there is no versions
+-- as they are affecting export/import functionality
+CREATE UNIQUE INDEX uk_sample_settings_sysid ON
+  sample_settings (server_id,name) WHERE name='system_identifier';
+
 COMMENT ON TABLE sample_settings IS 'pg_settings values changes detected at time of sample';
 
 CREATE TABLE sample_timings (
@@ -109,6 +115,13 @@ CREATE TABLE sample_stat_database
     datsize             bigint,
     datsize_delta       bigint,
     datistemplate       boolean,
+    session_time        double precision,
+    active_time         double precision,
+    idle_in_transaction_time  double precision,
+    sessions            bigint,
+    sessions_abandoned  bigint,
+    sessions_fatal      bigint,
+    sessions_killed     bigint,
     CONSTRAINT fk_statdb_samples FOREIGN KEY (server_id, sample_id)
       REFERENCES samples (server_id, sample_id) ON DELETE CASCADE,
     CONSTRAINT pk_sample_stat_database PRIMARY KEY (server_id,sample_id,datid)
@@ -157,6 +170,7 @@ CREATE TABLE sample_statements (
     wal_records         bigint,
     wal_fpi             bigint,
     wal_bytes           numeric,
+    toplevel            boolean,
     CONSTRAINT pk_sample_statements_n PRIMARY KEY (server_id,sample_id,datid,userid,queryid),
     CONSTRAINT fk_stmt_list FOREIGN KEY (server_id,queryid_md5)
       REFERENCES stmt_list (server_id,queryid_md5) ON DELETE RESTRICT ON UPDATE CASCADE,
@@ -330,7 +344,6 @@ CREATE TABLE tables_list(
       REFERENCES tables_list (server_id, datid, relid) ON DELETE RESTRICT ON UPDATE RESTRICT,
     CONSTRAINT uk_toast_table UNIQUE (server_id, datid, reltoastrelid)
 );
-CREATE UNIQUE INDEX ix_tables_list_reltoast ON tables_list(server_id, datid, reltoastrelid);
 COMMENT ON TABLE tables_list IS 'Table names and schemas, captured in samples';
 
 CREATE TABLE sample_stat_tables (
@@ -647,6 +660,30 @@ CREATE TABLE last_stat_cluster AS SELECT * FROM sample_stat_cluster WHERE 0=1;
 ALTER TABLE last_stat_cluster ADD CONSTRAINT fk_last_stat_cluster_samples
   FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT;
 COMMENT ON TABLE last_stat_cluster IS 'Last sample data for calculating diffs in next sample';
+
+CREATE TABLE sample_stat_wal
+(
+    server_id           integer,
+    sample_id           integer,
+    wal_records         bigint,
+    wal_fpi             bigint,
+    wal_bytes           numeric,
+    wal_buffers_full    bigint,
+    wal_write           bigint,
+    wal_sync            bigint,
+    wal_write_time      double precision,
+    wal_sync_time       double precision,
+    stats_reset         timestamp with time zone,
+    CONSTRAINT fk_statwal_samples FOREIGN KEY (server_id, sample_id)
+      REFERENCES samples (server_id, sample_id) ON DELETE CASCADE,
+    CONSTRAINT pk_sample_stat_wal PRIMARY KEY (server_id, sample_id)
+);
+COMMENT ON TABLE sample_stat_cluster IS 'Sample WAL statistics table';
+
+CREATE TABLE last_stat_wal AS SELECT * FROM sample_stat_wal WHERE false;
+ALTER TABLE last_stat_wal ADD CONSTRAINT fk_last_stat_wal_samples
+  FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT;
+COMMENT ON TABLE last_stat_wal IS 'Last WAL sample data for calculating diffs in next sample';
 
 CREATE TABLE sample_stat_archiver
 (

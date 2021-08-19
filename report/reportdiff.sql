@@ -26,13 +26,13 @@ DECLARE
     '.int1 td:not(.hdr), td.int1 {background-color: #FFEEEE;} '
     '.int2 td:not(.hdr), td.int2 {background-color: #EEEEFF;} '
     'table.diff tr.int2 td {border-top: hidden;} '
-    'table tr:nth-child(even) {background-color: #eee;} '
-    'table tr:nth-child(odd) {background-color: #fff;} '
+    'table.stat tr:nth-child(even), table.setlist tr:nth-child(even) {background-color: #eee;} '
+    'table.stat tr:nth-child(odd), table.setlist tr:nth-child(odd) {background-color: #fff;} '
     'table tr:hover td:not(.hdr) {background-color:#d9ffcc} '
     'table th {color: black; background-color: #ffcc99;}'
     '.label {color: grey;}'
-    'table tr:target {border: solid; border-width: medium; border-color: limegreen;}'
-    'table tr:target td:first-of-type {font-weight: bold;}'
+    'table tr:target,td:target {border: solid; border-width: medium; border-color: limegreen;}'
+    'table tr:target td:first-of-type, table td:target {font-weight: bold;}'
     'table tr.parent td {background-color: #D8E8C2;} '
     'table tr.child td {background-color: #BBDD97; border-top-style: hidden;} ';
     description_tpl CONSTANT text := '<h2>Report description</h2><p>{description_text}</p>';
@@ -62,14 +62,6 @@ BEGIN
             format('%s - %s',start2_id, end2_id);
       END;
     END IF;
-    -- Creating temporary table for reported queries
-    CREATE TEMPORARY TABLE IF NOT EXISTS queries_list (
-      userid              oid,
-      datid               oid,
-      queryid             bigint,
-      queryid_md5       char(32),
-      CONSTRAINT pk_queries_list PRIMARY KEY (userid, datid, queryid))
-    ON COMMIT DELETE ROWS;
 
     -- CSS
     report := replace(report_tpl,'{css}',report_css);
@@ -112,14 +104,14 @@ BEGIN
       SELECT count(*) != end1_id - start1_id + 1 FROM samples
       WHERE server_id = sserver_id AND sample_id BETWEEN start1_id AND end1_id
     ) THEN
-      RAISE 'There is a gap in sample sequence between %',
+      RAISE 'Not enough samples between %',
         format('%s AND %s', start1_id, end1_id);
     END IF;
     IF (
       SELECT count(*) != end2_id - start2_id + 1 FROM samples
       WHERE server_id = sserver_id AND sample_id BETWEEN start2_id AND end2_id
     ) THEN
-      RAISE 'There is a gap in sample sequence between %',
+      RAISE 'Not enough samples between %',
         format('%s AND %s', start2_id, end2_id);
     END IF;
     -- Checking sample existance, header generation
@@ -128,7 +120,7 @@ BEGIN
         IF sample_rec IS NULL THEN
             RAISE 'Start sample % does not exists', start_id;
         END IF;
-        i1_title := sample_rec.sample_time::timestamp(0) without time zone::text|| ' - ';
+        i1_title := sample_rec.sample_time::text|| ' - ';
         tmp_text := '(1): [' || sample_rec.sample_id ||' - ';
     CLOSE c_sample;
 
@@ -137,7 +129,7 @@ BEGIN
         IF sample_rec IS NULL THEN
             RAISE 'End sample % does not exists', end_id;
         END IF;
-        i1_title := i1_title||sample_rec.sample_time::timestamp(0) without time zone::text;
+        i1_title := i1_title||sample_rec.sample_time::text;
         tmp_text := tmp_text || sample_rec.sample_id ||'] with ';
     CLOSE c_sample;
 
@@ -146,7 +138,7 @@ BEGIN
         IF sample_rec IS NULL THEN
             RAISE 'Start sample % does not exists', start_id;
         END IF;
-        i2_title := sample_rec.sample_time::timestamp(0) without time zone::text|| ' - ';
+        i2_title := sample_rec.sample_time::text|| ' - ';
         tmp_text := tmp_text|| '(2): [' || sample_rec.sample_id ||' - ';
     CLOSE c_sample;
 
@@ -155,7 +147,7 @@ BEGIN
         IF sample_rec IS NULL THEN
             RAISE 'End sample % does not exists', end_id;
         END IF;
-        i2_title := i2_title||sample_rec.sample_time::timestamp(0) without time zone::text;
+        i2_title := i2_title||sample_rec.sample_time::text;
         tmp_text := tmp_text || sample_rec.sample_id ||']';
     CLOSE c_sample;
     report := replace(report,'{samples}',tmp_text);
@@ -165,6 +157,61 @@ BEGIN
     report := replace(report,'{i1_title}',i1_title);
     report := replace(report,'{i2_title}',i2_title);
 
+    -- Report internal temporary tables
+    -- Creating temporary table for reported queries
+    CREATE TEMPORARY TABLE IF NOT EXISTS queries_list (
+      userid              oid,
+      datid               oid,
+      queryid             bigint,
+      CONSTRAINT pk_queries_list PRIMARY KEY (userid, datid, queryid))
+    ON COMMIT DELETE ROWS;
+    /*
+    * Caching temporary tables, containing object stats cache
+    * used several times in a report functions
+    */
+    CREATE TEMPORARY TABLE top_statements1 AS
+    SELECT * FROM top_statements(sserver_id, start1_id, end1_id);
+    CREATE TEMPORARY TABLE top_tables1 AS
+    SELECT * FROM top_tables(sserver_id, start1_id, end1_id);
+    CREATE TEMPORARY TABLE top_indexes1 AS
+    SELECT * FROM top_indexes(sserver_id, start1_id, end1_id);
+    CREATE TEMPORARY TABLE top_io_tables1 AS
+    SELECT * FROM top_io_tables(sserver_id, start1_id, end1_id);
+    CREATE TEMPORARY TABLE top_io_indexes1 AS
+    SELECT * FROM top_io_indexes(sserver_id, start1_id, end1_id);
+    CREATE TEMPORARY TABLE top_functions1 AS
+    SELECT * FROM top_functions(sserver_id, start1_id, end1_id, false);
+    CREATE TEMPORARY TABLE top_kcache_statements1 AS
+    SELECT * FROM top_kcache_statements(sserver_id, start1_id, end1_id);
+    CREATE TEMPORARY TABLE top_statements2 AS
+    SELECT * FROM top_statements(sserver_id, start2_id, end2_id);
+    CREATE TEMPORARY TABLE top_tables2 AS
+    SELECT * FROM top_tables(sserver_id, start2_id, end2_id);
+    CREATE TEMPORARY TABLE top_indexes2 AS
+    SELECT * FROM top_indexes(sserver_id, start2_id, end2_id);
+    CREATE TEMPORARY TABLE top_io_tables2 AS
+    SELECT * FROM top_io_tables(sserver_id, start2_id, end2_id);
+    CREATE TEMPORARY TABLE top_io_indexes2 AS
+    SELECT * FROM top_io_indexes(sserver_id, start2_id, end2_id);
+    CREATE TEMPORARY TABLE top_functions2 AS
+    SELECT * FROM top_functions(sserver_id, start2_id, end2_id, false);
+    CREATE TEMPORARY TABLE top_kcache_statements2 AS
+    SELECT * FROM top_kcache_statements(sserver_id, start2_id, end2_id);
+    ANALYZE top_statements1;
+    ANALYZE top_tables1;
+    ANALYZE top_indexes1;
+    ANALYZE top_io_tables1;
+    ANALYZE top_io_indexes1;
+    ANALYZE top_functions1;
+    ANALYZE top_kcache_statements1;
+    ANALYZE top_statements2;
+    ANALYZE top_tables2;
+    ANALYZE top_indexes2;
+    ANALYZE top_io_tables2;
+    ANALYZE top_io_indexes2;
+    ANALYZE top_functions2;
+    ANALYZE top_kcache_statements2;
+
     -- Populate report settings
     jreportset := jsonb_build_object(
     'htbl',jsonb_build_object(
@@ -172,7 +219,8 @@ BEGIN
       'interval1','class="int1"',
       'interval2','class="int2"',
       'label','class="label"',
-      'difftbl','class="diff"',
+      'stattbl','class="stat"',
+      'difftbl','class="stat diff"',
       'rowtdspanhdr','rowspan="2" class="hdr"',
       'rowtdspanhdr_mono','rowspan="2" class="hdr mono"',
       'mono','class="mono"',
@@ -184,8 +232,12 @@ BEGIN
         profile_checkavail_statstatements(sserver_id, start2_id, end2_id),
       'planning_times',profile_checkavail_planning_times(sserver_id, start1_id, end1_id) OR
         profile_checkavail_planning_times(sserver_id, start2_id, end2_id),
-      'statement_wal_bytes',profile_checkavail_wal_bytes(sserver_id, start1_id, end1_id) OR
-        profile_checkavail_wal_bytes(sserver_id, start2_id, end2_id),
+      'statement_wal_bytes',profile_checkavail_stmt_wal_bytes(sserver_id, start1_id, end1_id) OR
+        profile_checkavail_stmt_wal_bytes(sserver_id, start2_id, end2_id),
+      'wal_stats',profile_checkavail_walstats(sserver_id, start1_id, end1_id) OR
+        profile_checkavail_walstats(sserver_id, start2_id, end2_id),
+      'sess_stats',profile_checkavail_sessionstats(sserver_id, start1_id, end1_id) OR
+        profile_checkavail_sessionstats(sserver_id, start2_id, end2_id),
       'function_stats',profile_checkavail_functions(sserver_id, start1_id, end1_id) OR
         profile_checkavail_functions(sserver_id, start2_id, end2_id),
       'trigger_function_stats',profile_checkavail_trg_functions(sserver_id, start1_id, end1_id) OR
@@ -198,7 +250,20 @@ BEGIN
         profile_checkavail_rusage(sserver_id, start2_id, end2_id),
       'rusage.planstats',profile_checkavail_rusage_planstats(sserver_id, start1_id, end1_id) OR
         profile_checkavail_rusage_planstats(sserver_id, start2_id, end2_id)
-    ));
+      ),
+    'report_properties',jsonb_build_object(
+      'interval1_duration_sec',
+        (SELECT extract(epoch FROM e.sample_time - s.sample_time)
+        FROM samples s JOIN samples e USING (server_id)
+        WHERE e.sample_id=end1_id and s.sample_id=start1_id
+          AND server_id = sserver_id),
+      'interval2_duration_sec',
+        (SELECT extract(epoch FROM e.sample_time - s.sample_time)
+        FROM samples s JOIN samples e USING (server_id)
+        WHERE e.sample_id=end2_id and s.sample_id=start2_id
+          AND server_id = sserver_id)
+      )
+    );
 
     -- Reporting possible statements overflow
     tmp_report := check_stmt_cnt(sserver_id, start1_id, end1_id);
@@ -234,11 +299,17 @@ BEGIN
     tmp_text := tmp_text || '<li><a HREF=#cl_stat>Server statistics</a></li>';
     tmp_text := tmp_text || '<ul>';
     tmp_text := tmp_text || '<li><a HREF=#db_stat>Database statistics</a></li>';
+    IF jsonb_extract_path_text(jreportset, 'report_features', 'sess_stats')::boolean THEN
+      tmp_text := tmp_text || '<li><a HREF=#db_stat_sessions>Session statistics by database</a></li>';
+    END IF;
     IF jsonb_extract_path_text(jreportset, 'report_features', 'statstatements')::boolean THEN
       tmp_text := tmp_text || '<li><a HREF=#st_stat>Statement statistics by database</a></li>';
     END IF;
     tmp_text := tmp_text || '<li><a HREF=#clu_stat>Cluster statistics</a></li>';
-     tmp_text := tmp_text || '<li><a HREF=#tablespace_stat>Tablespace statistics</a></li>';
+    IF jsonb_extract_path_text(jreportset, 'report_features', 'wal_stats')::boolean THEN
+      tmp_text := tmp_text || '<li><a HREF=#wal_stat>WAL statistics</a></li>';
+    END IF;
+    tmp_text := tmp_text || '<li><a HREF=#tablespace_stat>Tablespace statistics</a></li>';
     tmp_text := tmp_text || '</ul>';
     IF jsonb_extract_path_text(jreportset, 'report_features', 'statstatements')::boolean THEN
       tmp_text := tmp_text || '<li><a HREF=#sql_stat>SQL Query statistics</a></li>';
@@ -318,18 +389,39 @@ BEGIN
     END IF;
     tmp_text := tmp_text || nodata_wrapper(dbstats_diff_htbl(jreportset, sserver_id, start1_id, end1_id, start2_id, end2_id, topn));
 
+    IF jsonb_extract_path_text(jreportset, 'report_features', 'sess_stats')::boolean THEN
+      tmp_text := tmp_text || '<H3><a NAME=db_stat_sessions>Session statistics by database</a></H3>';
+      tmp_text := tmp_text || nodata_wrapper(dbstats_sessions_diff_htbl(jreportset, sserver_id,
+        start1_id, end1_id, start2_id, end2_id, topn));
+    END IF;
+
     IF jsonb_extract_path_text(jreportset, 'report_features', 'statstatements')::boolean THEN
       tmp_text := tmp_text || '<H3><a NAME=st_stat>Statement statistics by database</a></H3>';
       tmp_text := tmp_text || nodata_wrapper(statements_stats_diff_htbl(jreportset, sserver_id, start1_id, end1_id, start2_id, end2_id, topn));
     END IF;
 
-    tmp_text := tmp_text || '<H3><a NAME=clu_stat>Cluster statistics</a></H3>';
+    tmp_text := tmp_text || '<div>';
+    tmp_text := tmp_text || '<div style="display:inline-block; margin-right:2em;">'
+      '<H3><a NAME=clu_stat>Cluster statistics</a></H3>';
     tmp_report := cluster_stats_reset_diff_htbl(jreportset, sserver_id, start1_id, end1_id, start2_id, end2_id);
     IF tmp_report != '' THEN
       tmp_text := tmp_text || '<p><b>Warning!</b> Cluster statistics reset detected during report period!</p>'||tmp_report||
         '<p>Cluster statistics might be affected</p>';
     END IF;
-    tmp_text := tmp_text || nodata_wrapper(cluster_stats_diff_htbl(jreportset, sserver_id, start1_id, end1_id, start2_id, end2_id));
+    tmp_text := tmp_text || nodata_wrapper(cluster_stats_diff_htbl(jreportset, sserver_id, start1_id, end1_id, start2_id, end2_id)) ||
+      '</div>';
+
+    IF jsonb_extract_path_text(jreportset, 'report_features', 'wal_stats')::boolean THEN
+      tmp_text := tmp_text || '<div style="display:inline-block"><H3><a NAME=wal_stat>WAL statistics</a></H3>';
+      tmp_report := wal_stats_reset_diff_htbl(jreportset, sserver_id, start1_id, end1_id, start2_id, end2_id);
+      IF tmp_report != '' THEN
+        tmp_text := tmp_text || '<p><b>Warning!</b> WAL statistics reset detected during report period!</p>'||tmp_report||
+          '<p>WAL statistics might be affected</p>';
+      END IF;
+      tmp_text := tmp_text || nodata_wrapper(wal_stats_diff_htbl(jreportset, sserver_id, start1_id, end1_id, start2_id, end2_id)) ||
+        '</div>';
+    END IF;
+    tmp_text := tmp_text || '</div>';
 
     tmp_text := tmp_text || '<H3><a NAME=tablespace_stat>Tablespace statistics</a></H3>';
     tmp_text := tmp_text || nodata_wrapper(tablespaces_stats_diff_htbl(jreportset, sserver_id, start1_id, end1_id, start2_id, end2_id));
@@ -389,7 +481,7 @@ BEGIN
       END IF;
       -- Listing queries
       tmp_text := tmp_text || '<H3><a NAME=sql_list>Complete list of SQL texts</a></H3>';
-      tmp_text := tmp_text || nodata_wrapper(report_queries(jreportset, sserver_id));
+      tmp_text := tmp_text || nodata_wrapper(report_queries(jreportset, sserver_id, start1_id, end1_id, start2_id, end2_id));
     END IF;
 
     -- Reporting Object stats
@@ -452,6 +544,26 @@ BEGIN
     -- Database settings report
     tmp_text := tmp_text || '<H2><a NAME=pg_settings>Cluster settings during the report intervals</a></H2>';
     tmp_text := tmp_text || nodata_wrapper(settings_and_changes_diff_htbl(jreportset, sserver_id, start1_id, end1_id, start2_id, end2_id));
+
+    /*
+    * Dropping cache temporary tables
+    * This is needed to avoid conflict with existing table if several
+    * reports are collected in one session
+    */
+    DROP TABLE top_statements1;
+    DROP TABLE top_tables1;
+    DROP TABLE top_indexes1;
+    DROP TABLE top_io_tables1;
+    DROP TABLE top_io_indexes1;
+    DROP TABLE top_functions1;
+    DROP TABLE top_kcache_statements1;
+    DROP TABLE top_statements2;
+    DROP TABLE top_tables2;
+    DROP TABLE top_indexes2;
+    DROP TABLE top_io_tables2;
+    DROP TABLE top_io_indexes2;
+    DROP TABLE top_functions2;
+    DROP TABLE top_kcache_statements2;
 
     report := replace(report,'{report}',tmp_text);
     RETURN report;

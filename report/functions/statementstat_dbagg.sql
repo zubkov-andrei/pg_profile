@@ -18,7 +18,7 @@ SET search_path=@extschema@ AS $$
   WHERE sn.server_id = sserver_id AND sn.sample_id BETWEEN start_id + 1 AND end_id
 $$ LANGUAGE sql;
 
-CREATE FUNCTION profile_checkavail_wal_bytes(IN sserver_id integer, IN start_id integer, IN end_id integer)
+CREATE FUNCTION profile_checkavail_stmt_wal_bytes(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS BOOLEAN
 SET search_path=@extschema@ AS $$
 -- Check if we have statement wal sizes collected for report interval
@@ -116,7 +116,7 @@ BEGIN
     -- Database stats TPLs
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th rowspan="2">Database</th>'
             '<th rowspan="2"title="Number of query executions">Calls</th>'

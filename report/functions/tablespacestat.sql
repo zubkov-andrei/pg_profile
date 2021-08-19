@@ -43,7 +43,7 @@ BEGIN
 
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th>Tablespace</th>'
             '<th>Path</th>'

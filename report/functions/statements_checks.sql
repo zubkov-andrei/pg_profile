@@ -3,7 +3,7 @@
 CREATE FUNCTION check_stmt_cnt(IN sserver_id integer, IN start_id integer = 0, IN end_id integer = 0) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     tab_tpl CONSTANT text :=
-      '<table>'
+      '<table {stattbl}>'
         '<tr>'
           '<th>Sample ID</th>'
           '<th>Sample Time</th>'

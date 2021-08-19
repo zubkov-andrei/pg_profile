@@ -7,7 +7,6 @@ RETURNS TABLE(
     dbname                   name,
     userid                   oid,
     queryid                  bigint,
-    queryid_md5              char(32),
     exec_user_time           double precision, --  User CPU time used
     user_time_pct            float, --  User CPU time used percentage
     exec_system_time         double precision, --  System CPU time used
@@ -51,7 +50,6 @@ RETURNS TABLE(
         sample_db.datname as dbname,
         kc.userid as userid,
         kc.queryid as queryid,
-        kc.queryid_md5 as queryid_md5,
         sum(kc.exec_user_time) as exec_user_time,
         ((COALESCE(sum(kc.exec_user_time), 0.0) + COALESCE(sum(kc.plan_user_time), 0.0))
           *100/NULLIF(min(tot.user_time),0.0))::float AS user_time_pct,
@@ -91,7 +89,7 @@ RETURNS TABLE(
         -- Total stats
         CROSS JOIN tot
     WHERE kc.server_id = sserver_id AND kc.sample_id BETWEEN start_id + 1 AND end_id
-    GROUP BY kc.server_id,kc.datid,sample_db.datname,kc.userid,kc.queryid,kc.queryid_md5
+    GROUP BY kc.server_id,kc.datid,sample_db.datname,kc.userid,kc.queryid
 $$ LANGUAGE sql;
 
 
@@ -107,7 +105,6 @@ DECLARE
         kc.datid as datid,
         kc.userid as userid,
         kc.queryid as queryid,
-        kc.queryid_md5 as queryid_md5,
         kc.dbname,
         NULLIF(kc.plan_user_time, 0.0) as plan_user_time,
         NULLIF(kc.exec_user_time, 0.0) as exec_user_time,
@@ -115,21 +112,21 @@ DECLARE
         NULLIF(kc.plan_system_time, 0.0) as plan_system_time,
         NULLIF(kc.exec_system_time, 0.0) as exec_system_time,
         NULLIF(kc.system_time_pct, 0.0) as system_time_pct
-    FROM top_kcache_statements(sserver_id, start_id, end_id) kc
+    FROM top_kcache_statements kc
     WHERE COALESCE(kc.plan_user_time, 0.0) + COALESCE(kc.plan_system_time, 0.0) +
       COALESCE(kc.exec_user_time, 0.0) + COALESCE(kc.exec_system_time, 0.0) > 0
     ORDER BY COALESCE(kc.plan_user_time, 0.0) + COALESCE(kc.plan_system_time, 0.0) +
       COALESCE(kc.exec_user_time, 0.0) + COALESCE(kc.exec_system_time, 0.0) DESC,
       kc.datid,
-      kc.queryid,
-      kc.queryid_md5
+      kc.userid,
+      kc.queryid
     LIMIT topn;
 
     r_result RECORD;
 BEGIN
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
         '<tr>'
           '<th rowspan="2">Query ID</th>'
           '<th rowspan="2">Database</th>'
@@ -148,7 +145,7 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<td {mono}><p><a HREF="#%2$s">%2$s</a></p>'
           '<p><small>[%3$s]</small></p></td>'
           '<td>%4$s</td>'
           '{user_plan_time_tpl}'
@@ -195,7 +192,7 @@ BEGIN
     FOR r_result IN c_elapsed_time LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid_md5,
+            NULL,
             left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
@@ -209,7 +206,7 @@ BEGIN
 
         report := report || tab_row;
         PERFORM collect_queries(
-            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+            r_result.userid,r_result.datid,r_result.queryid
         );
     END LOOP;
 
@@ -231,7 +228,6 @@ DECLARE
     --Cursor for top(cnt) queries ordered by elapsed time
     c_elapsed_time CURSOR FOR
     SELECT * FROM (SELECT
-        COALESCE(kc1.queryid_md5,kc2.queryid_md5) as queryid_md5,
         COALESCE(kc1.datid,kc2.datid) as datid,
         COALESCE(kc1.userid,kc2.userid) as userid,
         COALESCE(kc1.queryid,kc2.queryid) as queryid,
@@ -250,8 +246,8 @@ DECLARE
         NULLIF(kc2.system_time_pct, 0.0) as system_time_pct2,
         row_number() over (ORDER BY COALESCE(kc1.exec_user_time, 0.0) + COALESCE(kc1.exec_system_time, 0.0) DESC NULLS LAST) as time1,
         row_number() over (ORDER BY COALESCE(kc2.exec_user_time, 0.0) + COALESCE(kc2.exec_system_time, 0.0) DESC NULLS LAST) as time2
-    FROM top_kcache_statements(sserver_id, start1_id, end1_id) kc1
-        FULL OUTER JOIN top_kcache_statements(sserver_id, start2_id, end2_id) kc2 USING (server_id, datid, userid, queryid_md5)
+    FROM top_kcache_statements1 kc1
+        FULL OUTER JOIN top_kcache_statements2 kc2 USING (server_id, datid, userid, queryid)
     WHERE COALESCE(kc1.plan_user_time, 0.0) + COALESCE(kc2.plan_user_time, 0.0) +
         COALESCE(kc1.plan_system_time, 0.0) + COALESCE(kc2.plan_system_time, 0.0) +
         COALESCE(kc1.exec_user_time, 0.0) + COALESCE(kc2.exec_user_time, 0.0) +
@@ -261,8 +257,8 @@ DECLARE
         COALESCE(kc1.exec_user_time, 0.0) + COALESCE(kc2.exec_user_time, 0.0) +
         COALESCE(kc1.exec_system_time, 0.0) + COALESCE(kc2.exec_system_time, 0.0) DESC,
         COALESCE(kc1.datid,kc2.datid),
-        COALESCE(kc1.queryid,kc2.queryid),
-        COALESCE(kc1.queryid_md5,kc2.queryid_md5)
+        COALESCE(kc1.userid,kc2.userid),
+        COALESCE(kc1.queryid,kc2.queryid)
         ) t1
     WHERE least(
         time1,
@@ -274,7 +270,7 @@ BEGIN
     -- Elapsed time sorted list TPLs
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
         '<tr>'
           '<th rowspan="2">Query ID</th>'
           '<th rowspan="2">Database</th>'
@@ -294,7 +290,7 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%2$s">%2$s</a></p>'
           '<p><small>[%3$s]</small></p></td>'
           '<td {rowtdspanhdr}>%4$s</td>'
           '<td {label} {title1}>1</td>'
@@ -365,7 +361,7 @@ BEGIN
     FOR r_result IN c_elapsed_time LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid_md5,
+            NULL,
             left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
@@ -385,7 +381,7 @@ BEGIN
 
         report := report || tab_row;
         PERFORM collect_queries(
-            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+            r_result.userid,r_result.datid,r_result.queryid
         );
     END LOOP;
 
@@ -409,7 +405,6 @@ DECLARE
         kc.datid as datid,
         kc.userid as userid,
         kc.queryid as queryid,
-        kc.queryid_md5 as queryid_md5,
         kc.dbname,
         NULLIF(kc.plan_reads, 0) as plan_reads,
         NULLIF(kc.exec_reads, 0) as exec_reads,
@@ -417,21 +412,21 @@ DECLARE
         NULLIF(kc.plan_writes, 0)  as plan_writes,
         NULLIF(kc.exec_writes, 0)  as exec_writes,
         NULLIF(kc.writes_total_pct, 0.0) as writes_total_pct
-    FROM top_kcache_statements(sserver_id, start_id, end_id) kc
+    FROM top_kcache_statements kc
     WHERE COALESCE(kc.plan_reads, 0) + COALESCE(kc.plan_writes, 0) +
       COALESCE(kc.exec_reads, 0) + COALESCE(kc.exec_writes, 0) > 0
     ORDER BY COALESCE(kc.plan_reads, 0) + COALESCE(kc.plan_writes, 0) +
       COALESCE(kc.exec_reads, 0) + COALESCE(kc.exec_writes, 0) DESC,
       kc.datid,
-      kc.queryid,
-      kc.queryid_md5
+      kc.userid,
+      kc.queryid
     LIMIT topn;
 
     r_result RECORD;
 BEGIN
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th rowspan="2">Query ID</th>'
             '<th rowspan="2">Database</th>'
@@ -450,7 +445,7 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td {mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<td {mono}><p><a HREF="#%2$s">%2$s</a></p>'
           '<p><small>[%3$s]</small></p></td>'
           '<td>%4$s</td>'
           '{plan_reads_tpl}'
@@ -498,7 +493,7 @@ BEGIN
     FOR r_result IN c_elapsed_time LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid_md5,
+            NULL,
             left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
@@ -512,7 +507,7 @@ BEGIN
 
         report := report || tab_row;
         PERFORM collect_queries(
-            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+            r_result.userid,r_result.datid,r_result.queryid
         );
     END LOOP;
 
@@ -534,7 +529,6 @@ DECLARE
     --Cursor for top(cnt) queries ordered by elapsed time
     c_elapsed_time CURSOR FOR
     SELECT * FROM (SELECT
-        COALESCE(kc1.queryid_md5,kc2.queryid_md5) as queryid_md5,
         COALESCE(kc1.datid,kc2.datid) as datid,
         COALESCE(kc1.userid,kc2.userid) as userid,
         COALESCE(kc1.queryid,kc2.queryid) as queryid,
@@ -553,8 +547,8 @@ DECLARE
         NULLIF(kc2.writes_total_pct, 0.0) as writes_total_pct2,
         row_number() OVER (ORDER BY COALESCE(kc1.exec_reads, 0.0) + COALESCE(kc1.exec_writes, 0.0) DESC NULLS LAST) as io_count1,
         row_number() OVER (ORDER BY COALESCE(kc2.exec_reads, 0.0) + COALESCE(kc2.exec_writes, 0.0)  DESC NULLS LAST) as io_count2
-    FROM top_kcache_statements(sserver_id, start1_id, end1_id) kc1
-        FULL OUTER JOIN top_kcache_statements(sserver_id, start2_id, end2_id) kc2 USING (server_id, datid, userid, queryid_md5)
+    FROM top_kcache_statements1 kc1
+        FULL OUTER JOIN top_kcache_statements2 kc2 USING (server_id, datid, userid, queryid)
     WHERE COALESCE(kc1.plan_writes, 0.0) + COALESCE(kc2.plan_writes, 0.0) +
         COALESCE(kc1.plan_reads, 0.0) + COALESCE(kc2.plan_reads, 0.0) +
         COALESCE(kc1.exec_writes, 0.0) + COALESCE(kc2.exec_writes, 0.0) +
@@ -564,8 +558,8 @@ DECLARE
         COALESCE(kc1.exec_writes, 0.0) + COALESCE(kc2.exec_writes, 0.0) +
         COALESCE(kc1.exec_reads, 0.0) + COALESCE(kc2.exec_reads, 0.0) DESC,
         COALESCE(kc1.datid,kc2.datid),
-        COALESCE(kc1.queryid,kc2.queryid),
-        COALESCE(kc1.queryid_md5,kc2.queryid_md5)
+        COALESCE(kc1.userid,kc2.userid),
+        COALESCE(kc1.queryid,kc2.queryid)
         ) t1
     WHERE least(
         io_count1,
@@ -577,7 +571,7 @@ BEGIN
     -- Elapsed time sorted list TPLs
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th rowspan="2">Query ID</th>'
             '<th rowspan="2">Database</th>'
@@ -597,7 +591,7 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><p><a HREF="#%1$s">%2$s</a></p>'
+          '<td {rowtdspanhdr_mono}><p><a HREF="#%2$s">%2$s</a></p>'
           '<p><small>[%3$s]</small></p></td>'
           '<td {rowtdspanhdr}>%4$s</td>'
           '<td {label} {title1}>1</td>'
@@ -668,7 +662,7 @@ BEGIN
     FOR r_result IN c_elapsed_time LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            r_result.queryid_md5,
+            NULL,
             left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             to_hex(r_result.queryid),
             r_result.dbname,
@@ -688,7 +682,7 @@ BEGIN
 
         report := report || tab_row;
         PERFORM collect_queries(
-            r_result.userid,r_result.datid,r_result.queryid,r_result.queryid_md5
+            r_result.userid,r_result.datid,r_result.queryid
         );
     END LOOP;
 

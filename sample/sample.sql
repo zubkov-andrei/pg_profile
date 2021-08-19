@@ -1,4 +1,3 @@
-
 /* ========= Sample functions ========= */
 
 CREATE FUNCTION take_sample(IN sserver_id integer, IN skip_sizes boolean
@@ -12,6 +11,7 @@ DECLARE
     server_connstr    text;
     settings_refresh  boolean = true;
     collect_timings   boolean = false;
+    limited_sizes_allowed boolean = NULL;
 
     server_query      text;
     server_host       text = NULL;
@@ -100,6 +100,7 @@ BEGIN
         WHEN OTHERS THEN ret := 7;
     END;
     -- Applying skip sizes policy
+    limited_sizes_allowed := qres.sizes_limited;
     IF skip_sizes IS NULL THEN
       IF num_nulls(qres.size_smp_wnd_start, qres.size_smp_wnd_dur, qres.size_smp_interval) > 0 THEN
         skip_sizes = false;
@@ -171,7 +172,10 @@ BEGIN
     END LOOP;
 
     -- Collecting postgres parameters
-    -- We will refresh all parameters if version() was changed
+    /* We might refresh all parameters if version() was changed
+    * This is needed for deleting obsolete parameters, not appearing in new
+    * Postgres version.
+    */
     SELECT ss.setting != dblver.version INTO settings_refresh
     FROM v_sample_settings ss, dblink('server_connection','SELECT version() as version') AS dblver (version text)
     WHERE ss.server_id = sserver_id AND ss.sample_id = s_id AND ss.name='version' AND ss.setting_scope = 2;
@@ -216,14 +220,18 @@ BEGIN
       cur.sourceline,
       cur.pending_restart
     FROM
-      sample_settings lst JOIN
-      -- Getting last versions of settings
-        (SELECT server_id, name, max(first_seen) as first_seen
+      sample_settings lst JOIN (
+        -- Getting last versions of settings
+        SELECT server_id, name, max(first_seen) as first_seen
         FROM sample_settings
-        WHERE server_id = sserver_id AND NOT settings_refresh
+        WHERE server_id = sserver_id AND (
+          NOT settings_refresh
+          -- system identifier shouldn't have a duplicate in case of version change
+          -- this breaks export/import procedures, as those are related to this ID
+          OR name = 'system_identifier'
+        )
         GROUP BY server_id, name
-        -- HAVING first_seen >= (select max(first_seen) from sample_settings where server_id = sserver_id and name='cluster_version/edition')
-        ) lst_times
+      ) lst_times
       USING (server_id, name, first_seen)
       -- Getting current settings values
       RIGHT OUTER JOIN dblink('server_connection',server_query
@@ -296,39 +304,95 @@ BEGIN
       null,
       false
     FROM samples s LEFT OUTER JOIN  v_sample_settings prm ON
-      (s.server_id = prm.server_id AND s.sample_id = prm.sample_id AND prm.name = '{pg_profile}.topn' AND prm.setting_scope = 1 AND NOT settings_refresh)
+      (s.server_id = prm.server_id AND s.sample_id = prm.sample_id AND prm.name = '{pg_profile}.topn' AND prm.setting_scope = 1)
     WHERE s.server_id = sserver_id AND s.sample_id = s_id AND (prm.setting IS NULL OR prm.setting::integer != topn);
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
       server_properties := jsonb_set(server_properties,'{timings,get server environment,end}',to_jsonb(clock_timestamp()));
       server_properties := jsonb_set(server_properties,'{timings,collect database stats}',jsonb_build_object('start',clock_timestamp()));
     END IF;
+
     -- Construct pg_stat_database query
-    server_query := 'SELECT '
-        'dbs.datid, '
-        'dbs.datname, '
-        'dbs.xact_commit, '
-        'dbs.xact_rollback, '
-        'dbs.blks_read, '
-        'dbs.blks_hit, '
-        'dbs.tup_returned, '
-        'dbs.tup_fetched, '
-        'dbs.tup_inserted, '
-        'dbs.tup_updated, '
-        'dbs.tup_deleted, '
-        'dbs.conflicts, '
-        'dbs.temp_files, '
-        'dbs.temp_bytes, '
-        'dbs.deadlocks, '
-        'dbs.blk_read_time, '
-        'dbs.blk_write_time, '
-        'dbs.stats_reset, '
-        'pg_database_size(dbs.datid) as datsize, '
-        '0 as datsize_delta, '
-        'db.datistemplate '
-      'FROM pg_catalog.pg_stat_database dbs '
-       'JOIN pg_catalog.pg_database db ON (dbs.datid = db.oid) '
-      'WHERE dbs.datname IS NOT NULL';
+    CASE
+      WHEN (
+        SELECT count(*) = 1 FROM jsonb_to_recordset(server_properties #> '{settings}')
+          AS x(name text, reset_val text)
+        WHERE name = 'server_version_num'
+          AND reset_val::integer < 140000
+      )
+      THEN
+        server_query := 'SELECT '
+            'dbs.datid, '
+            'dbs.datname, '
+            'dbs.xact_commit, '
+            'dbs.xact_rollback, '
+            'dbs.blks_read, '
+            'dbs.blks_hit, '
+            'dbs.tup_returned, '
+            'dbs.tup_fetched, '
+            'dbs.tup_inserted, '
+            'dbs.tup_updated, '
+            'dbs.tup_deleted, '
+            'dbs.conflicts, '
+            'dbs.temp_files, '
+            'dbs.temp_bytes, '
+            'dbs.deadlocks, '
+            'dbs.blk_read_time, '
+            'dbs.blk_write_time, '
+            'NULL as session_time, '
+            'NULL as active_time, '
+            'NULL as idle_in_transaction_time, '
+            'NULL as sessions, '
+            'NULL as sessions_abandoned, '
+            'NULL as sessions_fatal, '
+            'NULL as sessions_killed, '
+            'dbs.stats_reset, '
+            'pg_database_size(dbs.datid) as datsize, '
+            '0 as datsize_delta, '
+            'db.datistemplate '
+          'FROM pg_catalog.pg_stat_database dbs '
+          'JOIN pg_catalog.pg_database db ON (dbs.datid = db.oid) '
+          'WHERE dbs.datname IS NOT NULL';
+      WHEN (
+        SELECT count(*) = 1 FROM jsonb_to_recordset(server_properties #> '{settings}')
+          AS x(name text, reset_val text)
+        WHERE name = 'server_version_num'
+          AND reset_val::integer >= 140000
+      )
+      THEN
+        server_query := 'SELECT '
+            'dbs.datid, '
+            'dbs.datname, '
+            'dbs.xact_commit, '
+            'dbs.xact_rollback, '
+            'dbs.blks_read, '
+            'dbs.blks_hit, '
+            'dbs.tup_returned, '
+            'dbs.tup_fetched, '
+            'dbs.tup_inserted, '
+            'dbs.tup_updated, '
+            'dbs.tup_deleted, '
+            'dbs.conflicts, '
+            'dbs.temp_files, '
+            'dbs.temp_bytes, '
+            'dbs.deadlocks, '
+            'dbs.blk_read_time, '
+            'dbs.blk_write_time, '
+            'dbs.session_time, '
+            'dbs.active_time, '
+            'dbs.idle_in_transaction_time, '
+            'dbs.sessions, '
+            'dbs.sessions_abandoned, '
+            'dbs.sessions_fatal, '
+            'dbs.sessions_killed, '
+            'dbs.stats_reset, '
+            'pg_database_size(dbs.datid) as datsize, '
+            '0 as datsize_delta, '
+            'db.datistemplate '
+          'FROM pg_catalog.pg_stat_database dbs '
+          'JOIN pg_catalog.pg_database db ON (dbs.datid = db.oid) '
+          'WHERE dbs.datname IS NOT NULL';
+    END CASE;
 
     -- pg_stat_database data
     INSERT INTO last_stat_database (
@@ -351,6 +415,13 @@ BEGIN
         deadlocks,
         blk_read_time,
         blk_write_time,
+        session_time,
+        active_time,
+        idle_in_transaction_time,
+        sessions,
+        sessions_abandoned,
+        sessions_fatal,
+        sessions_killed,
         stats_reset,
         datsize,
         datsize_delta,
@@ -375,6 +446,13 @@ BEGIN
         deadlocks AS deadlocks,
         blk_read_time AS blk_read_time,
         blk_write_time AS blk_write_time,
+        session_time AS session_time,
+        active_time AS active_time,
+        idle_in_transaction_time AS idle_in_transaction_time,
+        sessions AS sessions,
+        sessions_abandoned AS sessions_abandoned,
+        sessions_fatal AS sessions_fatal,
+        sessions_killed AS sessions_killed,
         stats_reset,
         datsize AS datsize,
         datsize_delta AS datsize_delta,
@@ -397,6 +475,13 @@ BEGIN
         deadlocks bigint,
         blk_read_time double precision,
         blk_write_time double precision,
+        session_time double precision,
+        active_time double precision,
+        idle_in_transaction_time double precision,
+        sessions bigint,
+        sessions_abandoned bigint,
+        sessions_fatal bigint,
+        sessions_killed bigint,
         stats_reset timestamp with time zone,
         datsize bigint,
         datsize_delta bigint,
@@ -428,6 +513,13 @@ BEGIN
       deadlocks,
       blk_read_time,
       blk_write_time,
+      session_time,
+      active_time,
+      idle_in_transaction_time,
+      sessions,
+      sessions_abandoned,
+      sessions_fatal,
+      sessions_killed,
       stats_reset,
       datsize,
       datsize_delta,
@@ -453,14 +545,39 @@ BEGIN
         cur.deadlocks - COALESCE(lst.deadlocks,0),
         cur.blk_read_time - COALESCE(lst.blk_read_time,0),
         cur.blk_write_time - COALESCE(lst.blk_write_time,0),
+        cur.session_time - COALESCE(lst.session_time,0),
+        cur.active_time - COALESCE(lst.active_time,0),
+        cur.idle_in_transaction_time - COALESCE(lst.idle_in_transaction_time,0),
+        cur.sessions - COALESCE(lst.sessions,0),
+        cur.sessions_abandoned - COALESCE(lst.sessions_abandoned,0),
+        cur.sessions_fatal - COALESCE(lst.sessions_fatal,0),
+        cur.sessions_killed - COALESCE(lst.sessions_killed,0),
         cur.stats_reset,
         cur.datsize as datsize,
         cur.datsize - COALESCE(lst.datsize,0) as datsize_delta,
         cur.datistemplate
     FROM last_stat_database cur
       LEFT OUTER JOIN last_stat_database lst ON
-        (lst.server_id = cur.server_id AND lst.sample_id = cur.sample_id - 1 AND lst.datid = cur.datid AND lst.datname = cur.datname AND lst.stats_reset = cur.stats_reset)
+        (lst.server_id, lst.sample_id, lst.datid, lst.datname, lst.stats_reset) =
+        (cur.server_id, cur.sample_id - 1, cur.datid, cur.datname, cur.stats_reset)
     WHERE cur.sample_id = s_id AND cur.server_id = sserver_id;
+
+    /*
+    * In case of statistics reset full database size is incorrectly
+    * considered as increment by previous query. So, we need to update it
+    * with correct value
+    */
+    UPDATE sample_stat_database sdb
+    SET datsize_delta = cur.datsize - lst.datsize
+    FROM
+      last_stat_database cur
+      JOIN last_stat_database lst ON
+        (lst.server_id, lst.sample_id, lst.datid, lst.datname) =
+        (cur.server_id, cur.sample_id - 1, cur.datid, cur.datname)
+    WHERE cur.stats_reset != lst.stats_reset AND
+      cur.sample_id = s_id AND cur.server_id = sserver_id AND
+      (sdb.server_id, sdb.sample_id, sdb.datid, sdb.datname) =
+      (cur.server_id, cur.sample_id, cur.datid, cur.datname);
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
       server_properties := jsonb_set(server_properties,'{timings,calculate database stats,end}',to_jsonb(clock_timestamp()));
@@ -502,6 +619,8 @@ BEGIN
         size                    bigint,
         size_delta              bigint
     );
+
+    ANALYZE last_stat_tablespaces;
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
       server_properties := jsonb_set(server_properties,'{timings,collect tablespace stats,end}',to_jsonb(clock_timestamp()));
@@ -624,6 +743,73 @@ BEGIN
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
       server_properties := jsonb_set(server_properties,'{timings,query pg_stat_bgwriter,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,query pg_stat_wal}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
+    -- pg_stat_wal data
+    CASE
+      WHEN (
+        SELECT count(*) = 1 FROM jsonb_to_recordset(server_properties #> '{settings}')
+          AS x(name text, reset_val text)
+        WHERE name = 'server_version_num'
+          AND reset_val::integer >= 140000
+      )
+      THEN
+        server_query := 'SELECT '
+          'wal_records,'
+          'wal_fpi,'
+          'wal_bytes,'
+          'wal_buffers_full,'
+          'wal_write,'
+          'wal_sync,'
+          'wal_write_time,'
+          'wal_sync_time,'
+          'stats_reset '
+          'FROM pg_catalog.pg_stat_wal';
+      ELSE
+        server_query := NULL;
+    END CASE;
+
+    IF server_query IS NOT NULL THEN
+      INSERT INTO last_stat_wal (
+        server_id,
+        sample_id,
+        wal_records,
+        wal_fpi,
+        wal_bytes,
+        wal_buffers_full,
+        wal_write,
+        wal_sync,
+        wal_write_time,
+        wal_sync_time,
+        stats_reset
+      )
+      SELECT
+        sserver_id,
+        s_id,
+        wal_records,
+        wal_fpi,
+        wal_bytes,
+        wal_buffers_full,
+        wal_write,
+        wal_sync,
+        wal_write_time,
+        wal_sync_time,
+        stats_reset
+      FROM dblink('server_connection',server_query) AS rs (
+        wal_records         bigint,
+        wal_fpi             bigint,
+        wal_bytes           numeric,
+        wal_buffers_full    bigint,
+        wal_write           bigint,
+        wal_sync            bigint,
+        wal_write_time      double precision,
+        wal_sync_time       double precision,
+        stats_reset         timestamp with time zone);
+    END IF;
+
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,query pg_stat_wal,end}',to_jsonb(clock_timestamp()));
       server_properties := jsonb_set(server_properties,'{timings,query pg_stat_archiver}',jsonb_build_object('start',clock_timestamp()));
     END IF;
 
@@ -685,7 +871,7 @@ BEGIN
     END IF;
 
     -- Collecting stat info for objects of all databases
-    server_properties := collect_obj_stats(server_properties, sserver_id, s_id, server_connstr, skip_sizes);
+    server_properties := collect_obj_stats(server_properties, sserver_id, s_id, server_connstr, skip_sizes, limited_sizes_allowed);
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
       server_properties := jsonb_set(server_properties,'{timings,collect object stats,end}',to_jsonb(clock_timestamp()));
@@ -698,12 +884,6 @@ BEGIN
       server_properties := jsonb_set(server_properties,'{timings,disconnect,end}',to_jsonb(clock_timestamp()));
       server_properties := jsonb_set(server_properties,'{timings,maintain repository}',jsonb_build_object('start',clock_timestamp()));
     END IF;
-
-    -- analyze last_* tables will help with more accurate plans
-    ANALYZE last_stat_indexes;
-    ANALYZE last_stat_tables;
-    ANALYZE last_stat_tablespaces;
-    ANALYZE last_stat_user_functions;
 
     -- Updating dictionary table in case of object renaming:
     -- Databases
@@ -853,6 +1033,44 @@ BEGIN
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
       server_properties := jsonb_set(server_properties,'{timings,calculate cluster stats,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,calculate WAL stats}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
+    -- Calc WAL stat diff
+    INSERT INTO sample_stat_wal(
+      server_id,
+      sample_id,
+      wal_records,
+      wal_fpi,
+      wal_bytes,
+      wal_buffers_full,
+      wal_write,
+      wal_sync,
+      wal_write_time,
+      wal_sync_time,
+      stats_reset
+    )
+    SELECT
+        cur.server_id,
+        cur.sample_id,
+        cur.wal_records - COALESCE(lst.wal_records,0),
+        cur.wal_fpi - COALESCE(lst.wal_fpi,0),
+        cur.wal_bytes - COALESCE(lst.wal_bytes,0),
+        cur.wal_buffers_full - COALESCE(lst.wal_buffers_full,0),
+        cur.wal_write - COALESCE(lst.wal_write,0),
+        cur.wal_sync - COALESCE(lst.wal_sync,0),
+        cur.wal_write_time - COALESCE(lst.wal_write_time,0),
+        cur.wal_sync_time - COALESCE(lst.wal_sync_time,0),
+        cur.stats_reset
+    FROM last_stat_wal cur
+    LEFT OUTER JOIN last_stat_wal lst ON
+      (cur.stats_reset = lst.stats_reset AND cur.server_id = lst.server_id AND lst.sample_id = cur.sample_id - 1)
+    WHERE cur.sample_id = s_id AND cur.server_id = sserver_id;
+
+    DELETE FROM last_stat_wal WHERE server_id = sserver_id AND sample_id != s_id;
+
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,calculate WAL stats,end}',to_jsonb(clock_timestamp()));
       server_properties := jsonb_set(server_properties,'{timings,calculate archiver stats}',jsonb_build_object('start',clock_timestamp()));
     END IF;
 
@@ -1056,7 +1274,7 @@ $$ LANGUAGE sql;
 COMMENT ON FUNCTION take_sample() IS 'Statistics sample creation function (for all enabled servers). Must be explicitly called periodically.';
 
 CREATE FUNCTION collect_obj_stats(IN properties jsonb, IN sserver_id integer, IN s_id integer, IN connstr text,
-  IN skip_sizes boolean
+  IN skip_sizes boolean, IN limited_sizes_allowed boolean
 ) RETURNS jsonb SET search_path=@extschema@ AS $$
 DECLARE
     --Cursor for db stats
@@ -1352,6 +1570,63 @@ BEGIN
           relkind               char
       );
 
+      ANALYZE last_stat_tables;
+
+      IF skip_sizes AND limited_sizes_allowed THEN
+      /* Limited tables sizes collection
+        * We will collect table sizes even if size collection is disabled
+        * for vacuumed or seq-scanned tables. This data is needed for
+        * index vacuum I/O estimation and for seq-scanned load and I'am
+        * not expecting much overhead here.
+        */
+        IF (result #>> '{collect_timings}')::boolean THEN
+          result := jsonb_set(result,ARRAY['timings',format('db:%s collect limited table sizes'
+          ,qres.datname)],jsonb_build_object('start',clock_timestamp()));
+        END IF;
+        t_query := NULL;
+
+        SELECT
+          'SELECT rel.oid AS relid, pg_relation_size(rel.oid) AS relsize '
+          'FROM pg_catalog.pg_class rel '
+          'WHERE rel.oid IN ('||
+            string_agg(cur.relid::text,',')||
+          ')' INTO t_query
+        FROM
+          last_stat_tables lst JOIN sample_stat_database dbcur USING (server_id, sample_id, datid)
+          LEFT OUTER JOIN sample_stat_database dblst ON
+            (dbcur.server_id, dbcur.datid, dbcur.sample_id - 1, dbcur.stats_reset) =
+            (dblst.server_id, dblst.datid, dblst.sample_id, dblst.stats_reset)
+          LEFT OUTER JOIN last_stat_tables cur ON (lst.server_id, lst.sample_id, lst.datid, lst.relid) =
+            (cur.server_id, cur.sample_id - 1, cur.datid, cur.relid)
+        WHERE
+          (cur.server_id, cur.sample_id, cur.datid) =
+          (sserver_id, s_id, qres.datid)
+          AND (
+            ((dblst.server_id IS NULL OR lst.server_id IS NULL)
+              AND (cur.vacuum_count + cur.autovacuum_count + cur.seq_scan > 0))
+            OR
+            (dblst.server_id IS NOT NULL AND
+            (cur.vacuum_count, cur.autovacuum_count, cur.seq_scan) !=
+            (lst.vacuum_count, lst.autovacuum_count, lst.seq_scan))
+          );
+
+        IF t_query IS NOT NULL THEN
+          UPDATE last_stat_tables lst
+          SET
+            relsize = dbl.relsize
+          FROM dblink('server_db_connection', t_query) AS
+            dbl(relid oid, relsize bigint)
+          WHERE (lst.server_id, lst.sample_id, lst.datid, lst.relid) =
+            (sserver_id, s_id, qres.datid, dbl.relid);
+        END IF;
+
+        IF (result #>> '{collect_timings}')::boolean THEN
+          result := jsonb_set(result,ARRAY['timings',format('db:%s collect limited table sizes'
+          ,qres.datname),'end'],to_jsonb(clock_timestamp()));
+        END IF;
+      END IF;
+
+
       IF (result #>> '{collect_timings}')::boolean THEN
         result := jsonb_set(result,ARRAY['timings',format('db:%s collect tables stats',qres.datname),'end'],to_jsonb(clock_timestamp()));
         result := jsonb_set(result,ARRAY['timings',format('db:%s collect indexes stats',qres.datname)],jsonb_build_object('start',clock_timestamp()));
@@ -1443,6 +1718,60 @@ BEGIN
          indisunique    bool
       );
 
+      ANALYZE last_stat_indexes;
+
+      IF skip_sizes AND limited_sizes_allowed THEN
+      /* Limited indexes sizes collection
+        * We will collect index sizes even if size collection is disabled
+        * for vacuumed indexes. This data is needed for index vacuum I/O
+        * estimation and I'am not expecting much overhead here.
+        */
+        IF (result #>> '{collect_timings}')::boolean THEN
+          result := jsonb_set(result,ARRAY['timings',format('db:%s collect limited index sizes'
+          ,qres.datname)],jsonb_build_object('start',clock_timestamp()));
+        END IF;
+        t_query := NULL;
+
+        SELECT
+          'SELECT ix.indexrelid AS indexrelid, pg_relation_size(ix.indexrelid) AS relsize '
+          'FROM pg_catalog.pg_index ix '
+          'WHERE ix.indrelid IN ('||
+            string_agg(cur.relid::text,',')||
+          ')' INTO t_query
+        FROM
+          last_stat_tables lst JOIN sample_stat_database dbcur USING (server_id, sample_id, datid)
+          LEFT OUTER JOIN sample_stat_database dblst ON
+            (dbcur.server_id, dbcur.datid, dbcur.sample_id - 1, dbcur.stats_reset) =
+            (dblst.server_id, dblst.datid, dblst.sample_id, dblst.stats_reset)
+          LEFT OUTER JOIN last_stat_tables cur ON (lst.server_id, lst.sample_id, lst.datid, lst.relid) =
+            (cur.server_id, cur.sample_id - 1, cur.datid, cur.relid)
+        WHERE
+          (cur.server_id, cur.sample_id, cur.datid) =
+          (sserver_id, s_id, qres.datid)
+          AND (
+            ((dblst.server_id IS NULL OR lst.server_id IS NULL)
+              AND (cur.vacuum_count + cur.autovacuum_count > 0))
+            OR
+            (dblst.server_id IS NOT NULL AND
+            (cur.vacuum_count, cur.autovacuum_count) !=
+            (lst.vacuum_count, lst.autovacuum_count))
+          );
+
+        IF t_query IS NOT NULL THEN
+          UPDATE last_stat_indexes lsi
+          SET relsize = dbl.relsize
+          FROM dblink('server_db_connection', t_query) AS
+            dbl(indexrelid oid, relsize bigint)
+          WHERE (lsi.server_id, lsi.sample_id, lsi.datid, lsi.indexrelid) =
+            (sserver_id, s_id, qres.datid, dbl.indexrelid);
+        END IF;
+
+        IF (result #>> '{collect_timings}')::boolean THEN
+          result := jsonb_set(result,ARRAY['timings',format('db:%s collect limited index sizes'
+          ,qres.datname),'end'],to_jsonb(clock_timestamp()));
+        END IF;
+      END IF;
+
       IF (result #>> '{collect_timings}')::boolean THEN
         result := jsonb_set(result,ARRAY['timings',format('db:%s collect indexes stats',qres.datname),'end'],to_jsonb(clock_timestamp()));
         result := jsonb_set(result,ARRAY['timings',format('db:%s collect functions stats',qres.datname)],jsonb_build_object('start',clock_timestamp()));
@@ -1496,6 +1825,8 @@ BEGIN
          self_time    double precision,
          trg_fn       boolean
       );
+
+      ANALYZE last_stat_user_functions;
 
       PERFORM dblink_disconnect('server_db_connection');
       IF (result #>> '{collect_timings}')::boolean THEN
@@ -1974,7 +2305,10 @@ BEGIN
       sum(cur.toast_blks_hit - COALESCE(lst.toast_blks_hit,0)),
       sum(cur.tidx_blks_read - COALESCE(lst.tidx_blks_read,0)),
       sum(cur.tidx_blks_hit - COALESCE(lst.tidx_blks_hit,0)),
-      sum(cur.relsize - COALESCE(lst.relsize,0))
+      CASE
+        WHEN skip_sizes THEN NULL
+        ELSE sum(cur.relsize - COALESCE(lst.relsize,0))
+      END
     FROM last_stat_tables cur JOIN sample_stat_database dbcur USING (server_id, sample_id, datid)
       LEFT OUTER JOIN sample_stat_database dblst ON
         (dbcur.server_id = dblst.server_id AND dbcur.datid = dblst.datid AND dblst.sample_id = dbcur.sample_id - 1 AND dbcur.stats_reset = dblst.stats_reset)
@@ -2351,7 +2685,10 @@ BEGIN
       sum(cur.idx_tup_fetch - COALESCE(lst.idx_tup_fetch,0)),
       sum(cur.idx_blks_read - COALESCE(lst.idx_blks_read,0)),
       sum(cur.idx_blks_hit - COALESCE(lst.idx_blks_hit,0)),
-      sum(cur.relsize - COALESCE(lst.relsize,0))
+      CASE
+        WHEN skip_sizes THEN NULL
+        ELSE sum(cur.relsize - COALESCE(lst.relsize,0))
+      END
     FROM last_stat_indexes cur JOIN sample_stat_database dbcur USING (server_id, sample_id, datid)
       LEFT OUTER JOIN sample_stat_database dblst ON
         (dbcur.server_id = dblst.server_id AND dbcur.datid = dblst.datid AND dblst.sample_id = dbcur.sample_id - 1 AND dbcur.stats_reset = dblst.stats_reset)

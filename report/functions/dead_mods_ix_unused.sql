@@ -29,7 +29,7 @@ DECLARE
 BEGIN
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th>DB</th>'
             '<th>Schema</th>'
@@ -112,7 +112,7 @@ DECLARE
 BEGIN
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th>DB</th>'
             '<th>Schema</th>'

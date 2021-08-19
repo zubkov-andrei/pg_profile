@@ -43,6 +43,54 @@ SET search_path=@extschema@ AS $$
     GROUP BY st.server_id, st.datid, st.datname
 $$ LANGUAGE sql;
 
+CREATE FUNCTION profile_checkavail_sessionstats(IN sserver_id integer, IN start_id integer, IN end_id integer)
+RETURNS BOOLEAN
+SET search_path=@extschema@ AS $$
+-- Check if there is table sizes collected in both bounds
+  SELECT
+    count(session_time) +
+    count(active_time) +
+    count(idle_in_transaction_time) +
+    count(sessions) +
+    count(sessions_abandoned) +
+    count(sessions_fatal) +
+    count(sessions_killed) > 0
+  FROM sample_stat_database
+  WHERE
+    server_id = sserver_id
+    AND sample_id BETWEEN start_id + 1 AND end_id
+$$ LANGUAGE sql;
+
+CREATE FUNCTION dbstats_sessions(IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
+RETURNS TABLE(
+    server_id         integer,
+    datid             oid,
+    dbname            name,
+    session_time      double precision,
+    active_time       double precision,
+    idle_in_transaction_time  double precision,
+    sessions            bigint,
+    sessions_abandoned  bigint,
+    sessions_fatal    bigint,
+    sessions_killed   bigint
+)
+SET search_path=@extschema@ AS $$
+    SELECT
+        st.server_id AS server_id,
+        st.datid AS datid,
+        st.datname AS dbname,
+        sum(session_time)::double precision AS xact_commit,
+        sum(active_time)::double precision AS xact_rollback,
+        sum(idle_in_transaction_time)::double precision AS blks_read,
+        sum(sessions)::bigint AS blks_hit,
+        sum(sessions_abandoned)::bigint AS tup_returned,
+        sum(sessions_fatal)::bigint AS tup_fetched,
+        sum(sessions_killed)::bigint AS tup_inserted
+    FROM sample_stat_database st
+    WHERE st.server_id = sserver_id AND NOT datistemplate AND st.sample_id BETWEEN start_id + 1 AND end_id
+    GROUP BY st.server_id, st.datid, st.datname
+$$ LANGUAGE sql;
+
 CREATE FUNCTION dbstats_reset(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS TABLE(
   datname       name,
@@ -81,7 +129,7 @@ BEGIN
     -- Database stats TPLs
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th>Database</th>'
             '<th>Sample</th>'
@@ -142,7 +190,7 @@ BEGIN
     -- Database stats TPLs
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th>I</th>'
             '<th>Database</th>'
@@ -231,7 +279,7 @@ BEGIN
     -- Database stats TPLs
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th rowspan="2">Database</th>'
             '<th colspan="3">Transactions</th>'
@@ -310,7 +358,6 @@ BEGIN
     RETURN  report;
 END;
 $$ LANGUAGE plpgsql;
-
 
 CREATE FUNCTION dbstats_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
    IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
@@ -472,6 +519,201 @@ BEGIN
             r_result.temp_files2,
             r_result.datsize2,
             r_result.datsize_delta2
+        );
+    END LOOP;
+
+    IF report != '' THEN
+        report := replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
+    END IF;
+
+    RETURN  report;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE FUNCTION dbstats_sessions_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+DECLARE
+    report text := '';
+    jtab_tpl    jsonb;
+
+    --Cursor for db stats
+    c_dbstats CURSOR FOR
+    SELECT
+        COALESCE(st.dbname,'Total') as dbname,
+        NULLIF(sum(st.session_time), 0) as session_time,
+        NULLIF(sum(st.active_time), 0) as active_time,
+        NULLIF(sum(st.idle_in_transaction_time), 0) as idle_in_transaction_time,
+        NULLIF(sum(st.sessions), 0) as sessions,
+        NULLIF(sum(st.sessions_abandoned), 0) as sessions_abandoned,
+        NULLIF(sum(st.sessions_fatal), 0) as sessions_fatal,
+        NULLIF(sum(st.sessions_killed), 0) as sessions_killed
+    FROM dbstats_sessions(sserver_id,start_id,end_id,topn) st
+      LEFT OUTER JOIN sample_stat_database st_last ON
+        (st_last.server_id = st.server_id AND st_last.datid = st.datid AND st_last.sample_id = end_id)
+    GROUP BY ROLLUP(st.dbname)
+    ORDER BY st.dbname NULLS LAST;
+
+    r_result RECORD;
+BEGIN
+    -- Database stats TPLs
+    jtab_tpl := jsonb_build_object(
+      'tab_hdr',
+        '<table {stattbl}>'
+          '<tr>'
+            '<th rowspan="2">Database</th>'
+            '<th colspan="3" title="Session timings for databases">Timings (s)</th>'
+            '<th colspan="4" title="Session counts for databases">Sessions</th>'
+          '</tr>'
+          '<tr>'
+            '<th title="Time spent by database sessions in this database (note that statistics are only updated when the state of a session changes, so if sessions have been idle for a long time, this idle time won''t be included)">Total</th>'
+            '<th title="Time spent executing SQL statements in this database (this corresponds to the states active and fastpath function call in pg_stat_activity)">Active</th>'
+            '<th title="Time spent idling while in a transaction in this database (this corresponds to the states idle in transaction and idle in transaction (aborted) in pg_stat_activity)">Idle(T)</th>'
+            '<th title="Total number of sessions established to this database">Established</th>'
+            '<th title="Number of database sessions to this database that were terminated because connection to the client was lost">Abondoned</th>'
+            '<th title="Number of database sessions to this database that were terminated by fatal errors">Fatal</th>'
+            '<th title="Number of database sessions to this database that were terminated by operator intervention">Killed</th>'
+          '</tr>'
+          '{rows}'
+        '</table>',
+      'db_tpl',
+        '<tr>'
+          '<td>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+        '</tr>');
+          -- apply settings to templates
+    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+
+    -- Reporting summary databases stats
+    FOR r_result IN c_dbstats LOOP
+        report := report||format(
+            jtab_tpl #>> ARRAY['db_tpl'],
+            r_result.dbname,
+            round(CAST(r_result.session_time / 1000 AS numeric),2),
+            round(CAST(r_result.active_time / 1000 AS numeric),2),
+            round(CAST(r_result.idle_in_transaction_time / 1000 AS numeric),2),
+            r_result.sessions,
+            r_result.sessions_abandoned,
+            r_result.sessions_fatal,
+            r_result.sessions_killed
+        );
+    END LOOP;
+
+    IF report != '' THEN
+        report := replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
+    END IF;
+
+    RETURN  report;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE FUNCTION dbstats_sessions_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
+   IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+DECLARE
+    report text := '';
+    jtab_tpl    jsonb;
+
+    --Cursor for db stats
+    c_dbstats CURSOR FOR
+    SELECT
+        COALESCE(COALESCE(dbs1.dbname,dbs2.dbname),'Total') AS dbname,
+        NULLIF(sum(dbs1.session_time), 0) as session_time1,
+        NULLIF(sum(dbs1.active_time), 0) as active_time1,
+        NULLIF(sum(dbs1.idle_in_transaction_time), 0) as idle_in_transaction_time1,
+        NULLIF(sum(dbs1.sessions), 0) as sessions1,
+        NULLIF(sum(dbs1.sessions_abandoned), 0) as sessions_abandoned1,
+        NULLIF(sum(dbs1.sessions_fatal), 0) as sessions_fatal1,
+        NULLIF(sum(dbs1.sessions_killed), 0) as sessions_killed1,
+        NULLIF(sum(dbs2.session_time), 0) as session_time2,
+        NULLIF(sum(dbs2.active_time), 0) as active_time2,
+        NULLIF(sum(dbs2.idle_in_transaction_time), 0) as idle_in_transaction_time2,
+        NULLIF(sum(dbs2.sessions), 0) as sessions2,
+        NULLIF(sum(dbs2.sessions_abandoned), 0) as sessions_abandoned2,
+        NULLIF(sum(dbs2.sessions_fatal), 0) as sessions_fatal2,
+        NULLIF(sum(dbs2.sessions_killed), 0) as sessions_killed2
+    FROM dbstats_sessions(sserver_id,start1_id,end1_id,topn) dbs1
+      FULL OUTER JOIN dbstats_sessions(sserver_id,start2_id,end2_id,topn) dbs2
+        USING (server_id, datid)
+      LEFT OUTER JOIN sample_stat_database st_last1 ON
+        (st_last1.server_id = dbs1.server_id AND st_last1.datid = dbs1.datid AND st_last1.sample_id = end1_id)
+      LEFT OUTER JOIN sample_stat_database st_last2 ON
+        (st_last2.server_id = dbs2.server_id AND st_last2.datid = dbs2.datid AND st_last2.sample_id = end2_id)
+    GROUP BY ROLLUP(COALESCE(dbs1.dbname,dbs2.dbname))
+    ORDER BY COALESCE(dbs1.dbname,dbs2.dbname) NULLS LAST;
+
+    r_result RECORD;
+BEGIN
+    -- Database stats TPLs
+    jtab_tpl := jsonb_build_object(
+      'tab_hdr',
+        '<table {difftbl}>'
+          '<tr>'
+            '<th rowspan="2">Database</th>'
+            '<th rowspan="2">I</th>'
+            '<th colspan="3" title="Session timings for databases">Timings (s)</th>'
+            '<th colspan="4" title="Session counts for databases">Sessions</th>'
+          '</tr>'
+          '<tr>'
+            '<th title="Time spent by database sessions in this database (note that statistics are only updated when the state of a session changes, so if sessions have been idle for a long time, this idle time won''t be included)">Total</th>'
+            '<th title="Time spent executing SQL statements in this database (this corresponds to the states active and fastpath function call in pg_stat_activity)">Active</th>'
+            '<th title="Time spent idling while in a transaction in this database (this corresponds to the states idle in transaction and idle in transaction (aborted) in pg_stat_activity)">Idle(T)</th>'
+            '<th title="Total number of sessions established to this database">Established</th>'
+            '<th title="Number of database sessions to this database that were terminated because connection to the client was lost">Abondoned</th>'
+            '<th title="Number of database sessions to this database that were terminated by fatal errors">Fatal</th>'
+            '<th title="Number of database sessions to this database that were terminated by operator intervention">Killed</th>'
+          '</tr>'
+          '{rows}'
+        '</table>',
+      'db_tpl',
+        '<tr {interval1}>'
+          '<td {rowtdspanhdr}>%s</td>'
+          '<td {label} {title1}>1</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+        '</tr>'
+        '<tr {interval2}>'
+          '<td {label} {title2}>2</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+          '<td {value}>%s</td>'
+        '</tr>'
+        '<tr style="visibility:collapse"></tr>');
+    -- apply settings to templates
+
+    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+
+    -- Reporting summary databases stats
+    FOR r_result IN c_dbstats LOOP
+        report := report||format(
+            jtab_tpl #>> ARRAY['db_tpl'],
+            r_result.dbname,
+            round(CAST(r_result.session_time1 / 1000 AS numeric),2),
+            round(CAST(r_result.active_time1 / 1000 AS numeric),2),
+            round(CAST(r_result.idle_in_transaction_time1 / 1000 AS numeric),2),
+            r_result.sessions1,
+            r_result.sessions_abandoned1,
+            r_result.sessions_fatal1,
+            r_result.sessions_killed1,
+            round(CAST(r_result.session_time2 / 1000 AS numeric),2),
+            round(CAST(r_result.active_time2 / 1000 AS numeric),2),
+            round(CAST(r_result.idle_in_transaction_time2 / 1000 AS numeric),2),
+            r_result.sessions2,
+            r_result.sessions_abandoned2,
+            r_result.sessions_fatal2,
+            r_result.sessions_killed2
         );
     END LOOP;
 

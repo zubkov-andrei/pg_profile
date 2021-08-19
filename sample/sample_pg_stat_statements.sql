@@ -63,6 +63,7 @@ BEGIN
       )
       WHEN '1.3','1.4','1.5','1.6','1.7' THEN
         st_query := replace(st_query, '{statements_fields}',
+          'NULL as toplevel,'
           'NULL as plans,'
           'NULL as total_plan_time,'
           'NULL as min_plan_time,'
@@ -126,6 +127,77 @@ BEGIN
         );
       WHEN '1.8' THEN
         st_query := replace(st_query, '{statements_fields}',
+          'NULL as toplevel,'
+          'st.plans,'
+          'st.total_plan_time,'
+          'st.min_plan_time,'
+          'st.max_plan_time,'
+          'st.mean_plan_time,'
+          'st.stddev_plan_time,'
+          'st.calls,'
+          'st.total_exec_time,'
+          'st.min_exec_time,'
+          'st.max_exec_time,'
+          'st.mean_exec_time,'
+          'st.stddev_exec_time,'
+          'st.rows,'
+          'st.shared_blks_hit,'
+          'st.shared_blks_read,'
+          'st.shared_blks_dirtied,'
+          'st.shared_blks_written,'
+          'st.local_blks_hit,'
+          'st.local_blks_read,'
+          'st.local_blks_dirtied,'
+          'st.local_blks_written,'
+          'st.temp_blks_read,'
+          'st.temp_blks_written,'
+          'st.blk_read_time,'
+          'st.blk_write_time,'
+          'st.wal_records,'
+          'st.wal_fpi,'
+          'st.wal_bytes,'||
+          $o$regexp_replace(st.query,$i$\s+$i$,$i$ $i$,$i$g$i$) AS query$o$
+        );
+        st_query := replace(st_query, '{statements_rank_calc}',
+            'row_number() over (ORDER BY total_plan_time + total_exec_time DESC) AS time_rank,'
+            'row_number() over (ORDER BY total_plan_time DESC) AS plan_time_rank,'
+            'row_number() over (ORDER BY total_exec_time DESC) AS exec_time_rank,'
+            'row_number() over (ORDER BY calls DESC) AS calls_rank,'
+            'row_number() over (ORDER BY blk_read_time + blk_write_time DESC) AS io_time_rank,'
+            'row_number() over (ORDER BY shared_blks_hit + shared_blks_read DESC) AS gets_rank,'
+            'row_number() over (ORDER BY shared_blks_read DESC) AS read_rank,'
+            'row_number() over (ORDER BY shared_blks_dirtied DESC) AS dirtied_rank,'
+            'row_number() over (ORDER BY shared_blks_written DESC) AS written_rank,'
+            'row_number() over (ORDER BY temp_blks_written + local_blks_written DESC) AS tempw_rank,'
+            'row_number() over (ORDER BY temp_blks_read + local_blks_read DESC) AS tempr_rank,'
+            'row_number() over (ORDER BY wal_bytes DESC) AS wal_rank '
+        );
+        st_query := replace(st_query, '{statements_rank_fields}',
+          'time_rank,'
+          'plan_time_rank,'
+          'exec_time_rank,'
+          'calls_rank,'
+          'io_time_rank,'
+          'gets_rank,'
+          'read_rank,'
+          'dirtied_rank,'
+          'written_rank,'
+          'tempw_rank,'
+          'tempr_rank,'
+          'wal_rank'
+        );
+        st_query := replace(st_query, '{statements_view}',
+          format('%1$I.pg_stat_statements',
+            (
+              SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
+                AS x(extname text, extnamespace text)
+              WHERE extname = 'pg_stat_statements'
+            )
+          )
+        );
+      WHEN '1.9' THEN
+        st_query := replace(st_query, '{statements_fields}',
+          'st.toplevel,'
           'st.plans,'
           'st.total_plan_time,'
           'st.min_plan_time,'
@@ -370,6 +442,7 @@ BEGIN
           dbl.datid AS datid,
           dbl.queryid AS queryid,
           dbl.queryid_md5 AS queryid_md5,
+          dbl.toplevel AS toplevel,
           dbl.plans AS plans,
           dbl.total_plan_time AS total_plan_time,
           dbl.min_plan_time AS min_plan_time,
@@ -432,6 +505,7 @@ BEGIN
             datid               oid,
             queryid             bigint,
             queryid_md5         char(32),
+            toplevel            boolean,
             plans               bigint,
             total_plan_time     double precision,
             min_plan_time       double precision,
@@ -505,6 +579,7 @@ BEGIN
           sample_id,
           userid,
           datid,
+          toplevel,
           queryid,
           queryid_md5,
           plans,
@@ -541,6 +616,7 @@ BEGIN
             qres.sample_id,
             qres.userid,
             qres.datid,
+            qres.toplevel,
             qres.queryid,
             qres.queryid_md5,
             qres.plans,
@@ -906,8 +982,41 @@ BEGIN
             WHERE extname = 'pg_stat_statements'
           )
         );
+      -- pg_stat_statements v 1.9
+      WHEN '1.9' THEN
+        st_query := format('SELECT '
+            'dbid as datid,'
+            'sum(plans),'
+            'sum(total_plan_time),'
+            'sum(calls),'
+            'sum(total_exec_time),'
+            'sum(rows),'
+            'sum(shared_blks_hit),'
+            'sum(shared_blks_read),'
+            'sum(shared_blks_dirtied),'
+            'sum(shared_blks_written),'
+            'sum(local_blks_hit),'
+            'sum(local_blks_read),'
+            'sum(local_blks_dirtied),'
+            'sum(local_blks_written),'
+            'sum(temp_blks_read),'
+            'sum(temp_blks_written),'
+            'sum(blk_read_time),'
+            'sum(blk_write_time),'
+            'sum(wal_records),'
+            'sum(wal_fpi),'
+            'sum(wal_bytes),'
+            'count(*) '
+        'FROM %1$I.pg_stat_statements WHERE toplevel '
+        'GROUP BY dbid',
+          (
+            SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
+              AS x(extname text, extnamespace text)
+            WHERE extname = 'pg_stat_statements'
+          )
+        );
       ELSE
-        RAISE 'Unsupported pg_stat_statements version. Supported versions are 1.3, 1.4, 1.5, 1.6, 1.7, 1.8';
+        RAISE 'Unsupported pg_stat_statements version.';
     END CASE;
 
     INSERT INTO sample_statements_total(
@@ -973,7 +1082,7 @@ BEGIN
         WHERE extname = 'pg_stat_statements'
       )
       -- pg_stat_statements v 1.3-1.8
-      WHEN '1.3','1.4','1.5','1.6','1.7','1.8' THEN
+      WHEN '1.3','1.4','1.5','1.6','1.7','1.8','1.9' THEN
         SELECT * INTO qres FROM dblink('server_connection',
           format('SELECT %1$I.pg_stat_statements_reset()',
             (
@@ -984,7 +1093,7 @@ BEGIN
           )
         ) AS t(res char(1));
       ELSE
-        RAISE 'Unsupported pg_stat_statements version. Supported versions are 1.3 - 1.8';
+        RAISE 'Unsupported pg_stat_statements version.';
     END CASE;
 END;
 $$ LANGUAGE plpgsql;

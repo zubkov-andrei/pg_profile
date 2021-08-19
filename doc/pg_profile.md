@@ -44,7 +44,7 @@ track_functions = all/pl
 
 If you need statement statistics in reports, then database, mentioned in server connection string must have _pg_stat_statements_ extension configured. Set *pg_stat_statements* parameters to meet your needs (see PostgreSQL documentation):
 * _pg_stat_statements.max_ - low setting for this parameter may cause some statements statistics to be wiped out before sample is taken. Report will warn you if your _pg_stat_statements.max_ is seems to be undersized.
-* _pg_stat_statements.track = 'top'_ - _all_ value will affect accuracy of _%Total_ fields for statements-related sections of a report.
+* _pg_stat_statements.track = 'top'_ - before Postgres 14 _all_ value will affect accuracy of _%Total_ fields for statements-related sections of a report.
 ## Installation
 ### Step 1 Installation of extension files
 Extract extension files (see [Releases](https://github.com/zubkov-andrei/pg_profile/releases) page) to PostgreSQL extensions location, which is
@@ -162,17 +162,20 @@ Display existing servers.
 Server creation example:
 
 ```
-SELECT profile.server_new('omega','host=name_or_ip dbname=postgres port=5432');
+SELECT profile.create_server('omega','host=name_or_ip dbname=postgres port=5432');
 ```
 ### Rare relation sizes collection
-Postgres relation size functions may take considerable amount of time to collect sizes of all relations in a database. Also those functions require *AccessExclusiveLock* on a relation. However daily relation sizes collection may be quite enough for you. *pg_profile* can skip relation sizes collection while taking samples guided by server size collection policy. Policy is defined as a daily window when relation size collection is permitted, and a minimal gap between two samples with relation sizes collected. Thus when size collection policy is defined sample taking function will collect relation sizes only when sample is taken in a window and previous sample with sizes is older then gap.
-Function *set_server_size_sampling* defines this policy:
+Postgres relation size functions may take considerable amount of time to collect sizes of all relations in a database. Also those functions require *AccessExclusiveLock* on a relation. However daily relation sizes collection may be quite enough for you. *pg_profile* is able to skip relation sizes collection while taking samples guided by server _size collection policy_. Policy is defined as a daily window when relation size collection is permitted, and a minimal gap between two samples with relation sizes collected. Thus when size collection policy is defined sample taking function will collect relation sizes only when sample is taken in a window and the previous sample with sizes is older then gap. Top growing tables/indexes report sections will be available in a report only if it bounded by samples with sizes collected. See _with_growth_ parameter of a _get_report_ function description for further reference.
+Function *set_server_size_sampling* defines the _size collection policy_:
 * *set_server_size_sampling(server name, window_start time with time zone = NULL, window_duration interval hour to second = NULL, sample_interval interval day to minute = NULL)*
   * *server* - server name
   * *window_start* - size collection window start time
   * *window_duration* - size collection window duration
   * *sample_interval* - minimum time gap between two samples with relation sizes collected
-Size collection policy is defined only when all three parameters are set.
+  * *limited_sizes_collection* - allow sizes collection for only limited set of objects beyond the bounds of a window (default is *true*). This can provide some more information with a reasonable overhead of the size collection
+Size collection policy is defined only when parameters *window_start*, *window_duration* and *sample_interval* are all set. Sizes collection may be disabled at all by defining a window when no samples can be scheduled.
+
+When *limited_sizes_collection* is enabled _pg_profile_ will collect table sizes for only vacuumed or sequentially scanned tables to calculate estimates. Also index sizes of vacuumed tables will be collected. Using this limited size collection _pg_profile_ is able to show vacuum and sequential scan related estimation sections in a report (based on relation sizes).
 
 Example:
 ```
@@ -188,7 +191,6 @@ postgres=# SELECT * FROM show_servers_size_sampling();
 ```
 
 When you build a report between samples either of which lacks relation sizes data then relation growth sections will be excluded from report. However, *with_growth* parameter of report generation functions will expand report bounds to nearest samples with relation sizes data collected.
-Relation sizes is needed for calculating sequentially scanned volume for tables and explicit vacuum load for indexes. When rare relation sizes collection is used, corresponding report sections data is based on linear interpolation.
 
 ### Samples
 
@@ -229,6 +231,7 @@ Every sample contains statistic information about database workload since previo
   ```
   sample            integer,
   sample_time       timestamp (0) with time zone,
+  sizes_collected   boolean,
   dbstats_reset     timestamp (0) with time zone,
   clustats_reset    timestamp (0) with time zone,
   archstats_reset   timestamp (0) with time zone
@@ -236,6 +239,7 @@ Every sample contains statistic information about database workload since previo
   Where:
   * *sample* is a sample identifier
   * *sample_time* is a time when this sample was taken
+  * *sizes_collected* is set if all relation sizes was collectid in this sample
   * *dbstats_reset*, *clustats_reset* and *archstats_reset* is usual null, but will contain *pg_stat_database*, *pg_stat_bgwriter* and *pg_stat_archiver* statistics reset timestamp if it was happend since previous sample
 Sample-collecting functions are also supports the server repository - it will delete obsolete samples and baselines with respect to *retention policy*.
 
@@ -292,11 +296,14 @@ Event descriptions:
 * **calculate database stats** - Calculating differential statistics on databases since the previous sample.
 * **collect tablespace stats** - Querying the pg_tablespace view for statistics on tablespaces.
 * **collect statement stats** - Collecting statistics on statements using the _pg_stat_statements_ and _pg_stat_kcache_ extensions.
-* **query pg_stat_bgwriter** - Collecting cluster statistics using the pg_stat_bgwriter view.
-* **query pg_stat_archiver** - Collecting cluster statistics using the pg_stat_archiver view.
+* **query pg_stat_bgwriter** - Collecting cluster statistics using the _pg_stat_bgwriter_ view.
+* **query pg_stat_wal** - Collecting cluster WAL statistics using the _pg_stat_wal_ view.
+* **query pg_stat_archiver** - Collecting cluster statistics using the _pg_stat_archiver_ view.
 * **collect object stats** - Collecting statistics on database objects. Includes following events:
   * **db:_dbname_ collect tables stats** - Collecting statistics on tables for the _dbname_ database.
+    * **db:_dbname_ collect limited table sizes** - Collecting vacuumed or sequentially scanned table sizes when sizes collection is disabled.
   * **db:_dbname_ collect indexes stats** - Collecting statistics on indexes for the _dbname_ database.
+    * **db:_dbname_ collect limited index sizes** - Collecting index sizes for vacuumed tables when sizes collection is disabled.
   * **db:_dbname_ collect functions stats** - Collecting statistics on functions for the _dbname_ database.
 * **maintain repository** - Executing support routines.
 * **calculate tablespace stats** - Calculating differential statistics on tablespaces.
@@ -473,6 +480,20 @@ Contains per-database statistics during report interval, based on *pg_stat_datab
 * *Size* - database size at the end of report interval (*pg_database_size()*)
 * *Growth* - database growth during report interval (*pg_database_size()* difference)
 
+#### Session statistics by database
+This section contains session-related data from *pg_stat_database* view. Available since Postgres 14
+
+* *Database* - database name
+* *Timings (s)* - session timings in seconds
+  * *Total* - time spent by database sessions in this database (note that statistics are only updated when the state of a session changes, so if sessions have been idle for a long time, this idle time won't be included) (*session_time*)
+  * *Active* - time spent executing SQL statements in this database (this corresponds to the states active and fastpath function call in pg_stat_activity) (*active_time*)
+  * *Idle(T)* - time spent idling while in a transaction in this database (this corresponds to the states idle in transaction and idle in transaction (aborted) in pg_stat_activity) (*idle_in_transaction_time*)
+* *Sessions* - session counts for databases
+  * *Established* - total number of sessions established to this database (*sessions*)
+  * *Abondoned* - number of database sessions to this database that were terminated because connection to the client was lost (*sessions_abandoned*)
+  * *Fatal* - number of database sessions to this database that were terminated by fatal errors (*sessions_fatal*)
+  * *Killed* - number of database sessions to this database that were terminated by operator intervention (*sessions_killed*)
+
 #### Statement statistics by database
 
 Contains per-database aggregated total statistics of *pg_stat_statements* data (if *pg_stat_statements* extension was available during report interval)
@@ -514,9 +535,27 @@ This table contains data from *pg_stat_bgwriter* view
 * *Backend fsync count* - total number of backend fsync calls (*buffers_backend_fsync* field)
 * *Bgwriter interrupts (too many buffers)* - total count of background writer interrupts due to reaching value of the *bgwriter_lru_maxpages* parameter.
 * *Number of buffers allocated* - total count of buffers allocated (*buffers_alloc* field)
-* *WAL generated* - total amount of WAL generated (based on *pg_current_wal_lsn()*)
+* *WAL generated* - total amount of WAL generated (based on *pg_current_wal_lsn()* difference)
 * *WAL segments archived* - archived WAL segments count (based on *archived_count* of *pg_stat_archiver* view)
 * *WAL segments archive failed*  - WAL segment archive failures count (based on *failed_count* of *pg_stat_archiver* view)
+
+#### WAL statistics
+
+This table contains data from *pg_stat_wal* view. Available since Postgres 14
+
+* *WAL generated* - total amount of WAL generated (*wal_bytes*)
+* *WAL per second* - average amount of WAL generated per second
+* *WAL records* - total number of WAL records generated (*wal_records*)
+* *WAL FPI* - total number of WAL full page images generated (*wal_fpi*)
+* *WAL buffers full* - number of times WAL data was written to disk because WAL buffers became full (*wal_buffers_full*)
+* *WAL writes* - number of times WAL buffers were written out to disk via XLogWrite request (*wal_write*)
+* *WAL writes per second* - average number of times WAL buffers were written out to disk via XLogWrite request per second
+* *WAL sync* - Number of times WAL files were synced to disk via issue_xlog_fsync request (if fsync is on and wal_sync_method is either fdatasync, fsync or fsync_writethrough, otherwise zero) (*wal_sync*)
+* *WAL syncs per second* - average number of times WAL files were synced to disk via issue_xlog_fsync request per second
+* *WAL write time (s)* - total amount of time spent writing WAL buffers to disk via *XLogWrite* request, in seconds (if *track_wal_io_timing* is enabled, otherwise zero). This includes the sync time when *wal_sync_method* is either *open_datasync* or *open_sync*. (*wal_write_time*)
+* *WAL write duty* - WAL write time as a percentage of the report duration time
+* *WAL sync time (s)* - Total amount of time spent syncing WAL files to disk via *issue_xlog_fsync* request, in seconds (if *track_wal_io_timing* is enabled, *fsync* is on, and *wal_sync_method* is either *fdatasync*, *fsync* or *fsync_writethrough*, otherwise zero) (*wal_sync_time*)
+* *WAL sync duty* - WAL sync time as a percentage of the report duration time
 
 #### Tablespace statistics
 
@@ -532,7 +571,7 @@ This report section contains tables of top statements during report interval sor
 
 #### Top SQL by elapsed time
 
-This table contains top _pg_profile.topn_ statements sorted by elapsed time *total_plan_time* + *total_exec_time* of *pg_stat_statements* view
+This table contains top _pg_profile.topn_ statements sorted by elapsed time *total_plan_time* + *total_exec_time* of *pg_stat_statements* view. Available since Postgres 13
 
 * *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
 notation is shown in square brackets.
@@ -553,7 +592,7 @@ notation is shown in square brackets.
 
 #### Top SQL by planning time
 
-Top _pg_profile.topn_ statements sorted by *total_plan_time* field of *pg_stat_statements* view
+Top _pg_profile.topn_ statements sorted by *total_plan_time* field of *pg_stat_statements* view. Available since Postgres 13
 
 * *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
 notation is shown in square brackets.
@@ -810,6 +849,7 @@ Top tables sorted by block reads. Tables in this list are sorted by sum of block
 * *Ix* - statistics for all relation indexes blocks reads (*idx_blks_read*)
 * *TOAST* - statistics for TOAST-table block reads (*toast_blks_read*)
 * *TOAST-Ix* - statistics for TOAST index block reads (*tidx_blks_read*)
+* *Hit(%)* - number of heap, indexes, toast and toast index blocks fetched from shared buffers as a percentage of all their blocks fetched from shared buffers and file system
 
 Each read statistic in this table is divided in two columns:
 * *Blks* - number of block reads for relation heap, index, TOAST or TOAST index

@@ -1,4 +1,4 @@
-PGPROFILE_VERSION = 0.3.3
+PGPROFILE_VERSION = 0.3.4
 EXTENSION = pg_profile
 
 include migration/Makefile
@@ -13,6 +13,7 @@ REGRESS = \
 	create_extension \
 	server_management \
 	samples_and_reports \
+	sizes_collection \
 	export_import \
 	retention_and_baselines \
 	drop_extension
@@ -22,6 +23,7 @@ REGRESS += \
 	kcache_create_extension \
 	server_management \
 	samples_and_reports \
+	sizes_collection \
 	kcache_stat_avail \
 	export_import \
 	retention_and_baselines \
@@ -63,12 +65,14 @@ script = $(schema) $(data) $(functions)
 functions_man = $(common) $(adm_funcs) $(sample) $(report)
 script_man = $(schema) $(functions_man)
 
+# Common sed replacement script
+sed_extension = -e 's/{pg_profile}/$(EXTENSION)/; s/{extension_version}/$(PGPROFILE_VERSION)/'
+
 sqlfile: $(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql
 
 $(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql: $(script)
 	sed -e 's/SET search_path=@extschema@ //' \
-	-e "s/{pg_profile}/$(EXTENSION)/" \
-	-e "s/{extension_version}/$(PGPROFILE_VERSION)/" \
+	$(sed_extension) \
 	$(script_man) \
 	> $(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql
 
@@ -78,8 +82,7 @@ $(EXTENSION).control: control.tpl
 $(EXTENSION)--$(PGPROFILE_VERSION).sql: $(script)
 	sed \
 	-e '1i \\\echo Use "CREATE EXTENSION $(EXTENSION)" to load this file. \\quit' \
-	-e "s/{pg_profile}/$(EXTENSION)/" \
-	-e "s/{extension_version}/$(PGPROFILE_VERSION)/" \
+	$(sed_extension) \
 	$(script) \
 	> $(EXTENSION)--$(PGPROFILE_VERSION).sql
 

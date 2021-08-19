@@ -1,3 +1,4 @@
+SET client_min_messages = WARNING;
 /* === Create regular export table === */
 CREATE TABLE profile.export AS SELECT * FROM profile.export_data();
 /* === Create obfuscated export table === */

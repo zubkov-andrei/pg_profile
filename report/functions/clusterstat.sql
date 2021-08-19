@@ -82,7 +82,7 @@ BEGIN
     -- Database stats TPLs
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th>Sample</th>'
             '<th>BGWriter reset time</th>'
@@ -143,7 +143,7 @@ BEGIN
     -- Database stats TPLs
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th>I</th>'
             '<th>Sample</th>'
@@ -224,7 +224,7 @@ DECLARE
 BEGIN
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th>Metric</th>'
             '<th>Value</th>'
@@ -306,7 +306,7 @@ BEGIN
     -- Database stats TPLs
     jtab_tpl := jsonb_build_object(
       'tab_hdr',
-        '<table>'
+        '<table {stattbl}>'
           '<tr>'
             '<th>Metric</th>'
             '<th {title1}>Value (1)</th>'

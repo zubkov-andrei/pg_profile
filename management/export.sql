@@ -180,7 +180,6 @@ DECLARE
   import_meta     jsonb;
   tables_list     jsonb;
   servers_list    jsonb; -- import servers list
-  servers_map     jsonb = '[]'::jsonb; -- import server_id to local server_id mapping
 
   row_proc        bigint;
   rows_processed  bigint = 0;
@@ -218,12 +217,19 @@ BEGIN
   USING tables_list
   INTO STRICT servers_list;
 
+  CREATE TEMPORARY TABLE IF NOT EXISTS tmp_srv_map (
+    imp_srv_id bigint PRIMARY KEY,
+    local_srv_id bigint
+  );
+
+  TRUNCATE tmp_srv_map;
+
   /*
    * Performing importing to local servers matching. We need to consider several cases:
    * - creation dates and system identifiers matched - we have a match
    * - creation dates and system identifiers don't match, but names matched - conflict as we can't create a new server
    * - nothing matched - a new local server is to be created
-   * By the way, we'll populate servers_map structure, containing
+   * By the way, we'll populate tmp_srv_map table, containing
    * a mapping between local and importing servers to use on data load.
    */
   FOR r_result IN EXECUTE format($q$SELECT
@@ -242,7 +248,8 @@ BEGIN
       imp_srv.last_sample_id      imp_server_last_sample_id,
       imp_srv.size_smp_wnd_start  imp_size_smp_wnd_start,
       imp_srv.size_smp_wnd_dur    imp_size_smp_wnd_dur,
-      imp_srv.size_smp_interval   imp_size_smp_interval
+      imp_srv.size_smp_interval   imp_size_smp_interval,
+      imp_srv.sizes_limited       imp_sizes_limited
     FROM
       jsonb_to_recordset($1) as
         imp_srv(
@@ -257,7 +264,8 @@ BEGIN
           last_sample_id      integer,
           size_smp_wnd_start  time with time zone,
           size_smp_wnd_dur    interval hour to second,
-          size_smp_interval   interval day to minute
+          size_smp_interval   interval day to minute,
+          sizes_limited       boolean
         )
       JOIN jsonb_to_recordset($2) AS tbllist(section_id integer, relname text)
         ON (tbllist.relname = 'sample_settings')
@@ -285,8 +293,8 @@ BEGIN
       r_result.imp_system_identifier = r_result.local_system_identifier
     THEN
       /* use this local server when matched by server creation time and system identifier */
-      servers_map := jsonb_insert(servers_map,'{0}',
-        jsonb_build_object('imp_srv_id',r_result.imp_server_id,'local_srv_id',r_result.local_server_id));
+      INSERT INTO tmp_srv_map (imp_srv_id,local_srv_id) VALUES
+        (r_result.imp_server_id,r_result.local_server_id);
       /* Update local server if new last_sample_id is greatest*/
       UPDATE servers
       SET
@@ -294,12 +302,20 @@ BEGIN
           db_exclude,
           connstr,
           max_sample_age,
-          last_sample_id
+          last_sample_id,
+          size_smp_wnd_start,
+          size_smp_wnd_dur,
+          size_smp_interval,
+          sizes_limited
         ) = (
           r_result.imp_server_db_exclude,
           r_result.imp_server_connstr,
           r_result.imp_server_max_sample_age,
-          r_result.imp_server_last_sample_id
+          r_result.imp_server_last_sample_id,
+          r_result.imp_size_smp_wnd_start,
+          r_result.imp_size_smp_wnd_dur,
+          r_result.imp_size_smp_interval,
+          COALESCE(r_result.imp_sizes_limited, true)
         )
       WHERE server_id = r_result.local_server_id
         AND last_sample_id < r_result.imp_server_last_sample_id;
@@ -322,7 +338,8 @@ BEGIN
         last_sample_id,
         size_smp_wnd_start,
         size_smp_wnd_dur,
-        size_smp_interval)
+        size_smp_interval,
+        sizes_limited)
       VALUES (
         r_result.imp_server_name,
         r_result.imp_server_description,
@@ -334,16 +351,18 @@ BEGIN
         r_result.imp_server_last_sample_id,
         r_result.imp_size_smp_wnd_start,
         r_result.imp_size_smp_wnd_dur,
-        r_result.imp_size_smp_interval
+        r_result.imp_size_smp_interval,
+        COALESCE(r_result.imp_sizes_limited, true)
       )
       RETURNING server_id INTO new_server_id;
-      servers_map := jsonb_insert(servers_map,'{0}',
-        jsonb_build_object('imp_srv_id',r_result.imp_server_id,'local_srv_id',new_server_id));
+      INSERT INTO tmp_srv_map (imp_srv_id,local_srv_id) VALUES
+        (r_result.imp_server_id,new_server_id);
     ELSE
       /* This shouldn't ever happen */
       RAISE 'Import and local servers matching exception';
     END IF;
   END LOOP;
+  ANALYZE tmp_srv_map;
   -- Load tables data
   FOR r_result IN (
     -- get most recent versions of queries for importing tables
@@ -392,7 +411,6 @@ BEGIN
       format(r_result.query,
         data)
     USING
-      servers_map,
       r_result.section_id;
     GET DIAGNOSTICS row_proc = ROW_COUNT;
     rows_processed := rows_processed + row_proc;
