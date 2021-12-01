@@ -39,6 +39,7 @@ Consider setting following Statistics Collector parameters:
 track_activities = on
 track_counts = on
 track_io_timing = on
+track_wal_io_timing = on      # Since Postgres 14
 track_functions = all/pl
 ```
 
@@ -119,6 +120,7 @@ You can define extension parameters in _postgresql.conf_. Default values:
 * _pg_profile.topn = 20_ - Number of top objects (statements, relations, etc.), to be reported in each sorted report table. Also, this parameter affects size of a sample - the more objects you want to appear in your report, the more objects we need to keep in a sample.
 * _pg_profile.max_sample_age = 7_ - Retention time of samples in days. Samples, aged _pg_profile.max_sample_age_ days and more will be automatically deleted on next _take_sample()_ call.
 * _pg_profile.track_sample_timings = off_ - when this parameter is on, _pg_profile_ will track detailed sample taking timings.
+* _pg_profile.max_query_length = 20000_ - query length limit for reports. All queries in a report will be truncated to this length. This setting does not affect query text collection - during a sample full query texts are collected, thus can be obtained.
 ### Managing servers
 Once installed, extension will create one enabled *local* server - this is for cluster, where extension is installed.
 
@@ -172,10 +174,6 @@ Function *set_server_size_sampling* defines the _size collection policy_:
   * *window_start* - size collection window start time
   * *window_duration* - size collection window duration
   * *sample_interval* - minimum time gap between two samples with relation sizes collected
-  * *limited_sizes_collection* - allow sizes collection for only limited set of objects beyond the bounds of a window (default is *true*). This can provide some more information with a reasonable overhead of the size collection
-Size collection policy is defined only when parameters *window_start*, *window_duration* and *sample_interval* are all set. Sizes collection may be disabled at all by defining a window when no samples can be scheduled.
-
-When *limited_sizes_collection* is enabled _pg_profile_ will collect table sizes for only vacuumed or sequentially scanned tables to calculate estimates. Also index sizes of vacuumed tables will be collected. Using this limited size collection _pg_profile_ is able to show vacuum and sequential scan related estimation sections in a report (based on relation sizes).
 
 Example:
 ```
@@ -190,7 +188,7 @@ postgres=# SELECT * FROM show_servers_size_sampling();
  local       | 23:00:00+03  | 01:00:00+03 | 02:00:00        | 08:00:00
 ```
 
-When you build a report between samples either of which lacks relation sizes data then relation growth sections will be excluded from report. However, *with_growth* parameter of report generation functions will expand report bounds to nearest samples with relation sizes data collected.
+When you build a report between samples either of which lacks relation sizes data then relation growth sections of a report will be based on *pg_class.relpages* data. However, *with_growth* parameter of report generation functions will expand report bounds to nearest samples with relation sizes data collected and growth data will be more accurate.
 
 ### Samples
 
@@ -490,7 +488,7 @@ This section contains session-related data from *pg_stat_database* view. Availab
   * *Idle(T)* - time spent idling while in a transaction in this database (this corresponds to the states idle in transaction and idle in transaction (aborted) in pg_stat_activity) (*idle_in_transaction_time*)
 * *Sessions* - session counts for databases
   * *Established* - total number of sessions established to this database (*sessions*)
-  * *Abondoned* - number of database sessions to this database that were terminated because connection to the client was lost (*sessions_abandoned*)
+  * *Abandoned* - number of database sessions to this database that were terminated because connection to the client was lost (*sessions_abandoned*)
   * *Fatal* - number of database sessions to this database that were terminated by fatal errors (*sessions_fatal*)
   * *Killed* - number of database sessions to this database that were terminated by operator intervention (*sessions_killed*)
 
@@ -566,7 +564,7 @@ This table contains information about tablespaces sizes and growth:
 * *Size* - tablespace size as it was at time of last sample in report interval
 * *Growth* - tablespace growth during report interval
 
-### SQL Query statistics
+### SQL query statistics
 This report section contains tables of top statements during report interval sorted by several important statistics. Data is captured from *pg_stat_statements* view if it was available at the time of samples.
 
 #### Top SQL by elapsed time
@@ -704,6 +702,8 @@ notation is shown in square brackets.
 * *Dirtied* - number of shared blocks dirtied by this statement (*shared_blks_dirtied* field)
 * *%Total* - shared blocks dirtied by this statement as a percentage of total shared blocks dirtied by all statements in a cluster
 * *Hits(%)* - percentage of blocks got from buffers within all blocks got
+* *WAL* - amount of WAL generated by the statement (*wal_bytes* field)
+* *%Total* - amount of WAL generated by the statement as a percentage of total WAL generated in cluster (*pg_current_wal_lsn()* increment)
 * *Elapsed(s)* - amount of time spent in this statement, in seconds (*total_time* or *total_exec_time+total_plan_time* field)
 * *Rows* - number of rows retrieved or affected by the statement (*rows* field)
 * *Executions* - number of executions for this statement (*calls* field)
@@ -797,7 +797,7 @@ notation is shown in square brackets.
 
 #### Complete list of SQL texts
 
-Query texts of all statements mentioned in report. You can use *Query ID* link in any statistic table to get there and see query text.
+Query texts of all statements mentioned in report. You can use *Query ID* link in any statistic table to get there and see query text. Queries in this section are limited to _pg_profile.max_query_length_ (default 20000) characters, but full query text can be obtained from extension tables.
 
 ### Schema object statistics
 
@@ -805,7 +805,7 @@ This section of report contains top database objects, using statistics from Stat
 
 #### Top tables by estimated sequentially scanned volume
 
-Top database tables sorted by estimated volume, read by sequential scans. Based on *pg_stat_all_tables* view. Here you can search for tables, possibly lacks some index on it.
+Top database tables sorted by estimated volume, read by sequential scans. Based on *pg_stat_all_tables* view. Here you can search for tables, possibly lacks some index on it. When there is no relation sizes collected with *pg_relation_size()*, estimation will be calculated based on *pg_class.relpages* field. This will be less accurate, so such values will be provided in square brackets.
 
 * *DB* - database name of the table
 * *Tablespace* - tablespace name, where the table is located
@@ -890,7 +890,7 @@ Top tables sorted by amount of operations, causing autovacuum load, i.e. sum of 
 
 #### Top growing tables
 
-Top tables sorted by growth
+Top tables sorted by growth. When there is no relation sizes collected with *pg_relation_size()*, table growth will be calculated based on *pg_class.relpages* field. This will be less accurate, so such values will be provided in square brackets.
 
 * *DB* - database name of the table
 * *Tablespace* - tablespace name, where the table is located
@@ -932,7 +932,7 @@ Top indexes sorted by block reads. Based on data of *pg_statio_all_indexes* view
 
 #### Top growing indexes
 
-Top indexes sorted by growth
+Top indexes sorted by growth. When there is no relation sizes collected with *pg_relation_size()*, estimation will be calculated based on *pg_class.relpages* field. This will be less accurate, so such values will be provided in square brackets.
 
 * *DB* - database name of the index
 * *Tablespace* - tablespace name, where the index is located
@@ -1042,9 +1042,9 @@ Top tables sorted by analyze run (manual and automatic) count
 * *Del* - number of rows deleted (*n_tup_del* field)
 * *Upd(HOT)* - number of rows HOT updated (*n_tup_hot_upd* field)
 
-#### Top indexes by estimated vacuum I/O load
+#### Top indexes by estimated vacuum load
 
-This table provides estimation of implicit vacuum load caused by table indexes. Here is top indexes sorted by count of vacuums performed on underlying table multiplied by index size.
+This table provides estimation of implicit vacuum load caused by table indexes. Here is top indexes sorted by count of vacuums performed on underlying table multiplied by index size. When there is no relation sizes collected with *pg_relation_size()*, estimation will be calculated based on *pg_class.relpages* field. This will be less accurate, so such values will be provided in square brackets.
 
 * *DB* - database name of the index
 * *Tablespace* - tablespace name, where the index is located
@@ -1058,7 +1058,7 @@ This table provides estimation of implicit vacuum load caused by table indexes. 
 * *Relsize* - average relation size during report interval
 
 #### Top tables by dead tuples ratio
-This section contains modified tables with last vacuum run. Statistics is valid for last sample in report interval. Based on *pg_stat_all_tables* view.
+This section contains modified tables with last vacuum run. Statistics is valid for last sample in report interval. Based on *pg_stat_all_tables* view. When there is no relation sizes collected with *pg_relation_size()*, size will be provided from *pg_class.relpages* field. This will be less accurate, so such values will be provided in square brackets.
 
 Top tables, sized 5 MB and more, sorted by dead tuples ratio.
 
@@ -1072,7 +1072,7 @@ Top tables, sized 5 MB and more, sorted by dead tuples ratio.
 * *Size* - table size, as it was at the moment of last report sample.
 
 #### Top tables by modified tuples ratio
-This section contains modified tables with last vacuum run. Statistics is valid for last sample in report interval. Based on *pg_stat_all_tables* view.
+This section contains modified tables with last vacuum run. Statistics is valid for last sample in report interval. Based on *pg_stat_all_tables* view. When there is no relation sizes collected with *pg_relation_size()*, size will be provided from *pg_class.relpages* field. This will be less accurate, so such values will be provided in square brackets.
 
 Top tables, sized 5 MB and more, sorted by modified tuples ratio.
 

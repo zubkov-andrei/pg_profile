@@ -3,7 +3,8 @@ INSERT INTO import_queries_version_order VALUES
 ('pg_profile','0.3.1',NULL,NULL),
 ('pg_profile','0.3.2','pg_profile','0.3.1'),
 ('pg_profile','0.3.3','pg_profile','0.3.2'),
-('pg_profile','0.3.4','pg_profile','0.3.3')
+('pg_profile','0.3.4','pg_profile','0.3.3'),
+('pg_profile','0.3.5','pg_profile','0.3.4')
 ;
 
 /* ==== Data importing queries ==== */
@@ -383,6 +384,26 @@ INSERT INTO import_queries VALUES
   'WHERE ld.server_id IS NULL AND imp.section_id = $1 '
 ),
 ('pg_profile','0.3.2', 1,'sample_statements',
+  'INSERT INTO roles_list (server_id,userid,username'
+    ')'
+  'SELECT DISTINCT '
+    'srv_map.local_srv_id, '
+    'dt.userid, '
+    '''_unknown_'' '
+  'FROM %1$s imp '
+    'CROSS JOIN json_to_record(imp.row_data) AS '
+      'dt ( '
+        'server_id            integer, '
+        'userid               oid '
+      ') '
+    'JOIN tmp_srv_map srv_map ON '
+      '(srv_map.imp_srv_id = dt.server_id) '
+    'LEFT OUTER JOIN roles_list ld ON '
+      '(ld.server_id = srv_map.local_srv_id '
+      'AND ld.userid = dt.userid) '
+  'WHERE ld.server_id IS NULL AND imp.section_id = $1 '
+),
+('pg_profile','0.3.2', 2,'sample_statements',
   'INSERT INTO sample_statements (server_id,sample_id,userid,datid,queryid,queryid_md5,'
     'plans,total_plan_time,min_plan_time,max_plan_time,mean_plan_time,'
     'stddev_plan_time,calls,total_exec_time,min_exec_time,max_exec_time,mean_exec_time,'
@@ -1063,7 +1084,7 @@ INSERT INTO import_queries VALUES
     'last_vacuum,last_autovacuum,last_analyze,last_autoanalyze,vacuum_count,'
     'autovacuum_count,analyze_count,autoanalyze_count,heap_blks_read,heap_blks_hit,'
     'idx_blks_read,idx_blks_hit,toast_blks_read,toast_blks_hit,tidx_blks_read,'
-    'tidx_blks_hit,relsize,relsize_diff,tablespaceid,reltoastrelid,relkind)'
+    'tidx_blks_hit,relsize,relsize_diff,tablespaceid,reltoastrelid,relkind,in_sample)'
   'SELECT '
     'srv_map.local_srv_id, '
     'dt.sample_id, '
@@ -1103,7 +1124,8 @@ INSERT INTO import_queries VALUES
     'dt.relsize_diff, '
     'dt.tablespaceid, '
     'dt.reltoastrelid, '
-    'dt.relkind '
+    'dt.relkind, '
+    'COALESCE(dt.in_sample, false) '
   'FROM %1$s imp '
     'CROSS JOIN json_to_record(imp.row_data) AS '
       'dt ( '
@@ -1145,7 +1167,8 @@ INSERT INTO import_queries VALUES
         'relsize_diff         bigint, '
         'tablespaceid         oid, '
         'reltoastrelid        oid, '
-        'relkind              character(1) '
+        'relkind              character(1), '
+        'in_sample            boolean '
       ') '
     'JOIN tmp_srv_map srv_map ON '
       '(srv_map.imp_srv_id = dt.server_id) '
@@ -1225,7 +1248,8 @@ INSERT INTO import_queries VALUES
 ('pg_profile','0.3.1', 1,'last_stat_indexes',
   'INSERT INTO last_stat_indexes (server_id,sample_id,datid,relid,indexrelid,'
     'schemaname,relname,indexrelname,idx_scan,idx_tup_read,idx_tup_fetch,'
-    'idx_blks_read,idx_blks_hit,relsize,relsize_diff,tablespaceid,indisunique)'
+    'idx_blks_read,idx_blks_hit,relsize,relsize_diff,tablespaceid,indisunique,'
+    'in_sample)'
   'SELECT '
     'srv_map.local_srv_id, '
     'dt.sample_id, '
@@ -1243,7 +1267,8 @@ INSERT INTO import_queries VALUES
     'dt.relsize, '
     'dt.relsize_diff, '
     'dt.tablespaceid, '
-    'dt.indisunique '
+    'dt.indisunique, '
+    'COALESCE(dt.in_sample, false) '
   'FROM %1$s imp '
     'CROSS JOIN json_to_record(imp.row_data) AS '
       'dt ( '
@@ -1263,7 +1288,8 @@ INSERT INTO import_queries VALUES
         'relsize        bigint, '
         'relsize_diff   bigint, '
         'tablespaceid   oid, '
-        'indisunique    boolean '
+        'indisunique    boolean, '
+        'in_sample      boolean '
       ') '
     'JOIN tmp_srv_map srv_map ON '
       '(srv_map.imp_srv_id = dt.server_id) '
@@ -1308,7 +1334,7 @@ INSERT INTO import_queries VALUES
 ),
 ('pg_profile','0.3.1', 1,'last_stat_user_functions',
   'INSERT INTO last_stat_user_functions (server_id,sample_id,datid,funcid,schemaname,'
-    'funcname,funcargs,calls,total_time,self_time,trg_fn)'
+    'funcname,funcargs,calls,total_time,self_time,trg_fn,in_sample)'
   'SELECT '
     'srv_map.local_srv_id, '
     'dt.sample_id, '
@@ -1320,7 +1346,8 @@ INSERT INTO import_queries VALUES
     'dt.calls, '
     'dt.total_time, '
     'dt.self_time, '
-    'dt.trg_fn '
+    'dt.trg_fn, '
+    'COALESCE(dt.in_sample, false) '
   'FROM %1$s imp '
     'CROSS JOIN json_to_record(imp.row_data) AS '
       'dt ( '
@@ -1334,7 +1361,8 @@ INSERT INTO import_queries VALUES
         'calls       bigint, '
         'total_time  double precision, '
         'self_time   double precision, '
-        'trg_fn      boolean '
+        'trg_fn      boolean, '
+        'in_sample   boolean '
       ') '
     'JOIN tmp_srv_map srv_map ON '
       '(srv_map.imp_srv_id = dt.server_id) '
@@ -1370,56 +1398,9 @@ INSERT INTO import_queries VALUES
   'WHERE ld.server_id IS NULL AND imp.section_id = $1 '
 ),
 ('pg_profile','0.3.1', 1,'sample_stat_tables_failures',
-  'INSERT INTO sample_stat_tables_failures (server_id,sample_id,datid,relid,size_failed,toastsize_failed) '
-  'SELECT '
-    'srv_map.local_srv_id, '
-    'dt.sample_id, '
-    'dt.datid, '
-    'dt.relid, '
-    'dt.size_failed, '
-    'dt.toastsize_failed '
-  'FROM %1$s imp '
-    'CROSS JOIN json_to_record(imp.row_data) AS '
-      'dt ( '
-        'server_id            integer, '
-        'sample_id            integer, '
-        'datid                oid, '
-        'relid                oid, '
-        'size_failed          boolean, '
-        'toastsize_failed     boolean '
-      ') '
-    'JOIN tmp_srv_map srv_map ON '
-      '(srv_map.imp_srv_id = dt.server_id) '
-    'LEFT OUTER JOIN sample_stat_tables_failures ld ON '
-    '(ld.server_id = srv_map.local_srv_id AND ld.sample_id = dt.sample_id AND ld.datid = dt.datid '
-    'AND ld.relid = dt.relid) '
-  'WHERE ld.server_id IS NULL AND imp.section_id = $1 '
-),
+  'SELECT ''%1$s'' as imp WHERE -1 = $1'),
 ('pg_profile','0.3.1', 1,'sample_stat_indexes_failures',
-  'INSERT INTO sample_stat_indexes_failures (server_id,sample_id,datid,indexrelid,size_failed) '
-  'SELECT '
-    'srv_map.local_srv_id, '
-    'dt.sample_id, '
-    'dt.datid, '
-    'dt.indexrelid, '
-    'dt.size_failed '
-  'FROM %1$s imp '
-    'CROSS JOIN json_to_record(imp.row_data) AS '
-      'dt ( '
-        'server_id           integer, '
-        'sample_id           integer, '
-        'datid               oid, '
-        'indexrelid          oid, '
-        'size_failed         boolean '
-      ') '
-    'JOIN tmp_srv_map srv_map ON '
-      '(srv_map.imp_srv_id = dt.server_id) '
-    'LEFT OUTER JOIN sample_stat_indexes_failures ld ON '
-    '(ld.server_id = srv_map.local_srv_id AND ld.sample_id = dt.sample_id AND ld.datid = dt.datid '
-    'AND ld.indexrelid = dt.indexrelid) '
-  'WHERE ld.server_id IS NULL AND imp.section_id = $1 '
-);
-
+  'SELECT ''%1$s'' as imp WHERE -1 = $1');
  /*
   * Support import from pg_profile 0.3.1
   */
@@ -1469,6 +1450,26 @@ INSERT INTO import_queries VALUES
   'WHERE ld.server_id IS NULL AND imp.section_id = $1 '
 ),
 ('pg_profile','0.3.1', 1,'sample_statements',
+  'INSERT INTO roles_list (server_id,userid,username'
+    ')'
+  'SELECT DISTINCT '
+    'srv_map.local_srv_id, '
+    'dt.userid, '
+    '''_unknown_'' '
+  'FROM %1$s imp '
+    'CROSS JOIN json_to_record(imp.row_data) AS '
+      'dt ( '
+        'server_id            integer, '
+        'userid               oid '
+      ') '
+    'JOIN tmp_srv_map srv_map ON '
+      '(srv_map.imp_srv_id = dt.server_id) '
+    'LEFT OUTER JOIN roles_list ld ON '
+      '(ld.server_id = srv_map.local_srv_id '
+      'AND ld.userid = dt.userid) '
+  'WHERE ld.server_id IS NULL AND imp.section_id = $1 '
+),
+('pg_profile','0.3.1', 2,'sample_statements',
   'INSERT INTO sample_statements (server_id,sample_id,userid,datid,queryid,queryid_md5,'
     'plans,total_plan_time,min_plan_time,max_plan_time,mean_plan_time,stddev_plan_time,'
     'calls,total_exec_time,min_exec_time,max_exec_time,mean_exec_time,stddev_exec_time,'
@@ -1714,5 +1715,30 @@ INSERT INTO import_queries VALUES
       '(srv_map.imp_srv_id = dt.server_id) '
     'LEFT OUTER JOIN last_stat_wal ld ON '
       '(ld.server_id = srv_map.local_srv_id AND ld.sample_id = dt.sample_id) '
+  'WHERE ld.server_id IS NULL AND imp.section_id = $1 '
+);
+
+ /*
+  * Support import from pg_profile 0.3.5
+  */
+-- roles
+INSERT INTO import_queries VALUES
+('pg_profile','0.3.5', 1,'roles_list',
+  'INSERT INTO roles_list (server_id,userid,username)'
+  'SELECT '
+    'srv_map.local_srv_id, '
+    'dt.userid, '
+    'dt.username '
+  'FROM %1$s imp '
+    'CROSS JOIN json_to_record(imp.row_data) AS '
+      'dt ( '
+        'server_id  integer, '
+        'userid     oid, '
+        'username   name '
+      ') '
+    'JOIN tmp_srv_map srv_map ON '
+      '(srv_map.imp_srv_id = dt.server_id) '
+    'LEFT OUTER JOIN roles_list ld ON '
+      '(ld.server_id = srv_map.local_srv_id AND ld.userid = dt.userid) '
   'WHERE ld.server_id IS NULL AND imp.section_id = $1 '
 );

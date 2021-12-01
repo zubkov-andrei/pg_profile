@@ -130,14 +130,14 @@ BEGIN
         '<tr>'
           '<th rowspan="2">Query ID</th>'
           '<th rowspan="2">Database</th>'
-          '<th title="Userspace CPU" colspan="{cputime_colspan}">User Time</th>'
-          '<th title="Kernelspace CPU" colspan="{cputime_colspan}">System Time</th>'
+          '<th title="Userspace CPU" colspan="{rusage_planstats?cputime_colspan}">User Time</th>'
+          '<th title="Kernelspace CPU" colspan="{rusage_planstats?cputime_colspan}">System Time</th>'
         '</tr>'
         '<tr>'
-          '{user_plan_time_hdr}'
+          '{rusage_planstats?user_plan_time_hdr}'
           '<th title="User CPU time elapsed during execution">Exec (s)</th>'
           '<th title="User CPU time elapsed by this statement as a percentage of total user CPU time">%Total</th>'
-          '{system_plan_time_hdr}'
+          '{rusage_planstats?system_plan_time_hdr}'
           '<th title="System CPU time elapsed during execution">Exec (s)</th>'
           '<th title="System CPU time elapsed by this statement as a percentage of total system CPU time">%Total</th>'
         '</tr>'
@@ -148,46 +148,26 @@ BEGIN
           '<td {mono}><p><a HREF="#%2$s">%2$s</a></p>'
           '<p><small>[%3$s]</small></p></td>'
           '<td>%4$s</td>'
-          '{user_plan_time_tpl}'
+          '{rusage_planstats?user_plan_time_row}'
           '<td {value}>%6$s</td>'
           '<td {value}>%7$s</td>'
-          '{system_plan_time_tpl}'
+          '{rusage_planstats?system_plan_time_row}'
           '<td {value}>%9$s</td>'
           '<td {value}>%10$s</td>'
         '</tr>',
-      'user_plan_time_hdr',
+      'rusage_planstats?cputime_colspan','3',
+      '!rusage_planstats?cputime_colspan','2',
+      'rusage_planstats?user_plan_time_hdr',
         '<th title="User CPU time elapsed during planning">Plan (s)</th>',
-      'system_plan_time_hdr',
+      'rusage_planstats?system_plan_time_hdr',
         '<th title="System CPU time elapsed during planning">Plan (s)</th>',
-      'user_plan_time_tpl',
+      'rusage_planstats?user_plan_time_row',
         '<td {value}>%5$s</td>',
-      'system_plan_time_tpl',
+      'rusage_planstats?system_plan_time_row',
         '<td {value}>%8$s</td>'
     );
-    -- Conditional template
-    IF jsonb_extract_path_text(jreportset, 'report_features', 'rusage.planstats')::boolean THEN
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{cputime_colspan}','3')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr',
-        '{user_plan_time_hdr}',jtab_tpl->>'user_plan_time_hdr')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr',
-        '{system_plan_time_hdr}',jtab_tpl->>'system_plan_time_hdr')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{user_plan_time_tpl}',jtab_tpl->>'user_plan_time_tpl')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{system_plan_time_tpl}',jtab_tpl->>'system_plan_time_tpl')));
-    ELSE
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{cputime_colspan}','2')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr',
-        '{user_plan_time_hdr}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr',
-        '{system_plan_time_hdr}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{user_plan_time_tpl}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{system_plan_time_tpl}','')));
-    END IF;
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting on top queries by elapsed time
     FOR r_result IN c_elapsed_time LOOP
         tab_row := format(
@@ -275,14 +255,14 @@ BEGIN
           '<th rowspan="2">Query ID</th>'
           '<th rowspan="2">Database</th>'
           '<th rowspan="2">I</th>'
-          '<th title="Userspace CPU" colspan="{cputime_colspan}">User Time</th>'
-          '<th title="Kernelspace CPU" colspan="{cputime_colspan}">System Time</th>'
+          '<th title="Userspace CPU" colspan="{rusage_planstats?cputime_colspan}">User Time</th>'
+          '<th title="Kernelspace CPU" colspan="{rusage_planstats?cputime_colspan}">System Time</th>'
         '</tr>'
         '<tr>'
-          '{user_plan_time_hdr}'
+          '{rusage_planstats?user_plan_time_hdr}'
           '<th title="User CPU time elapsed during execution">Exec (s)</th>'
           '<th title="User CPU time elapsed by this statement as a percentage of total user CPU time">%Total</th>'
-          '{system_plan_time_hdr}'
+          '{rusage_planstats?system_plan_time_hdr}'
           '<th title="System CPU time elapsed during execution">Exec (s)</th>'
           '<th title="System CPU time elapsed by this statement as a percentage of total system CPU time">%Total</th>'
         '</tr>'
@@ -294,68 +274,40 @@ BEGIN
           '<p><small>[%3$s]</small></p></td>'
           '<td {rowtdspanhdr}>%4$s</td>'
           '<td {label} {title1}>1</td>'
-          '{user_plan_time_tpl1}'
+          '{rusage_planstats?user_plan_time_row1}'
           '<td {value}>%6$s</td>'
           '<td {value}>%7$s</td>'
-          '{system_plan_time_tpl1}'
+          '{rusage_planstats?system_plan_time_row1}'
           '<td {value}>%9$s</td>'
           '<td {value}>%10$s</td>'
         '</tr>'
         '<tr {interval2}>'
           '<td {label} {title2}>2</td>'
-          '{user_plan_time_tpl2}'
+          '{rusage_planstats?user_plan_time_row2}'
           '<td {value}>%12$s</td>'
           '<td {value}>%13$s</td>'
-          '{system_plan_time_tpl2}'
+          '{rusage_planstats?system_plan_time_row2}'
           '<td {value}>%15$s</td>'
           '<td {value}>%16$s</td>'
         '</tr>'
         '<tr style="visibility:collapse"></tr>',
-      'user_plan_time_hdr',
+      'rusage_planstats?cputime_colspan','3',
+      '!rusage_planstats?cputime_colspan','2',
+      'rusage_planstats?user_plan_time_hdr',
         '<th title="User CPU time elapsed during planning">Plan (s)</th>',
-      'system_plan_time_hdr',
+      'rusage_planstats?system_plan_time_hdr',
         '<th title="System CPU time elapsed during planning">Plan (s)</th>',
-      'user_plan_time_tpl1',
+      'rusage_planstats?user_plan_time_row1',
         '<td {value}>%5$s</td>',
-      'system_plan_time_tpl1',
+      'rusage_planstats?system_plan_time_row1',
         '<td {value}>%8$s</td>',
-      'user_plan_time_tpl2',
+      'rusage_planstats?user_plan_time_row2',
         '<td {value}>%11$s</td>',
-      'system_plan_time_tpl2',
+      'rusage_planstats?system_plan_time_row2',
         '<td {value}>%14$s</td>'
     );
-    -- Conditional template
-    IF jsonb_extract_path_text(jreportset, 'report_features', 'rusage.planstats')::boolean THEN
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{cputime_colspan}','3')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr',
-        '{user_plan_time_hdr}',jtab_tpl->>'user_plan_time_hdr')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr',
-        '{system_plan_time_hdr}',jtab_tpl->>'system_plan_time_hdr')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{user_plan_time_tpl1}',jtab_tpl->>'user_plan_time_tpl1')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{system_plan_time_tpl1}',jtab_tpl->>'system_plan_time_tpl1')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{user_plan_time_tpl2}',jtab_tpl->>'user_plan_time_tpl2')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{system_plan_time_tpl2}',jtab_tpl->>'system_plan_time_tpl2')));
-    ELSE
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{cputime_colspan}','2')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr',
-        '{user_plan_time_hdr}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr',
-        '{system_plan_time_hdr}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{user_plan_time_tpl1}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{system_plan_time_tpl1}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{user_plan_time_tpl2}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{system_plan_time_tpl2}','')));
-    END IF;
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting on top queries by elapsed time
     FOR r_result IN c_elapsed_time LOOP
@@ -430,14 +382,14 @@ BEGIN
           '<tr>'
             '<th rowspan="2">Query ID</th>'
             '<th rowspan="2">Database</th>'
-            '<th title="Filesystem reads" colspan="{fs_colspan}">Read Bytes</th>'
-            '<th title="Filesystem writes" colspan="{fs_colspan}">Write Bytes</th>'
+            '<th title="Filesystem reads" colspan="{rusage_planstats?fs_colspan}">Read Bytes</th>'
+            '<th title="Filesystem writes" colspan="{rusage_planstats?fs_colspan}">Write Bytes</th>'
           '</tr>'
           '<tr>'
-            '{plan_reads_hdr}'
+            '{rusage_planstats?plan_reads_hdr}'
             '<th title="Filesystem read amount during execution">Exec</th>'
             '<th title="Filesystem read amount of this statement as a percentage of all statements FS read amount">%Total</th>'
-            '{plan_writes_hdr}'
+            '{rusage_planstats?plan_writes_hdr}'
             '<th title="Filesystem write amount during execution">Exec</th>'
             '<th title="Filesystem write amount of this statement as a percentage of all statements FS write amount">%Total</th>'
           '</tr>'
@@ -448,47 +400,27 @@ BEGIN
           '<td {mono}><p><a HREF="#%2$s">%2$s</a></p>'
           '<p><small>[%3$s]</small></p></td>'
           '<td>%4$s</td>'
-          '{plan_reads_tpl}'
+          '{rusage_planstats?plan_reads_row}'
           '<td {value}>%6$s</td>'
           '<td {value}>%7$s</td>'
-          '{plan_writes_tpl}'
+          '{rusage_planstats?plan_writes_row}'
           '<td {value}>%9$s</td>'
           '<td {value}>%10$s</td>'
         '</tr>',
-      'plan_reads_hdr',
+      'rusage_planstats?fs_colspan','3',
+      '!rusage_planstats?fs_colspan','2',
+      'rusage_planstats?plan_reads_hdr',
         '<th title="Filesystem read amount during planning">Plan</th>',
-      'plan_writes_hdr',
+      'rusage_planstats?plan_writes_hdr',
         '<th title="Filesystem write amount during planning">Plan</th>',
-      'plan_reads_tpl',
+      'rusage_planstats?plan_reads_row',
         '<td {value}>%5$s</td>',
-      'plan_writes_tpl',
+      'rusage_planstats?plan_writes_row',
         '<td {value}>%8$s</td>'
     );
 
-    -- Conditional template
-    IF jsonb_extract_path_text(jreportset, 'report_features', 'rusage.planstats')::boolean THEN
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{fs_colspan}','3')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr',
-        '{plan_reads_hdr}',jtab_tpl->>'plan_reads_hdr')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr',
-        '{plan_writes_hdr}',jtab_tpl->>'plan_writes_hdr')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{plan_reads_tpl}',jtab_tpl->>'plan_reads_tpl')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{plan_writes_tpl}',jtab_tpl->>'plan_writes_tpl')));
-    ELSE
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{fs_colspan}','2')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr',
-        '{plan_reads_hdr}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr',
-        '{plan_writes_hdr}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{plan_reads_tpl}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{plan_writes_tpl}','')));
-    END IF;
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting on top queries by elapsed time
     FOR r_result IN c_elapsed_time LOOP
         tab_row := format(
@@ -576,14 +508,14 @@ BEGIN
             '<th rowspan="2">Query ID</th>'
             '<th rowspan="2">Database</th>'
             '<th rowspan="2">I</th>'
-            '<th title="Filesystem reads" colspan="{fs_colspan}">Read Bytes</th>'
-            '<th title="Filesystem writes" colspan="{fs_colspan}">Write Bytes</th>'
+            '<th title="Filesystem reads" colspan="{rusage_planstats?fs_colspan}">Read Bytes</th>'
+            '<th title="Filesystem writes" colspan="{rusage_planstats?fs_colspan}">Write Bytes</th>'
           '</tr>'
           '<tr>'
-            '{plan_reads_hdr}'
+            '{rusage_planstats?plan_reads_hdr}'
             '<th title="Filesystem read amount during execution">Exec</th>'
             '<th title="Filesystem read amount of this statement as a percentage of all statements FS read amount">%Total</th>'
-            '{plan_writes_hdr}'
+            '{rusage_planstats?plan_writes_hdr}'
             '<th title="Filesystem write amount during execution">Exec</th>'
             '<th title="Filesystem write amount of this statement as a percentage of all statements FS write amount">%Total</th>'
           '</tr>'
@@ -595,68 +527,40 @@ BEGIN
           '<p><small>[%3$s]</small></p></td>'
           '<td {rowtdspanhdr}>%4$s</td>'
           '<td {label} {title1}>1</td>'
-          '{plan_reads_tpl1}'
+          '{rusage_planstats?plan_reads_row1}'
           '<td {value}>%6$s</td>'
           '<td {value}>%7$s</td>'
-          '{plan_writes_tpl1}'
+          '{rusage_planstats?plan_writes_row1}'
           '<td {value}>%9$s</td>'
           '<td {value}>%10$s</td>'
         '</tr>'
         '<tr {interval2}>'
           '<td {label} {title2}>2</td>'
-          '{plan_reads_tpl2}'
+          '{rusage_planstats?plan_reads_row2}'
           '<td {value}>%12$s</td>'
           '<td {value}>%13$s</td>'
-          '{plan_writes_tpl2}'
+          '{rusage_planstats?plan_writes_row2}'
           '<td {value}>%15$s</td>'
           '<td {value}>%16$s</td>'
         '</tr>'
         '<tr style="visibility:collapse"></tr>',
-      'plan_reads_hdr',
+      'rusage_planstats?fs_colspan','3',
+      '!rusage_planstats?fs_colspan','2',
+      'rusage_planstats?plan_reads_hdr',
         '<th title="Filesystem read amount during planning">Plan</th>',
-      'plan_writes_hdr',
+      'rusage_planstats?plan_writes_hdr',
         '<th title="Filesystem write amount during planning">Plan</th>',
-      'plan_reads_tpl1',
+      'rusage_planstats?plan_reads_row1',
         '<td {value}>%5$s</td>',
-      'plan_writes_tpl1',
+      'rusage_planstats?plan_writes_row1',
         '<td {value}>%8$s</td>',
-      'plan_reads_tpl2',
+      'rusage_planstats?plan_reads_row2',
         '<td {value}>%11$s</td>',
-      'plan_writes_tpl2',
+      'rusage_planstats?plan_writes_row2',
         '<td {value}>%14$s</td>'
     );
-    -- Conditional template
-    IF jsonb_extract_path_text(jreportset, 'report_features', 'rusage.planstats')::boolean THEN
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{fs_colspan}','3')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr',
-        '{plan_reads_hdr}',jtab_tpl->>'plan_reads_hdr')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr',
-        '{plan_writes_hdr}',jtab_tpl->>'plan_writes_hdr')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{plan_reads_tpl1}',jtab_tpl->>'plan_reads_tpl1')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{plan_writes_tpl1}',jtab_tpl->>'plan_writes_tpl1')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{plan_reads_tpl2}',jtab_tpl->>'plan_reads_tpl2')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{plan_writes_tpl2}',jtab_tpl->>'plan_writes_tpl2')));
-    ELSE
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{fs_colspan}','2')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr',
-        '{plan_reads_hdr}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr',
-        '{plan_writes_hdr}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{plan_reads_tpl1}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{plan_writes_tpl1}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{plan_reads_tpl2}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl',
-        '{plan_writes_tpl2}','')));
-    END IF;
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting on top queries by elapsed time
     FOR r_result IN c_elapsed_time LOOP

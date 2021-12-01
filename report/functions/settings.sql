@@ -124,7 +124,7 @@ BEGIN
           '<td {value}><strong>%s</strong></td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     FOR r_result IN c_settings LOOP
         notes := ARRAY[''];
@@ -293,7 +293,7 @@ BEGIN
           '<td {value}><strong>%s</strong></td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     FOR r_result IN c_settings LOOP
       CASE

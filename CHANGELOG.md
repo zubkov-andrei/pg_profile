@@ -1,5 +1,13 @@
 # pg_profile changelog
 
+## 0.3.5
+- WAL fields in statements by blocks dirtied report section
+- *pg_class.relpages* is collected in samples now. This data is used in estimations while *pg_relations_size()* data is unavailable due to relation size collection policy.
+- set application_name while taking a sample
+- fixed #29 reported by xinferum (relation size collection window)
+- query texts in reports is now truncated to 20 000 characters by default
+- internal fixes and optimizations
+
 ## 0.3.4
 - support of new statistics of Postgres 14 (session and WAL statistics).
 - optimized report building.

@@ -248,8 +248,7 @@ BEGIN
       imp_srv.last_sample_id      imp_server_last_sample_id,
       imp_srv.size_smp_wnd_start  imp_size_smp_wnd_start,
       imp_srv.size_smp_wnd_dur    imp_size_smp_wnd_dur,
-      imp_srv.size_smp_interval   imp_size_smp_interval,
-      imp_srv.sizes_limited       imp_sizes_limited
+      imp_srv.size_smp_interval   imp_size_smp_interval
     FROM
       jsonb_to_recordset($1) as
         imp_srv(
@@ -264,8 +263,7 @@ BEGIN
           last_sample_id      integer,
           size_smp_wnd_start  time with time zone,
           size_smp_wnd_dur    interval hour to second,
-          size_smp_interval   interval day to minute,
-          sizes_limited       boolean
+          size_smp_interval   interval day to minute
         )
       JOIN jsonb_to_recordset($2) AS tbllist(section_id integer, relname text)
         ON (tbllist.relname = 'sample_settings')
@@ -305,8 +303,7 @@ BEGIN
           last_sample_id,
           size_smp_wnd_start,
           size_smp_wnd_dur,
-          size_smp_interval,
-          sizes_limited
+          size_smp_interval
         ) = (
           r_result.imp_server_db_exclude,
           r_result.imp_server_connstr,
@@ -314,8 +311,7 @@ BEGIN
           r_result.imp_server_last_sample_id,
           r_result.imp_size_smp_wnd_start,
           r_result.imp_size_smp_wnd_dur,
-          r_result.imp_size_smp_interval,
-          COALESCE(r_result.imp_sizes_limited, true)
+          r_result.imp_size_smp_interval
         )
       WHERE server_id = r_result.local_server_id
         AND last_sample_id < r_result.imp_server_last_sample_id;
@@ -338,8 +334,7 @@ BEGIN
         last_sample_id,
         size_smp_wnd_start,
         size_smp_wnd_dur,
-        size_smp_interval,
-        sizes_limited)
+        size_smp_interval)
       VALUES (
         r_result.imp_server_name,
         r_result.imp_server_description,
@@ -351,8 +346,7 @@ BEGIN
         r_result.imp_server_last_sample_id,
         r_result.imp_size_smp_wnd_start,
         r_result.imp_size_smp_wnd_dur,
-        r_result.imp_size_smp_interval,
-        COALESCE(r_result.imp_sizes_limited, true)
+        r_result.imp_size_smp_interval
       )
       RETURNING server_id INTO new_server_id;
       INSERT INTO tmp_srv_map (imp_srv_id,local_srv_id) VALUES

@@ -17,7 +17,8 @@ RETURNS TABLE(
     tbl_n_tup_ins       bigint,
     tbl_n_tup_upd       bigint,
     tbl_n_tup_del       bigint,
-    tbl_n_tup_hot_upd   bigint
+    tbl_n_tup_hot_upd   bigint,
+    relpagegrowth_bytes bigint
 )
 SET search_path=@extschema@ AS $$
     SELECT
@@ -36,44 +37,19 @@ SET search_path=@extschema@ AS $$
         sum(tbl.n_tup_ins)::bigint as tbl_n_tup_ins,
         sum(tbl.n_tup_upd)::bigint as tbl_n_tup_upd,
         sum(tbl.n_tup_del)::bigint as tbl_n_tup_del,
-        sum(tbl.n_tup_hot_upd)::bigint as tbl_n_tup_hot_upd
-    FROM v_sample_stat_indexes st JOIN v_sample_stat_tables tbl USING (server_id, sample_id, datid, relid)
+        sum(tbl.n_tup_hot_upd)::bigint as tbl_n_tup_hot_upd,
+        sum(st.relpages_bytes_diff)::bigint AS relpagegrowth_bytes
+    FROM v_sample_stat_indexes st JOIN sample_stat_tables tbl USING (server_id, sample_id, datid, relid)
         -- Database name
-        JOIN sample_stat_database sample_db
-        ON (st.server_id=sample_db.server_id AND st.sample_id=sample_db.sample_id AND st.datid=sample_db.datid)
-        JOIN tablespaces_list ON  (st.server_id=tablespaces_list.server_id AND st.tablespaceid=tablespaces_list.tablespaceid)
+        JOIN sample_stat_database sample_db USING (server_id, sample_id, datid)
+        JOIN tablespaces_list ON (st.server_id, st.tablespaceid) = (tablespaces_list.server_id, tablespaces_list.tablespaceid)
         -- join main table for indexes on toast
-        LEFT OUTER JOIN tables_list mtbl ON (st.server_id = mtbl.server_id AND st.datid = mtbl.datid AND st.relid = mtbl.reltoastrelid)
+        LEFT OUTER JOIN tables_list mtbl ON
+          (mtbl.server_id, mtbl.datid, mtbl.reltoastrelid) =
+          (st.server_id, st.datid, st.relid)
     WHERE st.server_id=sserver_id AND NOT sample_db.datistemplate AND st.sample_id BETWEEN start_id + 1 AND end_id
     GROUP BY st.server_id,st.datid,st.relid,st.indexrelid,st.indisunique,sample_db.datname,
       COALESCE(mtbl.schemaname,st.schemaname),COALESCE(mtbl.relname||'(TOAST)',st.relname), tablespaces_list.tablespacename,st.indexrelname
-$$ LANGUAGE sql;
-
-/*
-  index_size_failures() function is used for detecting indexes with possibly
-  incorrect growth stats due to failed relation size collection
-  on either bound of an interval
-*/
-CREATE FUNCTION index_size_failures(IN sserver_id integer, IN start_id integer, IN end_id integer)
-RETURNS TABLE(
-    server_id         integer,
-    datid             oid,
-    indexrelid        oid,
-    size_failed       boolean
-) SET search_path=@extschema@ AS $$
-  SELECT
-    server_id,
-    datid,
-    indexrelid,
-    bool_or(size_failed) as size_failed
-  FROM
-    sample_stat_indexes_failures
-  WHERE
-    server_id = sserver_id AND sample_id IN (start_id, end_id)
-  GROUP BY
-    server_id,
-    datid,
-    indexrelid
 $$ LANGUAGE sql;
 
 CREATE FUNCTION top_growth_indexes_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer,
@@ -92,20 +68,18 @@ DECLARE
         st.schemaname,
         st.relname,
         st.indexrelname,
-        CASE WHEN sf.size_failed THEN 'N/A'
-          ELSE pg_size_pretty(NULLIF(st.growth, 0)) END AS growth,
-        pg_size_pretty(NULLIF(st_last.relsize, 0)) as relsize,
+        NULLIF(st.best_growth, 0) as growth,
+        NULLIF(st_last.relsize, 0) as relsize,
+        NULLIF(st_last.relpages_bytes, 0) as relpages_bytes,
         NULLIF(tbl_n_tup_ins, 0) as tbl_n_tup_ins,
         NULLIF(tbl_n_tup_upd - COALESCE(tbl_n_tup_hot_upd,0), 0) as tbl_n_tup_upd,
-        NULLIF(tbl_n_tup_del, 0) as tbl_n_tup_del
+        NULLIF(tbl_n_tup_del, 0) as tbl_n_tup_del,
+        st.relsize_growth_avail
     FROM top_indexes st
-        JOIN v_sample_stat_indexes st_last using (server_id,datid,relid,indexrelid)
-        -- Is there any failed size collections on indexes?
-        LEFT OUTER JOIN index_size_failures(sserver_id, start_id, end_id) sf
-          USING (server_id, datid, indexrelid)
+        JOIN sample_stat_indexes st_last USING (server_id,datid,indexrelid)
     WHERE st_last.sample_id = end_id
-      AND st.growth > 0
-    ORDER BY st.growth DESC,
+      AND st.best_growth > 0
+    ORDER BY st.best_growth DESC,
       COALESCE(tbl_n_tup_ins,0) + COALESCE(tbl_n_tup_upd,0) + COALESCE(tbl_n_tup_del,0) DESC,
       st.datid ASC,
       st.relid ASC,
@@ -149,7 +123,7 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting table stats
     FOR r_result IN c_ix_stats LOOP
         report := report||format(
@@ -159,8 +133,14 @@ BEGIN
             r_result.schemaname,
             r_result.relname,
             r_result.indexrelname,
-            r_result.relsize,
-            r_result.growth,
+            COALESCE(
+              pg_size_pretty(r_result.relsize),
+              '['||pg_size_pretty(r_result.relpages_bytes)||']'
+            ),
+            CASE WHEN r_result.relsize_growth_avail
+              THEN pg_size_pretty(r_result.growth)
+              ELSE '['||pg_size_pretty(r_result.growth)||']'
+            END,
             r_result.tbl_n_tup_ins,
             r_result.tbl_n_tup_upd,
             r_result.tbl_n_tup_del
@@ -191,34 +171,32 @@ DECLARE
         COALESCE(ix1.schemaname,ix2.schemaname) as schemaname,
         COALESCE(ix1.relname,ix2.relname) as relname,
         COALESCE(ix1.indexrelname,ix2.indexrelname) as indexrelname,
-        CASE WHEN sf1.size_failed THEN 'N/A'
-          ELSE pg_size_pretty(NULLIF(ix1.growth, 0)) END AS growth1,
-        pg_size_pretty(NULLIF(ix_last1.relsize, 0)) as relsize1,
+        NULLIF(ix1.best_growth, 0) as growth1,
+        NULLIF(ix_last1.relsize, 0) as relsize1,
+        NULLIF(ix_last1.relpages_bytes, 0) as relpages_bytes1,
         NULLIF(ix1.tbl_n_tup_ins, 0) as tbl_n_tup_ins1,
         NULLIF(ix1.tbl_n_tup_upd - COALESCE(ix1.tbl_n_tup_hot_upd,0), 0) as tbl_n_tup_upd1,
         NULLIF(ix1.tbl_n_tup_del, 0) as tbl_n_tup_del1,
-        CASE WHEN sf2.size_failed THEN 'N/A'
-          ELSE pg_size_pretty(NULLIF(ix2.growth, 0)) END AS growth2,
-        pg_size_pretty(NULLIF(ix_last2.relsize, 0)) as relsize2,
+        NULLIF(ix2.best_growth, 0) as growth2,
+        NULLIF(ix_last2.relsize, 0) as relsize2,
+        NULLIF(ix_last2.relpages_bytes, 0) as relpages_bytes2,
         NULLIF(ix2.tbl_n_tup_ins, 0) as tbl_n_tup_ins2,
         NULLIF(ix2.tbl_n_tup_upd - COALESCE(ix2.tbl_n_tup_hot_upd,0), 0) as tbl_n_tup_upd2,
         NULLIF(ix2.tbl_n_tup_del, 0) as tbl_n_tup_del2,
-        row_number() over (ORDER BY ix1.growth DESC NULLS LAST) as rn_growth1,
-        row_number() over (ORDER BY ix2.growth DESC NULLS LAST) as rn_growth2
+        ix1.relsize_growth_avail as relsize_growth_avail1,
+        ix2.relsize_growth_avail as relsize_growth_avail2,
+        row_number() over (ORDER BY ix1.best_growth DESC NULLS LAST) as rn_growth1,
+        row_number() over (ORDER BY ix2.best_growth DESC NULLS LAST) as rn_growth2
     FROM top_indexes1 ix1
         FULL OUTER JOIN top_indexes2 ix2 USING (server_id, datid, indexrelid)
-        -- Is there any failed size collections on a indexes of 1st interval?
-        LEFT OUTER JOIN index_size_failures(sserver_id, start1_id, end1_id) sf1
-          USING (server_id, datid, indexrelid)
-        -- Is there any failed size collections on a indexes of 2st interval?
-        LEFT OUTER JOIN index_size_failures(sserver_id, start2_id, end2_id) sf2
-          USING (server_id, datid, indexrelid)
-        LEFT OUTER JOIN v_sample_stat_indexes ix_last1
-            ON (ix_last1.sample_id = end1_id AND ix_last1.server_id=ix1.server_id AND ix_last1.datid = ix1.datid AND ix_last1.indexrelid = ix1.indexrelid AND ix_last1.relid = ix1.relid)
-        LEFT OUTER JOIN v_sample_stat_indexes ix_last2
-            ON (ix_last2.sample_id = end2_id AND ix_last2.server_id=ix2.server_id AND ix_last2.datid = ix2.datid AND ix_last2.indexrelid = ix2.indexrelid AND ix_last2.relid = ix2.relid)
-    WHERE COALESCE(ix1.growth, 0) + COALESCE(ix2.growth, 0) > 0
-    ORDER BY COALESCE(ix1.growth, 0) + COALESCE(ix2.growth, 0) DESC,
+        LEFT OUTER JOIN sample_stat_indexes ix_last1 ON
+          (ix_last1.sample_id, ix_last1.server_id, ix_last1.datid, ix_last1.indexrelid) =
+          (end1_id, ix1.server_id, ix1.datid, ix1.indexrelid)
+        LEFT OUTER JOIN sample_stat_indexes ix_last2 ON
+          (ix_last2.sample_id, ix_last2.server_id, ix_last2.datid, ix_last2.indexrelid) =
+          (end2_id, ix2.server_id, ix2.datid, ix2.indexrelid)
+    WHERE COALESCE(ix1.best_growth, 0) + COALESCE(ix2.best_growth, 0) > 0
+    ORDER BY COALESCE(ix1.best_growth, 0) + COALESCE(ix2.best_growth, 0) DESC,
       COALESCE(ix1.tbl_n_tup_ins,0) + COALESCE(ix1.tbl_n_tup_upd,0) + COALESCE(ix1.tbl_n_tup_del,0) +
       COALESCE(ix2.tbl_n_tup_ins,0) + COALESCE(ix2.tbl_n_tup_upd,0) + COALESCE(ix2.tbl_n_tup_del,0) DESC,
       COALESCE(ix1.datid,ix2.datid) ASC,
@@ -279,7 +257,7 @@ BEGIN
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting table stats
     FOR r_result IN c_ix_stats LOOP
         report := report||format(
@@ -289,13 +267,25 @@ BEGIN
             r_result.schemaname,
             r_result.relname,
             r_result.indexrelname,
-            r_result.relsize1,
-            r_result.growth1,
+            COALESCE(
+              pg_size_pretty(r_result.relsize1),
+              '['||pg_size_pretty(r_result.relpages_bytes1)||']'
+            ),
+            CASE WHEN r_result.relsize_growth_avail1
+              THEN pg_size_pretty(r_result.growth1)
+              ELSE '['||pg_size_pretty(r_result.growth1)||']'
+            END,
             r_result.tbl_n_tup_ins1,
             r_result.tbl_n_tup_upd1,
             r_result.tbl_n_tup_del1,
-            r_result.relsize2,
-            r_result.growth2,
+            COALESCE(
+              pg_size_pretty(r_result.relsize2),
+              '['||pg_size_pretty(r_result.relpages_bytes2)||']'
+            ),
+            CASE WHEN r_result.relsize_growth_avail2
+              THEN pg_size_pretty(r_result.growth2)
+              ELSE '['||pg_size_pretty(r_result.growth2)||']'
+            END,
             r_result.tbl_n_tup_ins2,
             r_result.tbl_n_tup_upd2,
             r_result.tbl_n_tup_del2
@@ -324,13 +314,15 @@ DECLARE
         st.schemaname,
         st.relname,
         st.indexrelname,
-        pg_size_pretty(NULLIF(st.growth, 0)) as growth,
-        pg_size_pretty(NULLIF(st_last.relsize, 0)) as relsize,
+        NULLIF(st.best_growth, 0) as growth,
+        NULLIF(st_last.relsize, 0) as relsize,
+        NULLIF(st_last.relpages_bytes, 0) as relpages_bytes,
         NULLIF(tbl_n_tup_ins, 0) as tbl_n_tup_ins,
         NULLIF(tbl_n_tup_upd - COALESCE(tbl_n_tup_hot_upd,0), 0) as tbl_n_ind_upd,
-        NULLIF(tbl_n_tup_del, 0) as tbl_n_tup_del
+        NULLIF(tbl_n_tup_del, 0) as tbl_n_tup_del,
+        st.relsize_growth_avail
     FROM top_indexes st
-        JOIN v_sample_stat_indexes st_last using (server_id,datid,relid,indexrelid)
+        JOIN sample_stat_indexes st_last using (server_id,datid,indexrelid)
     WHERE st_last.sample_id=end_id AND COALESCE(st.idx_scan, 0) = 0 AND NOT st.indisunique
       AND COALESCE(tbl_n_tup_ins, 0) + COALESCE(tbl_n_tup_upd, 0) + COALESCE(tbl_n_tup_del, 0) > 0
     ORDER BY
@@ -377,7 +369,7 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting on top queries by elapsed time
     FOR r_result IN c_ix_stats LOOP
         report := report||format(
@@ -387,8 +379,14 @@ BEGIN
             r_result.schemaname,
             r_result.relname,
             r_result.indexrelname,
-            r_result.relsize,
-            r_result.growth,
+            COALESCE(
+              pg_size_pretty(r_result.relsize),
+              '['||pg_size_pretty(r_result.relpages_bytes)||']'
+            ),
+            CASE WHEN r_result.relsize_growth_avail
+              THEN pg_size_pretty(r_result.growth)
+              ELSE '['||pg_size_pretty(r_result.growth)||']'
+            END,
             r_result.tbl_n_tup_ins,
             r_result.tbl_n_ind_upd,
             r_result.tbl_n_tup_del
@@ -424,7 +422,11 @@ DECLARE
         NULLIF(vac.autovacuum_count, 0) as autovacuum_count,
         NULLIF(vac.vacuum_bytes, 0) as vacuum_bytes,
         NULLIF(vac.avg_indexrelsize, 0) as avg_ix_relsize,
-        NULLIF(vac.avg_relsize, 0) as avg_relsize
+        NULLIF(vac.avg_relsize, 0) as avg_relsize,
+        NULLIF(vac.relpages_vacuum_bytes, 0) as relpages_vacuum_bytes,
+        NULLIF(vac.avg_indexrelpages_bytes, 0) as avg_indexrelpages_bytes,
+        NULLIF(vac.avg_relpages_bytes, 0) as avg_relpages_bytes,
+        vac.relsize_collected as relsize_collected
     FROM top_indexes st
       JOIN (
         SELECT
@@ -434,22 +436,37 @@ DECLARE
           sum(vacuum_count) as vacuum_count,
           sum(autovacuum_count) as autovacuum_count,
           round(sum(i.relsize
-			* (COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0))))::bigint as vacuum_bytes,
-          round(avg(i.relsize))::bigint as avg_indexrelsize,
-          round(avg(t.relsize))::bigint as avg_relsize
+      * (COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0))))::bigint as vacuum_bytes,
+          round(
+            avg(i.relsize) FILTER (WHERE COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0) > 0)
+          )::bigint as avg_indexrelsize,
+          round(
+            avg(t.relsize) FILTER (WHERE COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0) > 0)
+          )::bigint as avg_relsize,
+
+          round(sum(i.relpages_bytes
+      * (COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0))))::bigint as relpages_vacuum_bytes,
+          round(
+            avg(i.relpages_bytes) FILTER (WHERE COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0) > 0)
+          )::bigint as avg_indexrelpages_bytes,
+          round(
+            avg(t.relpages_bytes) FILTER (WHERE COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0) > 0)
+          )::bigint as avg_relpages_bytes,
+          count(i.relsize) FILTER (WHERE COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0) > 0) =
+          count(*) FILTER (WHERE COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0) > 0)
+            as relsize_collected
         FROM sample_stat_indexes i
-			JOIN indexes_list il USING (server_id,datid,indexrelid)
-			JOIN sample_stat_tables t USING
-				(server_id, sample_id, datid, relid)
+      JOIN indexes_list il USING (server_id,datid,indexrelid)
+      JOIN sample_stat_tables t USING
+        (server_id, sample_id, datid, relid)
         WHERE
           server_id = sserver_id AND
           sample_id BETWEEN start_id + 1 AND end_id
         GROUP BY
           server_id, datid, indexrelid
       ) vac USING (server_id, datid, indexrelid)
-    WHERE vac.vacuum_bytes > 0
-    ORDER BY
-      vacuum_bytes DESC,
+    WHERE COALESCE(vac.vacuum_count, 0) + COALESCE(vac.autovacuum_count, 0) > 0
+    ORDER BY CASE WHEN relsize_collected THEN vacuum_bytes ELSE relpages_vacuum_bytes END DESC,
       st.datid ASC,
       st.relid ASC,
       st.indexrelid ASC
@@ -488,7 +505,7 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting table stats
     FOR r_result IN c_ix_stats LOOP
         report := report||format(
@@ -498,11 +515,23 @@ BEGIN
             r_result.schemaname,
             r_result.relname,
             r_result.indexrelname,
-            pg_size_pretty(r_result.vacuum_bytes),
+            CASE WHEN r_result.relsize_collected THEN
+              pg_size_pretty(r_result.vacuum_bytes)
+            ELSE
+              '['||pg_size_pretty(r_result.relpages_vacuum_bytes)||']'
+            END,
             r_result.vacuum_count,
             r_result.autovacuum_count,
-            pg_size_pretty(r_result.avg_ix_relsize),
-            pg_size_pretty(r_result.avg_relsize)
+            CASE WHEN r_result.relsize_collected THEN
+              pg_size_pretty(r_result.avg_ix_relsize)
+            ELSE
+              '['||pg_size_pretty(r_result.avg_indexrelpages_bytes)||']'
+            END,
+            CASE WHEN r_result.relsize_collected THEN
+              pg_size_pretty(r_result.avg_relsize)
+            ELSE
+              '['||pg_size_pretty(r_result.avg_relpages_bytes)||']'
+            END
         );
     END LOOP;
 
@@ -532,73 +561,113 @@ DECLARE
         COALESCE(ix1.indexrelname,ix2.indexrelname) as indexrelname,
         NULLIF(vac1.vacuum_count, 0) as vacuum_count1,
         NULLIF(vac1.autovacuum_count, 0) as autovacuum_count1,
-        NULLIF(vac1.vacuum_bytes, 0) as vacuum_bytes1,
+        CASE WHEN vac1.relsize_collected THEN
+          NULLIF(vac1.vacuum_bytes, 0)
+        ELSE
+          NULLIF(vac1.relpages_vacuum_bytes, 0)
+        END as best_vacuum_bytes1,
+--        NULLIF(vac1.vacuum_bytes, 0) as vacuum_bytes1,
         NULLIF(vac1.avg_indexrelsize, 0) as avg_ix_relsize1,
         NULLIF(vac1.avg_relsize, 0) as avg_relsize1,
+--        NULLIF(vac1.relpages_vacuum_bytes, 0) as relpages_vacuum_bytes1,
+        NULLIF(vac1.avg_indexrelpages_bytes, 0) as avg_indexrelpages_bytes1,
+        NULLIF(vac1.avg_relpages_bytes, 0) as avg_relpages_bytes1,
+        vac1.relsize_collected as relsize_collected1,
         NULLIF(vac2.vacuum_count, 0) as vacuum_count2,
         NULLIF(vac2.autovacuum_count, 0) as autovacuum_count2,
-        NULLIF(vac2.vacuum_bytes, 0) as vacuum_bytes2,
+        CASE WHEN vac2.relsize_collected THEN
+          NULLIF(vac2.vacuum_bytes, 0)
+        ELSE
+          NULLIF(vac2.relpages_vacuum_bytes, 0)
+        END as best_vacuum_bytes2,
+--        NULLIF(vac2.vacuum_bytes, 0) as vacuum_bytes2,
         NULLIF(vac2.avg_indexrelsize, 0) as avg_ix_relsize2,
         NULLIF(vac2.avg_relsize, 0) as avg_relsize2,
-        row_number() over (ORDER BY vac1.vacuum_bytes DESC NULLS LAST) as rn_vacuum_bytes1,
-        row_number() over (ORDER BY vac2.vacuum_bytes DESC NULLS LAST) as rn_vacuum_bytes2
+        --NULLIF(vac2.relpages_vacuum_bytes, 0) as relpages_vacuum_bytes2,
+        NULLIF(vac2.avg_indexrelpages_bytes, 0) as avg_indexrelpages_bytes2,
+        NULLIF(vac2.avg_relpages_bytes, 0) as avg_relpages_bytes2,
+        vac2.relsize_collected as relsize_collected2,
+        row_number() over (ORDER BY
+          CASE WHEN vac1.relsize_collected THEN vac1.vacuum_bytes ELSE vac1.relpages_vacuum_bytes END
+          DESC NULLS LAST)
+          as rn_vacuum_bytes1,
+        row_number() over (ORDER BY
+          CASE WHEN vac2.relsize_collected THEN vac2.vacuum_bytes ELSE vac2.relpages_vacuum_bytes END
+          DESC NULLS LAST)
+          as rn_vacuum_bytes2
     FROM top_indexes1 ix1
         FULL OUTER JOIN top_indexes2 ix2 USING (server_id, datid, indexrelid)
         -- Join interpolated data of interval 1
         LEFT OUTER JOIN (
-			SELECT
-				server_id,
-				datid,
-				indexrelid,
-				sum(vacuum_count) as vacuum_count,
-				sum(autovacuum_count) as autovacuum_count,
-				round(sum(i.relsize
-					* (COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0))))::bigint as vacuum_bytes,
-				round(avg(i.relsize))::bigint as avg_indexrelsize,
-				round(avg(t.relsize))::bigint as avg_relsize
-			FROM sample_stat_indexes i
-				JOIN indexes_list il USING (server_id,datid,indexrelid)
-				JOIN sample_stat_tables t USING
-					(server_id, sample_id, datid, relid)
-			WHERE
-				server_id = sserver_id AND
-				sample_id BETWEEN start1_id + 1 AND end1_id
-			GROUP BY
-				server_id, datid, indexrelid
+      SELECT
+        server_id,
+        datid,
+        indexrelid,
+        sum(vacuum_count) as vacuum_count,
+        sum(autovacuum_count) as autovacuum_count,
+        round(sum(i.relsize
+          * (COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0))))::bigint as vacuum_bytes,
+        round(avg(i.relsize) FILTER (WHERE COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0) > 0))::bigint as avg_indexrelsize,
+        round(avg(t.relsize) FILTER (WHERE COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0) > 0))::bigint as avg_relsize,
+        round(sum(i.relpages_bytes
+          * (COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0))))::bigint as relpages_vacuum_bytes,
+        round(avg(i.relpages_bytes) FILTER (WHERE COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0) > 0))::bigint as avg_indexrelpages_bytes,
+        round(avg(t.relpages_bytes) FILTER (WHERE COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0) > 0))::bigint as avg_relpages_bytes,
+        count(i.relsize) FILTER (WHERE COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0) > 0) =
+        count(*) FILTER (WHERE COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0) > 0)
+          as relsize_collected
+      FROM sample_stat_indexes i
+        JOIN indexes_list il USING (server_id,datid,indexrelid)
+        JOIN sample_stat_tables t USING
+          (server_id, sample_id, datid, relid)
+      WHERE
+        server_id = sserver_id AND
+        sample_id BETWEEN start1_id + 1 AND end1_id
+      GROUP BY
+        server_id, datid, indexrelid
         ) vac1 USING (server_id, datid, indexrelid)
         -- Join interpolated data of interval 2
         LEFT OUTER JOIN (
-			SELECT
-				server_id,
-				datid,
-				indexrelid,
-				sum(vacuum_count) as vacuum_count,
-				sum(autovacuum_count) as autovacuum_count,
-				round(sum(i.relsize
-					* (COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0))))::bigint as vacuum_bytes,
-				round(avg(i.relsize))::bigint as avg_indexrelsize,
-				round(avg(t.relsize))::bigint as avg_relsize
-			FROM sample_stat_indexes i
-				JOIN indexes_list il USING (server_id,datid,indexrelid)
-				JOIN sample_stat_tables t USING
-					(server_id, sample_id, datid, relid)
-			WHERE
-				server_id = sserver_id AND
-				sample_id BETWEEN start2_id + 1 AND end2_id
-			GROUP BY
-				server_id, datid, indexrelid
+      SELECT
+        server_id,
+        datid,
+        indexrelid,
+        sum(vacuum_count) as vacuum_count,
+        sum(autovacuum_count) as autovacuum_count,
+        round(sum(i.relsize
+          * (COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0))))::bigint as vacuum_bytes,
+        round(avg(i.relsize) FILTER (WHERE COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0) > 0))::bigint as avg_indexrelsize,
+        round(avg(t.relsize) FILTER (WHERE COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0) > 0))::bigint as avg_relsize,
+        round(sum(i.relpages_bytes
+          * (COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0))))::bigint as relpages_vacuum_bytes,
+        round(avg(i.relpages_bytes) FILTER (WHERE COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0) > 0))::bigint as avg_indexrelpages_bytes,
+        round(avg(t.relpages_bytes) FILTER (WHERE COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0) > 0))::bigint as avg_relpages_bytes,
+        count(i.relsize) FILTER (WHERE COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0) > 0) =
+        count(*) FILTER (WHERE COALESCE(vacuum_count,0) + COALESCE(autovacuum_count,0) > 0)
+          as relsize_collected
+      FROM sample_stat_indexes i
+        JOIN indexes_list il USING (server_id,datid,indexrelid)
+        JOIN sample_stat_tables t USING
+          (server_id, sample_id, datid, relid)
+      WHERE
+        server_id = sserver_id AND
+        sample_id BETWEEN start2_id + 1 AND end2_id
+      GROUP BY
+        server_id, datid, indexrelid
         ) vac2 USING (server_id, datid, indexrelid)
-    WHERE COALESCE(vac1.vacuum_bytes, 0) + COALESCE(vac2.vacuum_bytes, 0) > 0
-    ORDER BY
-      COALESCE(vac1.vacuum_bytes, 0) + COALESCE(vac2.vacuum_bytes, 0) DESC,
-      COALESCE(ix1.datid,ix2.datid) ASC,
-      COALESCE(ix1.relid,ix2.relid) ASC,
-      COALESCE(ix1.indexrelid,ix2.indexrelid) ASC
+    WHERE COALESCE(vac1.vacuum_count, 0) + COALESCE(vac1.autovacuum_count, 0) +
+        COALESCE(vac2.vacuum_count, 0) + COALESCE(vac2.autovacuum_count, 0) > 0
     ) t1
     WHERE least(
         rn_vacuum_bytes1,
         rn_vacuum_bytes2
-      ) <= topn;
+      ) <= topn
+    ORDER BY
+      COALESCE(best_vacuum_bytes1, 0) + COALESCE(best_vacuum_bytes2, 0) DESC,
+      dbname ASC,
+      schemaname ASC,
+      indexrelname ASC
+    ;
 
     r_result RECORD;
 BEGIN
@@ -645,7 +714,7 @@ BEGIN
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting table stats
     FOR r_result IN c_ix_stats LOOP
         report := report||format(
@@ -655,16 +724,40 @@ BEGIN
             r_result.schemaname,
             r_result.relname,
             r_result.indexrelname,
-            pg_size_pretty(r_result.vacuum_bytes1),
+            CASE WHEN r_result.relsize_collected1 THEN
+              pg_size_pretty(r_result.best_vacuum_bytes1)
+            ELSE
+              '['||pg_size_pretty(r_result.best_vacuum_bytes1)||']'
+            END,
             r_result.vacuum_count1,
             r_result.autovacuum_count1,
-            pg_size_pretty(r_result.avg_ix_relsize1),
-            pg_size_pretty(r_result.avg_relsize1),
-            pg_size_pretty(r_result.vacuum_bytes2),
+            CASE WHEN r_result.relsize_collected1 THEN
+              pg_size_pretty(r_result.avg_ix_relsize1)
+            ELSE
+              '['||pg_size_pretty(r_result.avg_indexrelpages_bytes1)||']'
+            END,
+            CASE WHEN r_result.relsize_collected1 THEN
+              pg_size_pretty(r_result.avg_relsize1)
+            ELSE
+              '['||pg_size_pretty(r_result.avg_relpages_bytes1)||']'
+            END,
+            CASE WHEN r_result.relsize_collected2 THEN
+              pg_size_pretty(r_result.best_vacuum_bytes2)
+            ELSE
+              '['||pg_size_pretty(r_result.best_vacuum_bytes2)||']'
+            END,
             r_result.vacuum_count2,
             r_result.autovacuum_count2,
-            pg_size_pretty(r_result.avg_ix_relsize2),
-            pg_size_pretty(r_result.avg_relsize2)
+            CASE WHEN r_result.relsize_collected2 THEN
+              pg_size_pretty(r_result.avg_ix_relsize2)
+            ELSE
+              '['||pg_size_pretty(r_result.avg_indexrelpages_bytes2)||']'
+            END,
+            CASE WHEN r_result.relsize_collected2 THEN
+              pg_size_pretty(r_result.avg_relsize2)
+            ELSE
+              '['||pg_size_pretty(r_result.avg_relpages_bytes2)||']'
+            END
         );
     END LOOP;
 

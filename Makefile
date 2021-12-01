@@ -1,13 +1,14 @@
-PGPROFILE_VERSION = 0.3.4
+PGPROFILE_VERSION = 0.3.5
 EXTENSION = pg_profile
 
 include migration/Makefile
+include schema/Makefile
 
 TAR_pkg = $(EXTENSION)--$(PGPROFILE_VERSION).tar.gz $(EXTENSION)--$(PGPROFILE_VERSION)_manual.tar.gz
 
 DATA_built = $(EXTENSION)--$(PGPROFILE_VERSION).sql $(EXTENSION).control $(MIGRATION)
 
-EXTRA_CLEAN = $(TAR_pkg) $(MIGRATION_FULL)
+EXTRA_CLEAN = $(TAR_pkg) $(MIGRATION_FULL) $(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql
 
 REGRESS = \
 	create_extension \
@@ -41,8 +42,8 @@ include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
 
-schema = schema/schema.sql \
-	schema/views.sql
+schema = schema/schema.sql
+
 data = data/import_queries.sql
 common = management/internal.sql
 adm_funcs = management/baseline.sql \

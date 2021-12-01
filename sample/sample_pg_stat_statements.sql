@@ -24,6 +24,7 @@ BEGIN
     st_query := format(
       'SELECT '
         'st.userid,'
+        'st.userid::regrole AS username,'
         'st.dbid,'
         'st.queryid,'
         'md5(st.query) AS queryid_md5,'
@@ -439,6 +440,7 @@ BEGIN
           sserver_id,
           s_id AS sample_id,
           dbl.userid AS userid,
+          dbl.username AS username,
           dbl.datid AS datid,
           dbl.queryid AS queryid,
           dbl.queryid_md5 AS queryid_md5,
@@ -502,6 +504,7 @@ BEGIN
         AS dbl (
           -- pg_stat_statements fields
             userid              oid,
+            username            name,
             datid               oid,
             queryid             bigint,
             queryid_md5         char(32),
@@ -573,6 +576,24 @@ BEGIN
           query
         )
         VALUES (sserver_id,qres.queryid_md5,qres.query) ON CONFLICT DO NOTHING;
+
+        -- User names
+        UPDATE roles_list SET username = qres.username
+        WHERE
+          (server_id, userid) =
+          (sserver_id, qres.userid)
+          AND username != qres.username;
+
+        INSERT INTO roles_list (
+          server_id,
+          userid,
+          username
+        ) VALUES (
+          sserver_id,
+          qres.userid,
+          COALESCE(qres.username, '_unknown_')
+        )
+        ON CONFLICT DO NOTHING;
 
         INSERT INTO sample_statements(
           server_id,

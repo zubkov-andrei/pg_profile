@@ -1,31 +1,3 @@
-/* ========= Check available tables stats for report ========= */
-
-CREATE FUNCTION profile_checkavail_tablegrowth(IN sserver_id integer, IN start_id integer, IN end_id integer)
-RETURNS BOOLEAN
-SET search_path=@extschema@ AS $$
--- Check if there is table sizes collected in both bounds
-  SELECT
-    count(DISTINCT sample_id) = 2
-  FROM sample_stat_tables_total
-  WHERE
-    server_id = sserver_id
-    AND sample_id IN (start_id, end_id)
-    AND relsize_diff IS NOT NULL
-$$ LANGUAGE sql;
-
-CREATE FUNCTION profile_checkavail_tablesizes(IN sserver_id integer, IN start_id integer, IN end_id integer)
-RETURNS BOOLEAN
-SET search_path=@extschema@ AS $$
--- Check if there is table sizes collected in ending bound
-  SELECT
-    count(DISTINCT sample_id) = 1
-  FROM sample_stat_tables_total
-  WHERE
-    server_id = sserver_id
-    AND sample_id = end_id
-    AND relsize_diff IS NOT NULL
-$$ LANGUAGE sql;
-
 /* ===== Tables stats functions ===== */
 
 CREATE FUNCTION top_tables(IN sserver_id integer, IN start_id integer, IN end_id integer)
@@ -63,7 +35,15 @@ RETURNS TABLE(
     toastautovacuum_count bigint,
     toastanalyze_count bigint,
     toastautoanalyze_count bigint,
-    toastgrowth bigint
+    toastgrowth bigint,
+    relpagegrowth_bytes bigint,
+    toastrelpagegrowth_bytes bigint,
+    seqscan_bytes_relsize bigint,
+    seqscan_bytes_relpages bigint,
+    seqscan_relsize_avail boolean,
+    t_seqscan_bytes_relsize bigint,
+    t_seqscan_bytes_relpages bigint,
+    t_seqscan_relsize_avail boolean
 ) SET search_path=@extschema@ AS $$
     SELECT
         st.server_id,
@@ -99,46 +79,26 @@ RETURNS TABLE(
         sum(stt.autovacuum_count)::bigint AS toastautovacuum_count,
         sum(stt.analyze_count)::bigint AS toastanalyze_count,
         sum(stt.autoanalyze_count)::bigint AS toastautoanalyze_count,
-        sum(stt.relsize_diff)::bigint AS toastgrowth
+        sum(stt.relsize_diff)::bigint AS toastgrowth,
+        sum(st.relpages_bytes_diff)::bigint AS relpagegrowth_bytes,
+        sum(stt.relpages_bytes_diff)::bigint AS toastrelpagegrowth_bytes,
+        sum(st.seq_scan * st.relsize)::bigint AS seqscan_bytes_relsize,
+        sum(st.seq_scan * st.relpages_bytes)::bigint AS seqscan_bytes_relpages,
+        bool_and(COALESCE(st.seq_scan, 0) = 0 OR st.relsize IS NOT NULL) AS seqscan_relsize_avail,
+        sum(stt.seq_scan * stt.relsize)::bigint AS t_seqscan_bytes_relsize,
+        sum(stt.seq_scan * stt.relpages_bytes)::bigint AS t_seqscan_bytes_relpages,
+        bool_and(COALESCE(stt.seq_scan, 0) = 0 OR stt.relsize IS NOT NULL) AS t_seqscan_relsize_avail
     FROM v_sample_stat_tables st
         -- Database name
         JOIN sample_stat_database sample_db
           USING (server_id, sample_id, datid)
         JOIN tablespaces_list tl USING (server_id, tablespaceid)
-        LEFT OUTER JOIN v_sample_stat_tables stt -- TOAST stats
-        ON (st.server_id=stt.server_id AND st.sample_id=stt.sample_id AND st.datid=stt.datid AND st.reltoastrelid=stt.relid)
+        LEFT OUTER JOIN sample_stat_tables stt ON -- TOAST stats
+          (st.server_id, st.sample_id, st.datid, st.reltoastrelid) =
+          (stt.server_id, stt.sample_id, stt.datid, stt.relid)
     WHERE st.server_id = sserver_id AND st.relkind IN ('r','m') AND NOT sample_db.datistemplate
       AND st.sample_id BETWEEN start_id + 1 AND end_id
     GROUP BY st.server_id,st.datid,st.relid,st.reltoastrelid,sample_db.datname,tl.tablespacename,st.schemaname,st.relname
-$$ LANGUAGE sql;
-
-/*
-  table_size_failures() function is used for detecting tables with possibly
-  incorrect growth stats due to failed relation size collection
-  on either bound of an interval
-*/
-CREATE FUNCTION table_size_failures(IN sserver_id integer, IN start_id integer, IN end_id integer)
-RETURNS TABLE(
-    server_id         integer,
-    datid             oid,
-    relid             oid,
-    size_failed       boolean,
-    toastsize_failed  boolean
-) SET search_path=@extschema@ AS $$
-  SELECT
-    server_id,
-    datid,
-    relid,
-    bool_or(size_failed) as size_failed,
-    bool_or(toastsize_failed) as toastsize_failed
-  FROM
-    sample_stat_tables_failures
-  WHERE
-    server_id = sserver_id AND sample_id IN (start_id, end_id)
-  GROUP BY
-    server_id,
-    datid,
-    relid
 $$ LANGUAGE sql;
 
 /* ===== Tables report functions ===== */
@@ -158,8 +118,8 @@ DECLARE
         relname,
         reltoastrelid,
         NULLIF(seq_scan, 0) as seq_scan,
-        NULLIF(tbl_seq_scan.seq_scan_bytes, 0) as seq_scan_bytes,
-        tbl_seq_scan.approximated as seq_scan_approximated,
+        NULLIF(best_seqscan_bytes, 0) as seq_scan_bytes,
+        seqscan_relsize_avail,
         NULLIF(idx_scan, 0) as idx_scan,
         NULLIF(idx_tup_fetch, 0) as idx_tup_fetch,
         NULLIF(n_tup_ins, 0) as n_tup_ins,
@@ -167,8 +127,8 @@ DECLARE
         NULLIF(n_tup_del, 0) as n_tup_del,
         NULLIF(n_tup_hot_upd, 0) as n_tup_hot_upd,
         NULLIF(toastseq_scan, 0) as toastseq_scan,
-        NULLIF(toast_seq_scan.seq_scan_bytes, 0) as toast_seq_scan_bytes,
-        toast_seq_scan.approximated as toast_seq_scan_approximated,
+        NULLIF(best_t_seqscan_bytes, 0) as toast_seq_scan_bytes,
+        t_seqscan_relsize_avail,
         NULLIF(toastidx_scan, 0) as toastidx_scan,
         NULLIF(toastidx_tup_fetch, 0) as toastidx_tup_fetch,
         NULLIF(toastn_tup_ins, 0) as toastn_tup_ins,
@@ -176,40 +136,10 @@ DECLARE
         NULLIF(toastn_tup_del, 0) as toastn_tup_del,
         NULLIF(toastn_tup_hot_upd, 0) as toastn_tup_hot_upd
     FROM top_tables tt
-    LEFT OUTER JOIN (
-      SELECT
-        server_id,
-        datid,
-        relid,
-        round(sum(seq_scan * relsize))::bigint as seq_scan_bytes,
-        count(nullif(relsize, 0)) != count(nullif(seq_scan, 0)) as approximated
-      FROM sample_stat_tables
-      WHERE server_id = sserver_id AND sample_id BETWEEN start_id + 1 AND end_id
-      GROUP BY
-        server_id,
-        datid,
-        relid
-    ) tbl_seq_scan ON (tt.server_id,tt.datid,tt.relid) =
-      (tbl_seq_scan.server_id,tbl_seq_scan.datid,tbl_seq_scan.relid)
-    LEFT OUTER JOIN (
-      SELECT
-        server_id,
-        datid,
-        relid,
-        round(sum(seq_scan * relsize))::bigint as seq_scan_bytes,
-        count(nullif(relsize, 0)) != count(nullif(seq_scan, 0)) as approximated
-      FROM sample_stat_tables
-      WHERE server_id = sserver_id AND sample_id BETWEEN start_id + 1 AND end_id
-      GROUP BY
-        server_id,
-        datid,
-        relid
-    ) toast_seq_scan ON (tt.server_id,tt.datid,tt.reltoastrelid) =
-      (toast_seq_scan.server_id,toast_seq_scan.datid,toast_seq_scan.relid)
     WHERE
-      COALESCE(tbl_seq_scan.seq_scan_bytes, 0) + COALESCE(toast_seq_scan.seq_scan_bytes, 0) > 0
+      COALESCE(best_seqscan_bytes, 0) + COALESCE(best_t_seqscan_bytes, 0) > 0
     ORDER BY
-      COALESCE(tbl_seq_scan.seq_scan_bytes, 0) + COALESCE(toast_seq_scan.seq_scan_bytes, 0) DESC,
+      COALESCE(best_seqscan_bytes, 0) + COALESCE(best_t_seqscan_bytes, 0) DESC,
       tt.datid ASC,
       tt.relid ASC
     LIMIT topn;
@@ -281,7 +211,7 @@ BEGIN
         '<tr style="visibility:collapse"></tr>');
 
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
 
     -- Reporting table stats
@@ -293,9 +223,11 @@ BEGIN
               r_result.tablespacename,
               r_result.schemaname,
               r_result.relname,
-              CASE WHEN r_result.seq_scan_approximated THEN '~'
-                ELSE ''
-              END||pg_size_pretty(r_result.seq_scan_bytes),
+              CASE WHEN r_result.seqscan_relsize_avail THEN
+                  pg_size_pretty(r_result.seq_scan_bytes)
+                ELSE
+                  '['||pg_size_pretty(r_result.seq_scan_bytes)||']'
+              END,
               r_result.seq_scan,
               r_result.idx_scan,
               r_result.idx_tup_fetch,
@@ -311,9 +243,11 @@ BEGIN
               r_result.tablespacename,
               r_result.schemaname,
               r_result.relname,
-              CASE WHEN r_result.seq_scan_approximated THEN '~'
-                ELSE ''
-              END||pg_size_pretty(r_result.seq_scan_bytes),
+              CASE WHEN r_result.seqscan_relsize_avail THEN
+                  pg_size_pretty(r_result.seq_scan_bytes)
+                ELSE
+                  '['||pg_size_pretty(r_result.seq_scan_bytes)||']'
+              END,
               r_result.seq_scan,
               r_result.idx_scan,
               r_result.idx_tup_fetch,
@@ -322,9 +256,11 @@ BEGIN
               r_result.n_tup_del,
               r_result.n_tup_hot_upd,
               r_result.relname||'(TOAST)',
-              CASE WHEN r_result.toast_seq_scan_approximated THEN '~'
-                ELSE ''
-              END||pg_size_pretty(r_result.toast_seq_scan_bytes),
+              CASE WHEN r_result.t_seqscan_relsize_avail THEN
+                  pg_size_pretty(r_result.toast_seq_scan_bytes)
+                ELSE
+                  '['||pg_size_pretty(r_result.toast_seq_scan_bytes)||']'
+              END,
               r_result.toastseq_scan,
               r_result.toastidx_scan,
               r_result.toastidx_tup_fetch,
@@ -520,7 +456,7 @@ BEGIN
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting table stats
     FOR r_result IN c_tbl_stats LOOP
         report := report||format(
@@ -671,7 +607,7 @@ BEGIN
         '<tr style="visibility:collapse"></tr>');
 
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting table stats
     FOR r_result IN c_tbl_stats LOOP
@@ -836,7 +772,7 @@ BEGIN
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting table stats
     FOR r_result IN c_tbl_stats LOOP
         report := report||format(
@@ -974,7 +910,7 @@ BEGIN
         '<tr style="visibility:collapse"></tr>');
 
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting table stats
     FOR r_result IN c_tbl_stats LOOP
@@ -1121,7 +1057,7 @@ BEGIN
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting table stats
     FOR r_result IN c_tbl_stats LOOP
         report := report||format(
@@ -1173,26 +1109,28 @@ DECLARE
         NULLIF(top.n_tup_upd, 0) as n_tup_upd,
         NULLIF(top.n_tup_del, 0) as n_tup_del,
         NULLIF(top.n_tup_hot_upd, 0) as n_tup_hot_upd,
-        CASE WHEN sf.size_failed THEN 'N/A'
-          ELSE pg_size_pretty(NULLIF(top.growth, 0)) END AS growth,
-        pg_size_pretty(NULLIF(st_last.relsize, 0)) AS relsize,
+        NULLIF(top.best_growth, 0) AS growth,
+        NULLIF(st_last.relsize, 0) AS relsize,
+        NULLIF(st_last.relpages_bytes, 0) AS relpages_bytes,
         NULLIF(top.toastn_tup_ins, 0) as toastn_tup_ins,
         NULLIF(top.toastn_tup_upd, 0) as toastn_tup_upd,
         NULLIF(top.toastn_tup_del, 0) as toastn_tup_del,
         NULLIF(top.toastn_tup_hot_upd, 0) as toastn_tup_hot_upd,
-        CASE WHEN sf.toastsize_failed THEN 'N/A'
-          ELSE pg_size_pretty(NULLIF(top.toastgrowth, 0)) END AS toastgrowth,
-        pg_size_pretty(NULLIF(stt_last.relsize, 0)) AS toastrelsize
+        NULLIF(top.best_toastgrowth, 0) AS toastgrowth,
+        NULLIF(stt_last.relsize, 0) AS toastrelsize,
+        NULLIF(stt_last.relpages_bytes, 0) AS toastrelpages_bytes,
+        top.relsize_growth_avail,
+        top.relsize_toastgrowth_avail
     FROM top_tables top
-        JOIN v_sample_stat_tables st_last
+        JOIN sample_stat_tables st_last
           USING (server_id, datid, relid)
-        -- Is there any failed size collections on a tables?
-        LEFT OUTER JOIN table_size_failures(sserver_id, start_id, end_id) sf
-          USING (server_id, datid, relid)
-        LEFT OUTER JOIN v_sample_stat_tables stt_last
-          ON (top.server_id=stt_last.server_id AND top.datid=stt_last.datid AND top.reltoastrelid=stt_last.relid AND stt_last.sample_id=end_id)
-    WHERE st_last.sample_id = end_id AND COALESCE(top.growth, 0) + COALESCE(top.toastgrowth, 0) > 0
-    ORDER BY COALESCE(top.growth, 0) + COALESCE(top.toastgrowth, 0) DESC,
+        LEFT OUTER JOIN sample_stat_tables stt_last ON
+          (stt_last.server_id, stt_last.datid, stt_last.relid, stt_last.sample_id) =
+          (top.server_id, top.datid, top.reltoastrelid, end_id)
+    WHERE st_last.sample_id = end_id AND
+      COALESCE(top.best_growth,0) + COALESCE(top.best_toastgrowth,0) > 0
+    ORDER BY
+      COALESCE(top.best_growth,0) + COALESCE(top.best_toastgrowth,0) DESC,
       top.datid ASC,
       top.relid ASC
     LIMIT topn;
@@ -1256,7 +1194,7 @@ BEGIN
         '<tr style="visibility:collapse"></tr>');
 
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting table stats
     FOR r_result IN c_tbl_stats LOOP
@@ -1267,8 +1205,14 @@ BEGIN
             r_result.tablespacename,
             r_result.schemaname,
             r_result.relname,
-            r_result.relsize,
-            r_result.growth,
+            COALESCE(
+              pg_size_pretty(r_result.relsize),
+              '['||pg_size_pretty(r_result.relpages_bytes)||']'
+            ),
+            CASE WHEN r_result.relsize_growth_avail
+              THEN pg_size_pretty(r_result.growth)
+              ELSE '['||pg_size_pretty(r_result.growth)||']'
+            END,
             r_result.n_tup_ins,
             r_result.n_tup_upd,
             r_result.n_tup_del,
@@ -1281,15 +1225,27 @@ BEGIN
             r_result.tablespacename,
             r_result.schemaname,
             r_result.relname,
-            r_result.relsize,
-            r_result.growth,
+            COALESCE(
+              pg_size_pretty(r_result.relsize),
+              '['||pg_size_pretty(r_result.relpages_bytes)||']'
+            ),
+            CASE WHEN r_result.relsize_growth_avail
+              THEN pg_size_pretty(r_result.growth)
+              ELSE '['||pg_size_pretty(r_result.growth)||']'
+            END,
             r_result.n_tup_ins,
             r_result.n_tup_upd,
             r_result.n_tup_del,
             r_result.n_tup_hot_upd,
             r_result.relname||'(TOAST)',
-            r_result.toastrelsize,
-            r_result.toastgrowth,
+            COALESCE(
+              pg_size_pretty(r_result.toastrelsize),
+              '['||pg_size_pretty(r_result.toastrelpages_bytes)||']'
+            ),
+            CASE WHEN r_result.relsize_toastgrowth_avail
+              THEN pg_size_pretty(r_result.toastgrowth)
+              ELSE '['||pg_size_pretty(r_result.toastgrowth)||']'
+            END,
             r_result.toastn_tup_ins,
             r_result.toastn_tup_upd,
             r_result.toastn_tup_del,
@@ -1326,55 +1282,55 @@ DECLARE
         NULLIF(tbl1.n_tup_upd, 0) as n_tup_upd1,
         NULLIF(tbl1.n_tup_del, 0) as n_tup_del1,
         NULLIF(tbl1.n_tup_hot_upd, 0) as n_tup_hot_upd1,
-        CASE WHEN sf1.size_failed THEN 'N/A'
-          ELSE pg_size_pretty(NULLIF(tbl1.growth, 0)) END AS growth1,
-        pg_size_pretty(NULLIF(st_last1.relsize, 0)) AS relsize1,
+        NULLIF(tbl1.best_growth, 0) as growth1,
+        NULLIF(st_last1.relsize, 0) as relsize1,
+        NULLIF(st_last1.relpages_bytes, 0) AS relpages_bytes1,
         NULLIF(tbl1.toastn_tup_ins, 0) as toastn_tup_ins1,
         NULLIF(tbl1.toastn_tup_upd, 0) as toastn_tup_upd1,
         NULLIF(tbl1.toastn_tup_del, 0) as toastn_tup_del1,
         NULLIF(tbl1.toastn_tup_hot_upd, 0) as toastn_tup_hot_upd1,
-        CASE WHEN sf1.toastsize_failed THEN 'N/A'
-          ELSE pg_size_pretty(NULLIF(tbl1.toastgrowth, 0)) END AS toastgrowth1,
-        pg_size_pretty(NULLIF(stt_last1.relsize, 0)) AS toastrelsize1,
+        NULLIF(tbl1.best_toastgrowth, 0) AS toastgrowth1,
+        NULLIF(stt_last1.relsize, 0) AS toastrelsize1,
+        NULLIF(stt_last1.relpages_bytes, 0) AS toastrelpages_bytes1,
         NULLIF(tbl2.n_tup_ins, 0) as n_tup_ins2,
         NULLIF(tbl2.n_tup_upd, 0) as n_tup_upd2,
         NULLIF(tbl2.n_tup_del, 0) as n_tup_del2,
         NULLIF(tbl2.n_tup_hot_upd, 0) as n_tup_hot_upd2,
-        CASE WHEN sf2.size_failed THEN 'N/A'
-          ELSE pg_size_pretty(NULLIF(tbl2.growth, 0)) END AS growth2,
-        pg_size_pretty(NULLIF(st_last2.relsize, 0)) AS relsize2,
+        NULLIF(tbl2.best_growth, 0) as growth2,
+        NULLIF(st_last2.relsize, 0) as relsize2,
+        NULLIF(st_last2.relpages_bytes, 0) AS relpages_bytes2,
         NULLIF(tbl2.toastn_tup_ins, 0) as toastn_tup_ins2,
         NULLIF(tbl2.toastn_tup_upd, 0) as toastn_tup_upd2,
         NULLIF(tbl2.toastn_tup_del, 0) as toastn_tup_del2,
         NULLIF(tbl2.toastn_tup_hot_upd, 0) as toastn_tup_hot_upd2,
-        CASE WHEN sf2.toastsize_failed THEN 'N/A'
-          ELSE pg_size_pretty(NULLIF(tbl2.toastgrowth, 0)) END AS toastgrowth2,
-        pg_size_pretty(NULLIF(stt_last2.relsize, 0)) AS toastrelsize2,
-        row_number() OVER (ORDER BY COALESCE(tbl1.growth, 0) + COALESCE(tbl1.toastgrowth, 0) DESC NULLS LAST) as rn_growth1,
-        row_number() OVER (ORDER BY COALESCE(tbl2.growth, 0) + COALESCE(tbl2.toastgrowth, 0) DESC NULLS LAST) as rn_growth2
+        NULLIF(tbl2.best_toastgrowth, 0) AS toastgrowth2,
+        NULLIF(stt_last2.relsize, 0) AS toastrelsize2,
+        NULLIF(stt_last2.relpages_bytes, 0) AS toastrelpages_bytes2,
+        tbl1.relsize_growth_avail as relsize_growth_avail1,
+        tbl1.relsize_toastgrowth_avail as relsize_toastgrowth_avail1,
+        tbl2.relsize_growth_avail as relsize_growth_avail2,
+        tbl2.relsize_toastgrowth_avail as relsize_toastgrowth_avail2,
+        row_number() OVER (ORDER BY COALESCE(tbl1.best_growth, 0) + COALESCE(tbl1.best_toastgrowth, 0) DESC NULLS LAST) as rn_growth1,
+        row_number() OVER (ORDER BY COALESCE(tbl2.best_growth, 0) + COALESCE(tbl2.best_toastgrowth, 0) DESC NULLS LAST) as rn_growth2
     FROM top_tables1 tbl1
         FULL OUTER JOIN top_tables2 tbl2 USING (server_id,datid,relid)
-        -- Is there any failed size collections on a tables of 1st interval?
-        LEFT OUTER JOIN table_size_failures(sserver_id, start1_id, end1_id) sf1
-          USING (server_id, datid, relid)
-        -- Is there any failed size collections on a tables of 2nd interval?
-        LEFT OUTER JOIN table_size_failures(sserver_id, start2_id, end2_id) sf2
-          USING (server_id, datid, relid)
-        LEFT OUTER JOIN v_sample_stat_tables st_last1 ON (tbl1.server_id = st_last1.server_id
-          AND tbl1.datid = st_last1.datid AND tbl1.relid = st_last1.relid AND st_last1.sample_id=end1_id)
-        LEFT OUTER JOIN v_sample_stat_tables st_last2 ON (tbl2.server_id = st_last2.server_id
-          AND tbl2.datid = st_last2.datid AND tbl2.relid = st_last2.relid AND st_last2.sample_id=end2_id)
+        LEFT OUTER JOIN sample_stat_tables st_last1 ON
+          (st_last1.server_id, st_last1.datid, st_last1.relid, st_last1.sample_id) =
+          (tbl1.server_id, tbl1.datid, tbl1.relid, end1_id)
+        LEFT OUTER JOIN sample_stat_tables st_last2 ON
+          (st_last2.server_id, st_last2.datid, st_last2.relid, st_last2.sample_id) =
+          (tbl2.server_id, tbl2.datid, tbl2.relid, end2_id)
         -- join toast tables last sample stats (to get relsize)
-        LEFT OUTER JOIN v_sample_stat_tables stt_last1 ON (st_last1.server_id = stt_last1.server_id
-          AND st_last1.datid = stt_last1.datid AND st_last1.reltoastrelid = stt_last1.relid
-          AND st_last1.sample_id=stt_last1.sample_id)
-        LEFT OUTER JOIN v_sample_stat_tables stt_last2 ON (st_last2.server_id = stt_last2.server_id
-          AND st_last2.datid = stt_last2.datid AND st_last2.reltoastrelid = stt_last2.relid
-          AND st_last2.sample_id=stt_last2.sample_id)
-    WHERE COALESCE(tbl1.growth, 0) + COALESCE(tbl1.toastgrowth, 0) +
-      COALESCE(tbl2.growth, 0) + COALESCE(tbl2.toastgrowth, 0) > 0
-    ORDER BY COALESCE(tbl1.growth, 0) + COALESCE(tbl1.toastgrowth, 0) +
-      COALESCE(tbl2.growth, 0) + COALESCE(tbl2.toastgrowth, 0) DESC,
+        LEFT OUTER JOIN sample_stat_tables stt_last1 ON
+          (stt_last1.server_id, stt_last1.datid, stt_last1.relid, stt_last1.sample_id) =
+          (st_last1.server_id, st_last1.datid, tbl1.reltoastrelid, st_last1.sample_id)
+        LEFT OUTER JOIN sample_stat_tables stt_last2 ON
+          (stt_last2.server_id, stt_last2.datid, stt_last2.relid, stt_last2.sample_id) =
+          (st_last2.server_id, st_last2.datid, tbl2.reltoastrelid, st_last2.sample_id)
+    WHERE COALESCE(tbl1.best_growth, 0) + COALESCE(tbl1.best_toastgrowth, 0) +
+      COALESCE(tbl2.best_growth, 0) + COALESCE(tbl2.best_toastgrowth, 0) > 0
+    ORDER BY COALESCE(tbl1.best_growth, 0) + COALESCE(tbl1.best_toastgrowth, 0) +
+      COALESCE(tbl2.best_growth, 0) + COALESCE(tbl2.best_toastgrowth, 0) DESC,
       COALESCE(tbl1.datid,tbl2.datid) ASC,
       COALESCE(tbl1.relid,tbl2.relid) ASC
     ) t1
@@ -1451,7 +1407,7 @@ BEGIN
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting table stats
     FOR r_result IN c_tbl_stats LOOP
@@ -1461,26 +1417,50 @@ BEGIN
             r_result.tablespacename,
             r_result.schemaname,
             r_result.relname,
-            r_result.relsize1,
-            r_result.growth1,
+            COALESCE(
+              pg_size_pretty(r_result.relsize1),
+              '['||pg_size_pretty(r_result.relpages_bytes1)||']'
+            ),
+            CASE WHEN r_result.relsize_growth_avail1
+              THEN pg_size_pretty(r_result.growth1)
+              ELSE '['||pg_size_pretty(r_result.growth1)||']'
+            END,
             r_result.n_tup_ins1,
             r_result.n_tup_upd1,
             r_result.n_tup_del1,
             r_result.n_tup_hot_upd1,
-            r_result.toastrelsize1,
-            r_result.toastgrowth1,
+            COALESCE(
+              pg_size_pretty(r_result.toastrelsize1),
+              '['||pg_size_pretty(r_result.toastrelpages_bytes1)||']'
+            ),
+            CASE WHEN r_result.relsize_toastgrowth_avail1
+              THEN pg_size_pretty(r_result.toastgrowth1)
+              ELSE '['||pg_size_pretty(r_result.toastgrowth1)||']'
+            END,
             r_result.toastn_tup_ins1,
             r_result.toastn_tup_upd1,
             r_result.toastn_tup_del1,
             r_result.toastn_tup_hot_upd1,
-            r_result.relsize2,
-            r_result.growth2,
+            COALESCE(
+              pg_size_pretty(r_result.relsize2),
+              '['||pg_size_pretty(r_result.relpages_bytes2)||']'
+            ),
+            CASE WHEN r_result.relsize_growth_avail2
+              THEN pg_size_pretty(r_result.growth2)
+              ELSE '['||pg_size_pretty(r_result.growth2)||']'
+            END,
             r_result.n_tup_ins2,
             r_result.n_tup_upd2,
             r_result.n_tup_del2,
             r_result.n_tup_hot_upd2,
-            r_result.toastrelsize2,
-            r_result.toastgrowth2,
+            COALESCE(
+              pg_size_pretty(r_result.toastrelsize2),
+              '['||pg_size_pretty(r_result.toastrelpages_bytes2)||']'
+            ),
+            CASE WHEN r_result.relsize_toastgrowth_avail2
+              THEN pg_size_pretty(r_result.toastgrowth2)
+              ELSE '['||pg_size_pretty(r_result.toastgrowth2)||']'
+            END,
             r_result.toastn_tup_ins2,
             r_result.toastn_tup_upd2,
             r_result.toastn_tup_del2,
@@ -1559,7 +1539,7 @@ BEGIN
     );
 
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting table stats
     FOR r_result IN c_tbl_stats LOOP
@@ -1676,7 +1656,7 @@ BEGIN
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting table stats
     FOR r_result IN c_tbl_stats LOOP
@@ -1772,7 +1752,7 @@ BEGIN
     );
 
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting table stats
     FOR r_result IN c_tbl_stats LOOP
@@ -1889,7 +1869,7 @@ BEGIN
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting table stats
     FOR r_result IN c_tbl_stats LOOP

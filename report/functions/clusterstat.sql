@@ -97,7 +97,7 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting summary databases stats
     FOR r_result IN c_dbstats LOOP
@@ -167,7 +167,7 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting summary databases stats
     FOR r_result IN c_dbstats LOOP
@@ -237,7 +237,7 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting summary bgwriter stats
     FOR r_result IN c_dbstats LOOP
         report := report||format(jtab_tpl #>> ARRAY['val_tpl'],'Scheduled checkpoints',r_result.checkpoints_timed);
@@ -321,7 +321,7 @@ BEGIN
           '<td {interval2}><div {value}>%s</div></td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting summary bgwriter stats
     FOR r_result IN c_dbstats LOOP
         report := report||format(jtab_tpl #>> ARRAY['val_tpl'],'Scheduled checkpoints',r_result.checkpoints_timed1,r_result.checkpoints_timed2);

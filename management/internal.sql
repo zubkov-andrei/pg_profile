@@ -24,17 +24,43 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION jsonb_replace(IN dict jsonb, IN templates jsonb) RETURNS jsonb AS $$
+CREATE FUNCTION jsonb_replace(IN settings jsonb, IN templates jsonb) RETURNS jsonb AS $$
 DECLARE
     res_jsonb           jsonb;
     jsontemplkey        text;
     jsondictkey         text;
+
+    c_replace_tab CURSOR FOR
+    SELECT
+      '{'||template.key||'}' AS placeholder,
+      CASE
+        WHEN features.value::boolean THEN template.value
+        ELSE COALESCE(template_not.value,'')
+      END AS substitution
+    FROM jsonb_each_text(settings #> ARRAY['report_features']) AS features
+      JOIN jsonb_each_text(templates) AS template ON (strpos(template.key,features.key||'?') = 1)
+      LEFT JOIN jsonb_each_text(templates) AS template_not ON (template_not.key = '!'||template.key)
+    ;
+
+    r_replace RECORD;
 BEGIN
     res_jsonb := templates;
-    FOR jsontemplkey IN SELECT jsonb_object_keys(res_jsonb) LOOP
-      FOR jsondictkey IN SELECT jsonb_object_keys(dict) LOOP
+    /* Conditional template placeholders processing
+    * based on available report features
+    */
+    FOR r_replace IN c_replace_tab LOOP
+      FOR jsontemplkey IN SELECT jsonb_object_keys(res_jsonb) LOOP
         res_jsonb := jsonb_set(res_jsonb, ARRAY[jsontemplkey],
-          to_jsonb(replace(res_jsonb #>> ARRAY[jsontemplkey], '{'||jsondictkey||'}', dict #>> ARRAY[jsondictkey])));
+          to_jsonb(replace(res_jsonb #>> ARRAY[jsontemplkey],
+          r_replace.placeholder, r_replace.substitution)));
+      END LOOP; -- over table templates
+    END LOOP; -- over feature-based replacements
+    -- Replacing common html/css placeholders
+    FOR jsontemplkey IN SELECT jsonb_object_keys(res_jsonb) LOOP
+      FOR jsondictkey IN SELECT jsonb_object_keys(settings #> ARRAY['htbl']) LOOP
+        res_jsonb := jsonb_set(res_jsonb, ARRAY[jsontemplkey],
+          to_jsonb(replace(res_jsonb #>> ARRAY[jsontemplkey], '{'||jsondictkey||'}',
+            settings #> ARRAY['htbl'] #>> ARRAY[jsondictkey])));
       END LOOP;
     END LOOP;
 

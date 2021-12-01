@@ -40,13 +40,8 @@ BEGIN
     DELETE FROM last_stat_archiver WHERE server_id = dserver_id;
     DELETE FROM sample_stat_tablespaces WHERE server_id = dserver_id;
     DELETE FROM tablespaces_list WHERE server_id = dserver_id;
-    DELETE FROM indexes_list WHERE server_id = dserver_id;
-    DELETE FROM tables_list WHERE server_id = dserver_id;
-    DELETE FROM sample_stat_user_functions WHERE server_id = dserver_id;
-    DELETE FROM funcs_list WHERE server_id = dserver_id;
-    DELETE FROM sample_statements WHERE server_id = dserver_id;
-    DELETE FROM stmt_list WHERE server_id = dserver_id;
-    DELETE FROM servers WHERE server_name = server;
+    DELETE FROM samples WHERE server_id = dserver_id;
+    DELETE FROM servers WHERE server_id = dserver_id;
     GET DIAGNOSTICS del_rows = ROW_COUNT;
     RETURN del_rows;
 END;
@@ -139,16 +134,15 @@ $$ LANGUAGE plpgsql;
 COMMENT ON FUNCTION set_server_db_exclude(IN server name, IN exclude_db name[]) IS 'Exclude databases from object stats collection. Useful in RDS.';
 
 CREATE FUNCTION set_server_size_sampling(IN server name, IN window_start time with time zone = NULL,
-  IN window_duration interval hour to second = NULL, IN sample_interval interval day to minute = NULL,
-  IN limited_sizes_collection boolean = true)
+  IN window_duration interval hour to second = NULL, IN sample_interval interval day to minute = NULL)
 RETURNS integer SET search_path=@extschema@ AS $$
 DECLARE
     upd_rows integer;
 BEGIN
     UPDATE servers
     SET
-      (size_smp_wnd_start, size_smp_wnd_dur, size_smp_interval, sizes_limited) =
-      (window_start, window_duration, sample_interval, limited_sizes_collection)
+      (size_smp_wnd_start, size_smp_wnd_dur, size_smp_interval) =
+      (window_start, window_duration, sample_interval)
     WHERE
       server_name = server;
     GET DIAGNOSTICS upd_rows = ROW_COUNT;
@@ -156,9 +150,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 COMMENT ON FUNCTION set_server_size_sampling(IN server name, IN window_start time with time zone,
-  IN window_duration interval hour to second, IN sample_interval interval day to minute,
-  IN limited_sizes_collection boolean) IS
-  'Set relation sizes sampling settings for a server';
+  IN window_duration interval hour to second, IN sample_interval interval day to minute)
+IS 'Set relation sizes sampling settings for a server';
 
 CREATE FUNCTION show_servers()
 RETURNS TABLE(server_name name, connstr text, enabled boolean, description text)
@@ -173,8 +166,7 @@ RETURNS TABLE (
   window_start time with time zone,
   window_end time with time zone,
   window_duration interval hour to second,
-  sample_interval interval day to minute,
-  limited_collection boolean
+  sample_interval interval day to minute
 )
 SET search_path=@extschema@ AS $$
   SELECT
@@ -182,8 +174,7 @@ SET search_path=@extschema@ AS $$
     size_smp_wnd_start,
     size_smp_wnd_start + size_smp_wnd_dur,
     size_smp_wnd_dur,
-    size_smp_interval,
-    sizes_limited
+    size_smp_interval
   FROM
     servers
 $$ LANGUAGE sql;

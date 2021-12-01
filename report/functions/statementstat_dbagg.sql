@@ -18,6 +18,15 @@ SET search_path=@extschema@ AS $$
   WHERE sn.server_id = sserver_id AND sn.sample_id BETWEEN start_id + 1 AND end_id
 $$ LANGUAGE sql;
 
+CREATE FUNCTION profile_checkavail_stmt_io_times(IN sserver_id integer, IN start_id integer, IN end_id integer)
+RETURNS BOOLEAN
+SET search_path=@extschema@ AS $$
+-- Check if we have planning times collected for report interval
+  SELECT COALESCE(sum(blk_read_time), 0) + COALESCE(sum(blk_write_time), 0) > 0
+  FROM sample_statements_total sn
+  WHERE sn.server_id = sserver_id AND sn.sample_id BETWEEN start_id + 1 AND end_id
+$$ LANGUAGE sql;
+
 CREATE FUNCTION profile_checkavail_stmt_wal_bytes(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS BOOLEAN
 SET search_path=@extschema@ AS $$
@@ -120,16 +129,16 @@ BEGIN
           '<tr>'
             '<th rowspan="2">Database</th>'
             '<th rowspan="2"title="Number of query executions">Calls</th>'
-            '{time_hdr}'
+            '{planning_times?time_hdr}'
             '<th colspan="2" title="Number of blocks fetched (hit + read)">Fetched (blk)</th>'
             '<th colspan="2" title="Number of blocks dirtied">Dirtied (blk)</th>'
             '<th colspan="2" title="Number of blocks, used in operations (like sorts and joins)">Temp (blk)</th>'
             '<th colspan="2" title="Number of blocks, used for temporary tables">Local (blk)</th>'
             '<th rowspan="2">Statements</th>'
-            '{wal_bytes_hdr}'
+            '{statement_wal_bytes?wal_bytes_hdr}'
           '</tr>'
           '<tr>'
-            '{plan_time_hdr}'
+            '{planning_times?plan_time_hdr}'
             '<th title="Time spent executing queries">Exec</th>'
             '<th title="Time spent reading blocks">Read</th>'   -- I/O time
             '<th title="Time spent writing blocks">Write</th>'
@@ -149,7 +158,7 @@ BEGIN
         '<tr>'
           '<td>%1$s</td>'
           '<td {value}>%2$s</td>'
-          '{plan_time_cell}'
+          '{planning_times?plan_time_cell}'
           '<td {value}>%4$s</td>'
           '<td {value}>%5$s</td>'
           '<td {value}>%6$s</td>'
@@ -163,42 +172,24 @@ BEGIN
           '<td {value}>%14$s</td>'
           '<td {value}>%15$s</td>'
           '<td {value}>%16$s</td>'
-          '{wal_bytes_cell}'
+          '{statement_wal_bytes?wal_bytes_cell}'
         '</tr>',
-      'time_hdr', -- Time header for stat_statements less then v1.8
+      '!planning_times?time_hdr', -- Time header for stat_statements less then v1.8
         '<th colspan="4">Time (s)</th>',
-      'time_hdr_plan_time', -- Time header for stat_statements v1.8 - added plan time field
+      'planning_times?time_hdr', -- Time header for stat_statements v1.8 - added plan time field
         '<th colspan="5">Time (s)</th>',
-      'plan_time_hdr',
+      'planning_times?plan_time_hdr',
         '<th title="Time spent planning queries">Plan</th>',
-      'plan_time_cell',
+      'planning_times?plan_time_cell',
         '<td {value}>%3$s</td>',
-      'wal_bytes_hdr',
+      'statement_wal_bytes?wal_bytes_hdr',
         '<th rowspan="2">WAL size</th>',
-      'wal_bytes_cell',
-        '<td {value}>%17$s</td>');
-    -- Conditional template
-    -- Planning times
-    IF jsonb_extract_path_text(jreportset, 'report_features', 'planning_times')::boolean THEN
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{time_hdr}',jtab_tpl->>'time_hdr_plan_time')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{plan_time_hdr}',jtab_tpl->>'plan_time_hdr')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{plan_time_cell}',jtab_tpl->>'plan_time_cell')));
-    ELSE
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{time_hdr}',jtab_tpl->>'time_hdr')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{plan_time_hdr}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{plan_time_cell}','')));
-    END IF;
-    -- WAL size
-    IF jsonb_extract_path_text(jreportset, 'report_features', 'statement_wal_bytes')::boolean THEN
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{wal_bytes_hdr}',jtab_tpl->>'wal_bytes_hdr')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{wal_bytes_cell}',jtab_tpl->>'wal_bytes_cell')));
-    ELSE
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{wal_bytes_hdr}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{wal_bytes_cell}','')));
-    END IF;
+      'statement_wal_bytes?wal_bytes_cell',
+        '<td {value}>%17$s</td>'
+    );
 
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting summary databases stats
     FOR r_result IN c_dbstats LOOP
@@ -289,16 +280,16 @@ BEGIN
             '<th rowspan="2">Database</th>'
             '<th rowspan="2">I</th>'
             '<th rowspan="2" title="Number of query executions">Calls</th>'
-            '{time_hdr}'
+            '{planning_times?time_hdr}'
             '<th colspan="2" title="Number of blocks fetched (hit + read)">Fetched (blk)</th>'
             '<th colspan="2" title="Number of blocks dirtied">Dirtied (blk)</th>'
             '<th colspan="2" title="Number of blocks, used in operations (like sorts and joins)">Temp (blk)</th>'
             '<th colspan="2" title="Number of blocks, used for temporary tables">Local (blk)</th>'
             '<th rowspan="2">Statements</th>'
-            '{wal_bytes_hdr}'
+            '{statement_wal_bytes?wal_bytes_hdr}'
           '</tr>'
           '<tr>'
-            '{plan_time_hdr}'
+            '{planning_times?plan_time_hdr}'
             '<th title="Time spent executing queries">Exec</th>'
             '<th title="Time spent reading blocks">Read</th>'   -- I/O time
             '<th title="Time spent writing blocks">Write</th>'
@@ -319,7 +310,7 @@ BEGIN
           '<td {rowtdspanhdr}>%1$s</td>'
           '<td {label} {title1}>1</td>'
           '<td {value}>%2$s</td>'
-          '{plan_time_cell1}'
+          '{planning_times?plan_time_cell1}'
           '<td {value}>%4$s</td>'
           '<td {value}>%5$s</td>'
           '<td {value}>%6$s</td>'
@@ -333,12 +324,12 @@ BEGIN
           '<td {value}>%14$s</td>'
           '<td {value}>%15$s</td>'
           '<td {value}>%16$s</td>'
-          '{wal_bytes_cell1}'
+          '{statement_wal_bytes?wal_bytes_cell1}'
         '</tr>'
         '<tr {interval2}>'
           '<td {label} {title2}>2</td>'
           '<td {value}>%18$s</td>'
-          '{plan_time_cell2}'
+          '{planning_times?plan_time_cell2}'
           '<td {value}>%20$s</td>'
           '<td {value}>%21$s</td>'
           '<td {value}>%22$s</td>'
@@ -352,50 +343,28 @@ BEGIN
           '<td {value}>%30$s</td>'
           '<td {value}>%31$s</td>'
           '<td {value}>%32$s</td>'
-          '{wal_bytes_cell2}'
+          '{statement_wal_bytes?wal_bytes_cell2}'
         '</tr>'
         '<tr style="visibility:collapse"></tr>',
-      'time_hdr', -- Time header for stat_statements less then v1.8
+      '!planning_times?time_hdr', -- Time header for stat_statements less then v1.8
         '<th colspan="4">Time (s)</th>',
-      'time_hdr_plan_time', -- Time header for stat_statements v1.8 - added plan time field
+      'planning_times?time_hdr', -- Time header for stat_statements v1.8 - added plan time field
         '<th colspan="5">Time (s)</th>',
-      'plan_time_hdr',
+      'planning_times?plan_time_hdr',
         '<th title="Time spent planning queries">Plan</th>',
-      'plan_time_cell1',
+      'planning_times?plan_time_cell1',
         '<td {value}>%3$s</td>',
-      'plan_time_cell2',
+      'planning_times?plan_time_cell2',
         '<td {value}>%19$s</td>',
-      'wal_bytes_hdr',
+      'statement_wal_bytes?wal_bytes_hdr',
         '<th rowspan="2">WAL size</th>',
-      'wal_bytes_cell1',
+      'statement_wal_bytes?wal_bytes_cell1',
         '<td {value}>%17$s</td>',
-      'wal_bytes_cell2',
-        '<td {value}>%33$s</td>');
-    -- Conditional template
-    -- Planning times
-    IF jsonb_extract_path_text(jreportset, 'report_features', 'planning_times')::boolean THEN
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{time_hdr}',jtab_tpl->>'time_hdr_plan_time')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{plan_time_hdr}',jtab_tpl->>'plan_time_hdr')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{plan_time_cell1}',jtab_tpl->>'plan_time_cell1')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{plan_time_cell2}',jtab_tpl->>'plan_time_cell2')));
-    ELSE
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{time_hdr}',jtab_tpl->>'time_hdr')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{plan_time_hdr}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{plan_time_cell1}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{plan_time_cell2}','')));
-    END IF;
-    -- WAL size
-    IF jsonb_extract_path_text(jreportset, 'report_features', 'statement_wal_bytes')::boolean THEN
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{wal_bytes_hdr}',jtab_tpl->>'wal_bytes_hdr')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{wal_bytes_cell1}',jtab_tpl->>'wal_bytes_cell1')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{wal_bytes_cell2}',jtab_tpl->>'wal_bytes_cell2')));
-    ELSE
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{wal_bytes_hdr}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{wal_bytes_cell1}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stdb_tpl}',to_jsonb(replace(jtab_tpl->>'stdb_tpl','{wal_bytes_cell2}','')));
-    END IF;
+      'statement_wal_bytes?wal_bytes_cell2',
+        '<td {value}>%33$s</td>'
+    );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting summary databases stats
     FOR r_result IN c_dbstats LOOP

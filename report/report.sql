@@ -7,6 +7,7 @@ DECLARE
     tmp_report  text;
     report      text;
     topn        integer;
+    qlen_limit  integer;
     stmt_all_cnt    integer;
     -- HTML elements templates
     report_tpl CONSTANT text := '<html><head><style>{css}</style><title>Postgres profile report {samples}</title></head><body><H1>Postgres profile report {samples}</H1>'
@@ -83,6 +84,13 @@ BEGIN
         WHEN OTHERS THEN topn := 20;
     END;
 
+    -- Getting query length limit setting
+    BEGIN
+        qlen_limit := current_setting('{pg_profile}.max_query_length')::integer;
+    EXCEPTION
+        WHEN OTHERS THEN qlen_limit := 20000;
+    END;
+
     -- Check if all samples of requested interval are available
     IF (
       SELECT count(*) != end_id - start_id + 1 FROM samples
@@ -112,6 +120,39 @@ BEGIN
     report := replace(report,'{samples}',tmp_text);
     tmp_text := '';
 
+    -- Populate report settings
+    jreportset := jsonb_build_object(
+    'htbl',jsonb_build_object(
+      'reltr','class="parent"',
+      'toasttr','class="child"',
+      'reltdhdr','class="hdr"',
+      'stattbl','class="stat"',
+      'value','class="value"',
+      'mono','class="mono"',
+      'reltdspanhdr','rowspan="2" class="hdr"'
+    ),
+    'report_features',jsonb_build_object(
+      'statstatements',profile_checkavail_statstatements(sserver_id, start_id, end_id),
+      'planning_times',profile_checkavail_planning_times(sserver_id, start_id, end_id),
+      'stmt_io_times',profile_checkavail_stmt_io_times(sserver_id, start_id, end_id),
+      'statement_wal_bytes',profile_checkavail_stmt_wal_bytes(sserver_id, start_id, end_id),
+      'wal_stats',profile_checkavail_walstats(sserver_id, start_id, end_id),
+      'sess_stats',profile_checkavail_sessionstats(sserver_id, start_id, end_id),
+      'function_stats',profile_checkavail_functions(sserver_id, start_id, end_id),
+      'trigger_function_stats',profile_checkavail_trg_functions(sserver_id, start_id, end_id),
+      'kcachestatements',profile_checkavail_rusage(sserver_id,start_id,end_id),
+      'rusage_planstats',profile_checkavail_rusage_planstats(sserver_id,start_id,end_id)
+    ),
+    'report_properties',jsonb_build_object(
+      'interval_duration_sec',
+        (SELECT extract(epoch FROM e.sample_time - s.sample_time)
+        FROM samples s JOIN samples e USING (server_id)
+        WHERE e.sample_id=end_id and s.sample_id=start_id
+          AND server_id = sserver_id),
+      'max_query_length', qlen_limit
+      )
+    );
+
     -- Report internal temporary tables
     -- Creating temporary table for reported queries
     CREATE TEMPORARY TABLE IF NOT EXISTS queries_list (
@@ -126,10 +167,81 @@ BEGIN
     */
     CREATE TEMPORARY TABLE top_statements AS
     SELECT * FROM top_statements(sserver_id, start_id, end_id);
+
+    /* table size is collected in a sample when relsize field is not null
+    In a report we can use relsize-based growth calculated as a sum of
+    relsize increments only when sizes was collected
+    in the both first and last sample, otherwise we only can use
+    pg_class.relpages
+    */
     CREATE TEMPORARY TABLE top_tables AS
-    SELECT * FROM top_tables(sserver_id, start_id, end_id);
+    SELECT tt.*,
+      rs.relsize_growth_avail AS relsize_growth_avail,
+      CASE WHEN rs.relsize_growth_avail THEN
+        tt.growth
+      ELSE
+        tt.relpagegrowth_bytes
+      END AS best_growth,
+      rs.relsize_toastgrowth_avail AS relsize_toastgrowth_avail,
+      CASE WHEN rs.relsize_toastgrowth_avail THEN
+        tt.toastgrowth
+      ELSE
+        tt.toastrelpagegrowth_bytes
+      END AS best_toastgrowth,
+      CASE WHEN tt.seqscan_relsize_avail THEN
+        tt.seqscan_bytes_relsize
+      ELSE
+        tt.seqscan_bytes_relpages
+      END AS best_seqscan_bytes,
+      CASE WHEN tt.t_seqscan_relsize_avail THEN
+        tt.t_seqscan_bytes_relsize
+      ELSE
+        tt.t_seqscan_bytes_relpages
+      END AS best_t_seqscan_bytes
+    FROM top_tables(sserver_id, start_id, end_id) tt
+    JOIN (
+      SELECT rel.server_id, rel.datid, rel.relid,
+          COALESCE(
+              max(rel.sample_id) = max(rel.sample_id) FILTER (WHERE rel.relsize IS NOT NULL)
+              AND min(rel.sample_id) = min(rel.sample_id) FILTER (WHERE rel.relsize IS NOT NULL)
+          , false) AS relsize_growth_avail,
+          COALESCE(
+              max(reltoast.sample_id) = max(reltoast.sample_id) FILTER (WHERE reltoast.relsize IS NOT NULL)
+              AND min(reltoast.sample_id) = min(reltoast.sample_id) FILTER (WHERE reltoast.relsize IS NOT NULL)
+          , false) AS relsize_toastgrowth_avail
+      FROM sample_stat_tables rel
+          JOIN tables_list tl USING (server_id, datid, relid)
+          LEFT JOIN sample_stat_tables reltoast ON
+              (rel.server_id, rel.sample_id, rel.datid, tl.reltoastrelid) =
+              (reltoast.server_id, reltoast.sample_id, reltoast.datid, reltoast.relid)
+      WHERE
+          rel.server_id = sserver_id
+          AND rel.sample_id BETWEEN start_id AND end_id
+      GROUP BY rel.server_id, rel.datid, rel.relid
+    ) rs USING (server_id, datid, relid);
+
     CREATE TEMPORARY TABLE top_indexes AS
-    SELECT * FROM top_indexes(sserver_id, start_id, end_id);
+    SELECT ti.*,
+      rs.relsize_growth_avail AS relsize_growth_avail,
+      CASE WHEN rs.relsize_growth_avail THEN
+        ti.growth
+      ELSE
+        ti.relpagegrowth_bytes
+      END AS best_growth
+    FROM top_indexes(sserver_id, start_id, end_id) ti
+    JOIN (
+      SELECT server_id, datid, indexrelid,
+          COALESCE(
+              max(sample_id) = max(sample_id) FILTER (WHERE relsize IS NOT NULL)
+              AND min(sample_id) = min(sample_id) FILTER (WHERE relsize IS NOT NULL)
+          , false) AS relsize_growth_avail
+      FROM sample_stat_indexes
+      WHERE
+          server_id = sserver_id
+          AND sample_id BETWEEN start_id AND end_id
+      GROUP BY server_id, datid, indexrelid
+    ) rs USING (server_id, datid, indexrelid);
+
     CREATE TEMPORARY TABLE top_io_tables AS
     SELECT * FROM top_io_tables(sserver_id, start_id, end_id);
     CREATE TEMPORARY TABLE top_io_indexes AS
@@ -145,38 +257,6 @@ BEGIN
     ANALYZE top_io_indexes;
     ANALYZE top_functions;
     ANALYZE top_kcache_statements;
-
-    -- Populate report settings
-    jreportset := jsonb_build_object(
-    'htbl',jsonb_build_object(
-      'reltr','class="parent"',
-      'toasttr','class="child"',
-      'reltdhdr','class="hdr"',
-      'stattbl','class="stat"',
-      'value','class="value"',
-      'mono','class="mono"',
-      'reltdspanhdr','rowspan="2" class="hdr"'
-    ),
-    'report_features',jsonb_build_object(
-      'statstatements',profile_checkavail_statstatements(sserver_id, start_id, end_id),
-      'planning_times',profile_checkavail_planning_times(sserver_id, start_id, end_id),
-      'statement_wal_bytes',profile_checkavail_stmt_wal_bytes(sserver_id, start_id, end_id),
-      'wal_stats',profile_checkavail_walstats(sserver_id, start_id, end_id),
-      'sess_stats',profile_checkavail_sessionstats(sserver_id, start_id, end_id),
-      'function_stats',profile_checkavail_functions(sserver_id, start_id, end_id),
-      'trigger_function_stats',profile_checkavail_trg_functions(sserver_id, start_id, end_id),
-      'table_sizes',profile_checkavail_tablesizes(sserver_id, start_id, end_id),
-      'table_growth',profile_checkavail_tablegrowth(sserver_id, start_id, end_id),
-      'kcachestatements',profile_checkavail_rusage(sserver_id,start_id,end_id),
-      'rusage.planstats',profile_checkavail_rusage_planstats(sserver_id,start_id,end_id)
-    ),
-    'report_properties',jsonb_build_object(
-      'interval_duration_sec',
-        (SELECT extract(epoch FROM e.sample_time - s.sample_time)
-        FROM samples s JOIN samples e USING (server_id)
-        WHERE e.sample_id=end_id and s.sample_id=start_id
-          AND server_id = sserver_id))
-    );
 
     -- Reporting possible statements overflow
     tmp_report := check_stmt_cnt(sserver_id, start_id, end_id);
@@ -215,7 +295,7 @@ BEGIN
     tmp_text := tmp_text || '<li><a HREF=#tablespace_stat>Tablespace statistics</a></li>';
     tmp_text := tmp_text || '</ul>';
     IF jsonb_extract_path_text(jreportset, 'report_features', 'statstatements')::boolean THEN
-      tmp_text := tmp_text || '<li><a HREF=#sql_stat>SQL Query statistics</a></li>';
+      tmp_text := tmp_text || '<li><a HREF=#sql_stat>SQL query statistics</a></li>';
       tmp_text := tmp_text || '<ul>';
       IF jsonb_extract_path_text(jreportset, 'report_features', 'planning_times')::boolean THEN
         tmp_text := tmp_text || '<li><a HREF=#top_ela>Top SQL by elapsed time</a></li>';
@@ -223,7 +303,9 @@ BEGIN
       END IF;
       tmp_text := tmp_text || '<li><a HREF=#top_exec>Top SQL by execution time</a></li>';
       tmp_text := tmp_text || '<li><a HREF=#top_calls>Top SQL by executions</a></li>';
-      tmp_text := tmp_text || '<li><a HREF=#top_iowait>Top SQL by I/O wait time</a></li>';
+      IF jsonb_extract_path_text(jreportset, 'report_features', 'stmt_io_times')::boolean THEN
+        tmp_text := tmp_text || '<li><a HREF=#top_iowait>Top SQL by I/O wait time</a></li>';
+      END IF;
       tmp_text := tmp_text || '<li><a HREF=#top_pgs_fetched>Top SQL by shared blocks fetched</a></li>';
       tmp_text := tmp_text || '<li><a HREF=#top_shared_reads>Top SQL by shared blocks read</a></li>';
       tmp_text := tmp_text || '<li><a HREF=#top_shared_dirtied>Top SQL by shared blocks dirtied</a></li>';
@@ -251,14 +333,10 @@ BEGIN
     tmp_text := tmp_text || '<li><a HREF=#read_tbl>Top tables by blocks read</a></li>';
     tmp_text := tmp_text || '<li><a HREF=#dml_tbl>Top DML tables</a></li>';
     tmp_text := tmp_text || '<li><a HREF=#vac_tbl>Top tables by updated/deleted tuples</a></li>';
-    IF jsonb_extract_path_text(jreportset, 'report_features', 'table_growth')::boolean THEN
-      tmp_text := tmp_text || '<li><a HREF=#growth_tbl>Top growing tables</a></li>';
-    END IF;
+    tmp_text := tmp_text || '<li><a HREF=#growth_tbl>Top growing tables</a></li>';
     tmp_text := tmp_text || '<li><a HREF=#fetch_idx>Top indexes by blocks fetched</a></li>';
     tmp_text := tmp_text || '<li><a HREF=#read_idx>Top indexes by blocks read</a></li>';
-    IF jsonb_extract_path_text(jreportset, 'report_features', 'table_growth')::boolean THEN
-      tmp_text := tmp_text || '<li><a HREF=#growth_idx>Top growing indexes</a></li>';
-    END IF;
+    tmp_text := tmp_text || '<li><a HREF=#growth_idx>Top growing indexes</a></li>';
     tmp_text := tmp_text || '<li><a HREF=#ix_unused>Unused indexes</a></li>';
     tmp_text := tmp_text || '</ul>';
 
@@ -278,7 +356,7 @@ BEGIN
     tmp_text := tmp_text || '<ul>';
     tmp_text := tmp_text || '<li><a HREF=#top_vacuum_cnt_tbl>Top tables by vacuum operations</a></li>';
     tmp_text := tmp_text || '<li><a HREF=#top_analyze_cnt_tbl>Top tables by analyze operations</a></li>';
-    tmp_text := tmp_text || '<li><a HREF=#top_ix_vacuum_bytes_cnt_tbl>Top indexes by estimated vacuum I/O load</a></li>';
+    tmp_text := tmp_text || '<li><a HREF=#top_ix_vacuum_bytes_cnt_tbl>Top indexes by estimated vacuum load</a></li>';
 
     tmp_text := tmp_text || '<li><a HREF=#dead_tbl>Top tables by dead tuples ratio</a></li>';
     tmp_text := tmp_text || '<li><a HREF=#mod_tbl>Top tables by modified tuples ratio</a></li>';
@@ -334,7 +412,7 @@ BEGIN
 
     --Reporting on top queries by elapsed time
     IF jsonb_extract_path_text(jreportset, 'report_features', 'statstatements')::boolean THEN
-      tmp_text := tmp_text || '<H2><a NAME=sql_stat>SQL Query statistics</a></H2>';
+      tmp_text := tmp_text || '<H2><a NAME=sql_stat>SQL query statistics</a></H2>';
       IF jsonb_extract_path_text(jreportset, 'report_features', 'planning_times')::boolean THEN
         tmp_text := tmp_text || '<H3><a NAME=top_ela>Top SQL by elapsed time</a></H3>';
         tmp_text := tmp_text || nodata_wrapper(top_elapsed_htbl(jreportset, sserver_id, start_id, end_id, topn));
@@ -349,8 +427,10 @@ BEGIN
       tmp_text := tmp_text || nodata_wrapper(top_exec_htbl(jreportset, sserver_id, start_id, end_id, topn));
 
       -- Reporting on top queries by I/O wait time
-      tmp_text := tmp_text || '<H3><a NAME=top_iowait>Top SQL by I/O wait time</a></H3>';
-      tmp_text := tmp_text || nodata_wrapper(top_iowait_htbl(jreportset, sserver_id, start_id, end_id, topn));
+      IF jsonb_extract_path_text(jreportset, 'report_features', 'stmt_io_times')::boolean THEN
+        tmp_text := tmp_text || '<H3><a NAME=top_iowait>Top SQL by I/O wait time</a></H3>';
+        tmp_text := tmp_text || nodata_wrapper(top_iowait_htbl(jreportset, sserver_id, start_id, end_id, topn));
+      END IF;
 
       -- Reporting on top queries by fetched blocks
       tmp_text := tmp_text || '<H3><a NAME=top_pgs_fetched>Top SQL by shared blocks fetched</a></H3>';
@@ -411,10 +491,8 @@ BEGIN
     tmp_text := tmp_text || '<H3><a NAME=vac_tbl>Top tables by updated/deleted tuples</a></H3>';
     tmp_text := tmp_text || nodata_wrapper(top_upd_vac_tables_htbl(jreportset, sserver_id, start_id, end_id, topn));
 
-    IF jsonb_extract_path_text(jreportset, 'report_features', 'table_growth')::boolean THEN
-      tmp_text := tmp_text || '<H3><a NAME=growth_tbl>Top growing tables</a></H3>';
-      tmp_text := tmp_text || nodata_wrapper(top_growth_tables_htbl(jreportset, sserver_id, start_id, end_id, topn));
-    END IF;
+    tmp_text := tmp_text || '<H3><a NAME=growth_tbl>Top growing tables</a></H3>';
+    tmp_text := tmp_text || nodata_wrapper(top_growth_tables_htbl(jreportset, sserver_id, start_id, end_id, topn));
 
     tmp_text := tmp_text || '<H3><a NAME=fetch_idx>Top indexes by blocks fetched</a></H3>';
     tmp_text := tmp_text || nodata_wrapper(ix_top_fetch_htbl(jreportset, sserver_id, start_id, end_id, topn));
@@ -422,10 +500,8 @@ BEGIN
     tmp_text := tmp_text || '<H3><a NAME=read_idx>Top indexes by blocks read</a></H3>';
     tmp_text := tmp_text || nodata_wrapper(ix_top_io_htbl(jreportset, sserver_id, start_id, end_id, topn));
 
-    IF jsonb_extract_path_text(jreportset, 'report_features', 'table_growth')::boolean THEN
-      tmp_text := tmp_text || '<H3><a NAME=growth_idx>Top growing indexes</a></H3>';
-      tmp_text := tmp_text || nodata_wrapper(top_growth_indexes_htbl(jreportset, sserver_id, start_id, end_id, topn));
-    END IF;
+    tmp_text := tmp_text || '<H3><a NAME=growth_idx>Top growing indexes</a></H3>';
+    tmp_text := tmp_text || nodata_wrapper(top_growth_indexes_htbl(jreportset, sserver_id, start_id, end_id, topn));
 
     tmp_text := tmp_text || '<H3><a NAME=ix_unused>Unused indexes</a></H3>';
     tmp_text := tmp_text || '<p>This table contains non-scanned indexes (during report period), ordered by number of DML operations on underlying tables. Constraint indexes are excluded.</p>';
@@ -451,7 +527,7 @@ BEGIN
     tmp_text := tmp_text || nodata_wrapper(top_vacuumed_tables_htbl(jreportset, sserver_id, start_id, end_id, topn));
     tmp_text := tmp_text || '<H3><a NAME=top_analyze_cnt_tbl>Top tables by analyze operations</a></H3>';
     tmp_text := tmp_text || nodata_wrapper(top_analyzed_tables_htbl(jreportset, sserver_id, start_id, end_id, topn));
-    tmp_text := tmp_text || '<H3><a NAME=top_ix_vacuum_bytes_cnt_tbl>Top indexes by estimated vacuum I/O load</a></H3>';
+    tmp_text := tmp_text || '<H3><a NAME=top_ix_vacuum_bytes_cnt_tbl>Top indexes by estimated vacuum load</a></H3>';
     tmp_text := tmp_text || nodata_wrapper(top_vacuumed_indexes_htbl(jreportset, sserver_id, start_id, end_id, topn));
 
     tmp_text := tmp_text || '<H3><a NAME=dead_tbl>Top tables by dead tuples ratio</a></H3>';

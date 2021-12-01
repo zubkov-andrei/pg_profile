@@ -208,8 +208,8 @@ BEGIN
             '<th rowspan="2">Database</th>'
             '<th rowspan="2" title="Elapsed time as a percentage of total cluster elapsed time">%Total</th>'
             '<th colspan="3">Time (s)</th>'
-            '<th colspan="2">I/O time (s)</th>'
-            '{kcache_hdr1}'
+            '{stmt_io_times?iotime_hdr1}'
+            '{kcachestatements?kcache_hdr1}'
             '<th rowspan="2" title="Number of times the statement was planned">Plans</th>'
             '<th rowspan="2" title="Number of times the statement was executed">Executions</th>'
           '</tr>'
@@ -217,9 +217,8 @@ BEGIN
             '<th title="Time spent by the statement">Elapsed</th>'
             '<th title="Time spent planning statement">Plan</th>'
             '<th title="Time spent executing statement">Exec</th>'
-            '<th title="Time spent reading blocks by statement">Read</th>'
-            '<th title="Time spent writing blocks by statement">Write</th>'
-            '{kcache_hdr2}'
+            '{stmt_io_times?iotime_hdr2}'
+            '{kcachestatements?kcache_hdr2}'
           '</tr>'
           '{rows}'
         '</table>',
@@ -232,33 +231,30 @@ BEGIN
           '<td {value}>%6$s</td>'
           '<td {value}>%7$s</td>'
           '<td {value}>%8$s</td>'
-          '<td {value}>%9$s</td>'
-          '<td {value}>%10$s</td>'
-          '{kcache_row}'
+          '{stmt_io_times?iotime_row}'
+          '{kcachestatements?kcache_row}'
           '<td {value}>%13$s</td>'
           '<td {value}>%14$s</td>'
         '</tr>',
-      'kcache_hdr1',
+      'stmt_io_times?iotime_hdr1',
+        '<th colspan="2">I/O time (s)</th>',
+      'stmt_io_times?iotime_hdr2',
+        '<th title="Time spent reading blocks by statement">Read</th>'
+        '<th title="Time spent writing blocks by statement">Write</th>',
+      'stmt_io_times?iotime_row',
+        '<td {value}>%9$s</td>'
+        '<td {value}>%10$s</td>',
+      'kcachestatements?kcache_hdr1',
         '<th colspan="2">CPU time (s)</th>',
-      'kcache_hdr2',
+      'kcachestatements?kcache_hdr2',
         '<th>Usr</th>'
         '<th>Sys</th>',
-      'kcache_row',
+      'kcachestatements?kcache_row',
         '<td {value}>%11$s</td>'
         '<td {value}>%12$s</td>'
       );
-    -- Conditional template
-    IF jsonb_extract_path_text(jreportset, 'report_features', 'kcachestatements')::boolean THEN
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{kcache_hdr1}',jtab_tpl->>'kcache_hdr1')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{kcache_hdr2}',jtab_tpl->>'kcache_hdr2')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl','{kcache_row}',jtab_tpl->>'kcache_row')));
-    ELSE
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{kcache_hdr1}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{kcache_hdr2}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl','{kcache_row}','')));
-    END IF;
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting on top queries by elapsed time
     FOR r_result IN c_elapsed_time LOOP
         tab_row := format(
@@ -358,8 +354,8 @@ BEGIN
             '<th rowspan="2">I</th>'
             '<th rowspan="2" title="Elapsed time as a percentage of total cluster elapsed time">%Total</th>'
             '<th colspan="3">Time (s)</th>'
-            '<th colspan="2">I/O time (s)</th>'
-            '{kcache_hdr1}'
+            '{stmt_io_times?iotime_hdr1}'
+            '{kcachestatements?kcache_hdr1}'
             '<th rowspan="2" title="Number of times the statement was planned">Plans</th>'
             '<th rowspan="2" title="Number of times the statement was executed">Executions</th>'
           '</tr>'
@@ -367,9 +363,8 @@ BEGIN
             '<th title="Time spent by the statement">Elapsed</th>'
             '<th title="Time spent planning statement">Plan</th>'
             '<th title="Time spent executing statement">Exec</th>'
-            '<th title="Time spent reading blocks by statement">Read</th>'
-            '<th title="Time spent writing blocks by statement">Write</th>'
-            '{kcache_hdr2}'
+            '{stmt_io_times?iotime_hdr2}'
+            '{kcachestatements?kcache_hdr2}'
           '</tr>'
           '{rows}'
         '</table>',
@@ -383,9 +378,8 @@ BEGIN
           '<td {value}>%6$s</td>'
           '<td {value}>%7$s</td>'
           '<td {value}>%8$s</td>'
-          '<td {value}>%9$s</td>'
-          '<td {value}>%10$s</td>'
-          '{kcache_row1}'
+          '{stmt_io_times?iotime_row1}'
+          '{kcachestatements?kcache_row1}'
           '<td {value}>%13$s</td>'
           '<td {value}>%14$s</td>'
         '</tr>'
@@ -395,39 +389,37 @@ BEGIN
           '<td {value}>%16$s</td>'
           '<td {value}>%17$s</td>'
           '<td {value}>%18$s</td>'
-          '<td {value}>%19$s</td>'
-          '<td {value}>%20$s</td>'
-          '{kcache_row2}'
+          '{stmt_io_times?iotime_row2}'
+          '{kcachestatements?kcache_row2}'
           '<td {value}>%23$s</td>'
           '<td {value}>%24$s</td>'
         '</tr>'
         '<tr style="visibility:collapse"></tr>',
-      'kcache_hdr1',
+      'stmt_io_times?iotime_hdr1',
+        '<th colspan="2">I/O time (s)</th>',
+      'stmt_io_times?iotime_hdr2',
+        '<th title="Time spent reading blocks by statement">Read</th>'
+        '<th title="Time spent writing blocks by statement">Write</th>',
+      'stmt_io_times?iotime_row1',
+        '<td {value}>%9$s</td>'
+        '<td {value}>%10$s</td>',
+      'stmt_io_times?iotime_row2',
+        '<td {value}>%19$s</td>'
+        '<td {value}>%20$s</td>',
+      'kcachestatements?kcache_hdr1',
         '<th colspan="2">CPU time (s)</th>',
-      'kcache_hdr2',
+      'kcachestatements?kcache_hdr2',
         '<th>Usr</th>'
         '<th>Sys</th>',
-      'kcache_row1',
+      'kcachestatements?kcache_row1',
         '<td {value}>%11$s</td>'
         '<td {value}>%12$s</td>',
-      'kcache_row2',
+      'kcachestatements?kcache_row2',
         '<td {value}>%21$s</td>'
         '<td {value}>%22$s</td>'
       );
-    -- Conditional template
-    IF jsonb_extract_path_text(jreportset, 'report_features', 'kcachestatements')::boolean THEN
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{kcache_hdr1}',jtab_tpl->>'kcache_hdr1')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{kcache_hdr2}',jtab_tpl->>'kcache_hdr2')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl','{kcache_row1}',jtab_tpl->>'kcache_row1')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl','{kcache_row2}',jtab_tpl->>'kcache_row2')));
-    ELSE
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{kcache_hdr1}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{kcache_hdr2}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl','{kcache_row1}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl','{kcache_row2}','')));
-    END IF;
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting on top queries by elapsed time
     FOR r_result IN c_elapsed_time LOOP
@@ -546,7 +538,7 @@ BEGIN
         '</tr>'
       );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting on top queries by elapsed time
     FOR r_result IN c_elapsed_time LOOP
         tab_row := format(
@@ -677,7 +669,7 @@ BEGIN
         '<tr style="visibility:collapse"></tr>'
       );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting on top queries by elapsed time
     FOR r_result IN c_elapsed_time LOOP
@@ -762,18 +754,17 @@ BEGIN
             '<th rowspan="2">Query ID</th>'
             '<th rowspan="2">Database</th>'
             '<th rowspan="2" title="Time spent executing statement">Exec (s)</th>'
-            '{elapsed_pct_hdr}'
+            '{planning_times?elapsed_pct_hdr}'
             '<th rowspan="2" title="Exec time as a percentage of total cluster elapsed time">%Total</th>'
-            '<th colspan="2">I/O time (s)</th>'
-            '{kcache_hdr1}'
+            '{stmt_io_times?iotime_hdr1}'
+            '{kcachestatements?kcache_hdr1}'
             '<th rowspan="2" title="Total number of rows retrieved or affected by the statement">Rows</th>'
             '<th colspan="4" title="Execution time statistics">Execution times (ms)</th>'
             '<th rowspan="2" title="Number of times the statement was executed">Executions</th>'
           '</tr>'
           '<tr>'
-            '<th title="Time spent reading blocks by statement">Read</th>'
-            '<th title="Time spent writing blocks by statement">Write</th>'
-            '{kcache_hdr2}'
+            '{stmt_io_times?iotime_hdr2}'
+            '{kcachestatements?kcache_hdr2}'
             '<th>Mean</th>'
             '<th>Min</th>'
             '<th>Max</th>'
@@ -787,11 +778,10 @@ BEGIN
           '<p><small>[%3$s]</small></p></td>'
           '<td>%4$s</td>'
           '<td {value}>%5$s</td>'
-          '{elapsed_pct_row}'
+          '{planning_times?elapsed_pct_row}'
           '<td {value}>%6$s</td>'
-          '<td {value}>%7$s</td>'
-          '<td {value}>%8$s</td>'
-          '{kcache_row}'
+          '{stmt_io_times?iotime_row}'
+          '{kcachestatements?kcache_row}'
           '<td {value}>%11$s</td>'
           '<td {value}>%12$s</td>'
           '<td {value}>%13$s</td>'
@@ -799,43 +789,29 @@ BEGIN
           '<td {value}>%15$s</td>'
           '<td {value}>%16$s</td>'
         '</tr>',
-      'elapsed_pct_hdr',
+      'stmt_io_times?iotime_hdr1',
+        '<th colspan="2">I/O time (s)</th>',
+      'stmt_io_times?iotime_hdr2',
+        '<th title="Time spent reading blocks by statement">Read</th>'
+        '<th title="Time spent writing blocks by statement">Write</th>',
+      'stmt_io_times?iotime_row',
+        '<td {value}>%7$s</td>'
+        '<td {value}>%8$s</td>',
+      'planning_times?elapsed_pct_hdr',
         '<th rowspan="2" title="Exec time as a percentage of statement elapsed time">%Elapsed</th>',
-      'elapsed_pct_row',
+      'planning_times?elapsed_pct_row',
         '<td {value}>%17$s</td>',
-      'kcache_hdr1',
+      'kcachestatements?kcache_hdr1',
         '<th colspan="2">CPU time (s)</th>',
-      'kcache_hdr2',
+      'kcachestatements?kcache_hdr2',
         '<th>Usr</th>'
         '<th>Sys</th>',
-      'kcache_row',
+      'kcachestatements?kcache_row',
         '<td {value}>%9$s</td>'
         '<td {value}>%10$s</td>'
       );
-    -- Conditional template
-    -- kcache
-    IF jsonb_extract_path_text(jreportset, 'report_features', 'kcachestatements')::boolean AND
-      NOT jsonb_extract_path_text(jreportset, 'report_features', 'planning_times')::boolean THEN
-      /* We won't show kcache CPU stats here if planning times are available as CPU stats is then
-      shown in "Top SQL by elapsed time" section */
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{kcache_hdr1}',jtab_tpl->>'kcache_hdr1')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{kcache_hdr2}',jtab_tpl->>'kcache_hdr2')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl','{kcache_row}',jtab_tpl->>'kcache_row')));
-    ELSE
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{kcache_hdr1}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{kcache_hdr2}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl','{kcache_row}','')));
-    END IF;
-    -- Planning times
-    IF jsonb_extract_path_text(jreportset, 'report_features', 'planning_times')::boolean THEN
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{elapsed_pct_hdr}',jtab_tpl->>'elapsed_pct_hdr')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl','{elapsed_pct_row}',jtab_tpl->>'elapsed_pct_row')));
-    ELSE
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{elapsed_pct_hdr}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl','{elapsed_pct_row}','')));
-    END IF;
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting on top queries by elapsed time
     FOR r_result IN c_elapsed_time LOOP
         tab_row := format(
@@ -939,18 +915,17 @@ BEGIN
             '<th rowspan="2">Database</th>'
             '<th rowspan="2">I</th>'
             '<th rowspan="2" title="Time spent executing statement">Exec (s)</th>'
-            '{elapsed_pct_hdr}'
+            '{planning_times?elapsed_pct_hdr}'
             '<th rowspan="2" title="Exec time as a percentage of total cluster elapsed time">%Total</th>'
-            '<th colspan="2">I/O time (s)</th>'
-            '{kcache_hdr1}'
+            '{stmt_io_times?iotime_hdr1}'
+            '{kcachestatements?kcache_hdr1}'
             '<th rowspan="2" title="Total number of rows retrieved or affected by the statement">Rows</th>'
             '<th colspan="4" title="Execution time statistics">Execution times (ms)</th>'
             '<th rowspan="2" title="Number of times the statement was executed">Executions</th>'
           '</tr>'
           '<tr>'
-            '<th title="Time spent reading blocks by statement">Read</th>'
-            '<th title="Time spent writing blocks by statement">Write</th>'
-            '{kcache_hdr2}'
+            '{stmt_io_times?iotime_hdr2}'
+            '{kcachestatements?kcache_hdr2}'
             '<th>Mean</th>'
             '<th>Min</th>'
             '<th>Max</th>'
@@ -965,11 +940,10 @@ BEGIN
           '<td {rowtdspanhdr}>%4$s</td>'
           '<td {label} {title1}>1</td>'
           '<td {value}>%5$s</td>'
-          '{elapsed_pct_row1}'
+          '{planning_times?elapsed_pct_row1}'
           '<td {value}>%6$s</td>'
-          '<td {value}>%7$s</td>'
-          '<td {value}>%8$s</td>'
-          '{kcache_row1}'
+          '{stmt_io_times?iotime_row1}'
+          '{kcachestatements?kcache_row1}'
           '<td {value}>%11$s</td>'
           '<td {value}>%12$s</td>'
           '<td {value}>%13$s</td>'
@@ -980,11 +954,10 @@ BEGIN
         '<tr {interval2}>'
           '<td {label} {title2}>2</td>'
           '<td {value}>%17$s</td>'
-          '{elapsed_pct_row2}'
+          '{planning_times?elapsed_pct_row2}'
           '<td {value}>%18$s</td>'
-          '<td {value}>%19$s</td>'
-          '<td {value}>%20$s</td>'
-          '{kcache_row2}'
+          '{stmt_io_times?iotime_row2}'
+          '{kcachestatements?kcache_row2}'
           '<td {value}>%23$s</td>'
           '<td {value}>%24$s</td>'
           '<td {value}>%25$s</td>'
@@ -993,51 +966,37 @@ BEGIN
           '<td {value}>%28$s</td>'
         '</tr>'
         '<tr style="visibility:collapse"></tr>',
-      'elapsed_pct_hdr',
+      'stmt_io_times?iotime_hdr1',
+        '<th colspan="2">I/O time (s)</th>',
+      'stmt_io_times?iotime_hdr2',
+        '<th title="Time spent reading blocks by statement">Read</th>'
+        '<th title="Time spent writing blocks by statement">Write</th>',
+      'stmt_io_times?iotime_row1',
+        '<td {value}>%7$s</td>'
+        '<td {value}>%8$s</td>',
+      'stmt_io_times?iotime_row2',
+        '<td {value}>%19$s</td>'
+        '<td {value}>%20$s</td>',
+      'planning_times?elapsed_pct_hdr',
         '<th rowspan="2" title="Exec time as a percentage of statement elapsed time">%Elapsed</th>',
-      'elapsed_pct_row1',
+      'planning_times?elapsed_pct_row1',
         '<td {value}>%29$s</td>',
-      'elapsed_pct_row2',
+      'planning_times?elapsed_pct_row2',
         '<td {value}>%30$s</td>',
-      'kcache_hdr1',
+      'kcachestatements?kcache_hdr1',
         '<th colspan="2">CPU time (s)</th>',
-      'kcache_hdr2',
+      'kcachestatements?kcache_hdr2',
         '<th>Usr</th>'
         '<th>Sys</th>',
-      'kcache_row1',
+      'kcachestatements?kcache_row1',
         '<td {value}>%9$s</td>'
         '<td {value}>%10$s</td>',
-      'kcache_row2',
+      'kcachestatements?kcache_row2',
         '<td {value}>%21$s</td>'
         '<td {value}>%22$s</td>'
       );
-    -- Conditional template
-    IF jsonb_extract_path_text(jreportset, 'report_features', 'kcachestatements')::boolean AND
-      NOT jsonb_extract_path_text(jreportset, 'report_features', 'planning_times')::boolean THEN
-      /* We won't show kcache CPU stats here if planning times are available as CPU stats is then
-      shown in "Top SQL by elapsed time" section */
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{kcache_hdr1}',jtab_tpl->>'kcache_hdr1')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{kcache_hdr2}',jtab_tpl->>'kcache_hdr2')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl','{kcache_row1}',jtab_tpl->>'kcache_row1')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl','{kcache_row2}',jtab_tpl->>'kcache_row2')));
-    ELSE
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{kcache_hdr1}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{kcache_hdr2}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl','{kcache_row1}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl','{kcache_row2}','')));
-    END IF;
-    -- Planning times
-    IF jsonb_extract_path_text(jreportset, 'report_features', 'planning_times')::boolean THEN
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{elapsed_pct_hdr}',jtab_tpl->>'elapsed_pct_hdr')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl','{elapsed_pct_row1}',jtab_tpl->>'elapsed_pct_row1')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl','{elapsed_pct_row2}',jtab_tpl->>'elapsed_pct_row2')));
-    ELSE
-      jtab_tpl := jsonb_set(jtab_tpl,'{tab_hdr}',to_jsonb(replace(jtab_tpl->>'tab_hdr','{elapsed_pct_hdr}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl','{elapsed_pct_row1}','')));
-      jtab_tpl := jsonb_set(jtab_tpl,'{stmt_tpl}',to_jsonb(replace(jtab_tpl->>'stmt_tpl','{elapsed_pct_row2}','')));
-    END IF;
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting on top queries by elapsed time
     FOR r_result IN c_elapsed_time LOOP
@@ -1152,7 +1111,7 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting on top 10 queries by executions
     FOR r_result IN c_calls LOOP
         tab_row := format(
@@ -1279,7 +1238,7 @@ BEGIN
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting on top 10 queries by executions
     FOR r_result IN c_calls LOOP
@@ -1401,7 +1360,7 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting on top 10 queries by I/O wait time
     FOR r_result IN c_iowait_time LOOP
         tab_row := format(
@@ -1557,7 +1516,7 @@ BEGIN
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting on top 10 queries by I/O wait time
     FOR r_result IN c_iowait_time LOOP
         tab_row := format(
@@ -1664,7 +1623,7 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting on top queries by shared_blks_fetched
     FOR r_result IN c_shared_blks_fetched LOOP
@@ -1780,7 +1739,7 @@ BEGIN
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting on top queries by shared_blks_fetched
     FOR r_result IN c_shared_blks_fetched LOOP
         tab_row := format(
@@ -1875,7 +1834,7 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting on top queries by reads
     FOR r_result IN c_sh_reads LOOP
@@ -1991,7 +1950,7 @@ BEGIN
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting on top queries by reads
     FOR r_result IN c_sh_reads LOOP
         tab_row := format(
@@ -2047,6 +2006,8 @@ DECLARE
         NULLIF(st.shared_blks_dirtied, 0) as shared_blks_dirtied,
         NULLIF(st.dirtied_pct, 0.0) as dirtied_pct,
         NULLIF(st.shared_hit_pct, 0.0) as shared_hit_pct,
+        NULLIF(st.wal_bytes, 0) as wal_bytes,
+        NULLIF(st.wal_bytes_pct, 0.0) as wal_bytes_pct,
         NULLIF(st.calls, 0) as calls
     FROM top_statements st
     WHERE st.shared_blks_dirtied > 0
@@ -2067,12 +2028,16 @@ BEGIN
             '<th title="Total number of shared blocks dirtied by the statement">Dirtied</th>'
             '<th title="Shared blocks dirtied by this statement as a percentage of all shared blocks dirtied in a cluster">%Total</th>'
             '<th title="Shared blocks hits as a percentage of shared blocks fetched (read + hit)">Hits(%)</th>'
+            '{statement_wal_bytes?wal_header}'
             '<th title="Time spent by the statement">Elapsed(s)</th>'
             '<th title="Total number of rows retrieved or affected by the statement">Rows</th>'
             '<th title="Number of times the statement was executed">Executions</th>'
           '</tr>'
           '{rows}'
         '</table>',
+      'statement_wal_bytes?wal_header',
+        '<th title="Total amount of WAL bytes generated by the statement">WAL</th>'
+        '<th title="WAL bytes of this statement as a percentage of total WAL bytes generated by a cluster">%Total</th>',
       'stmt_tpl',
         '<tr>'
           '<td {mono}><p><a HREF="#%2$s">%2$s</a></p>'
@@ -2080,13 +2045,18 @@ BEGIN
           '<td>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
+          '<td {value}>%7$s</td>'
+          '{statement_wal_bytes?wal_row}'
+          '<td {value}>%10$s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-        '</tr>');
+        '</tr>',
+      'statement_wal_bytes?wal_row',
+        '<td {value}>%8$s</td>'
+        '<td {value}>%9$s</td>'
+    );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting on top queries by shared dirtied
     FOR r_result IN c_sh_dirt LOOP
@@ -2099,6 +2069,8 @@ BEGIN
             r_result.shared_blks_dirtied,
             round(CAST(r_result.dirtied_pct AS numeric),2),
             round(CAST(r_result.shared_hit_pct AS numeric),2),
+            pg_size_pretty(r_result.wal_bytes),
+            round(CAST(r_result.wal_bytes_pct AS numeric),2),
             round(CAST(r_result.total_time AS numeric),1),
             r_result.rows,
             r_result.calls
@@ -2137,12 +2109,16 @@ DECLARE
         NULLIF(st1.shared_blks_dirtied, 0) as shared_blks_dirtied1,
         NULLIF(st1.dirtied_pct, 0.0) as dirtied_pct1,
         NULLIF(st1.shared_hit_pct, 0.0) as shared_hit_pct1,
+        NULLIF(st1.wal_bytes, 0) as wal_bytes1,
+        NULLIF(st1.wal_bytes_pct, 0.0) as wal_bytes_pct1,
         NULLIF(st1.calls, 0) as calls1,
         NULLIF(st2.total_time, 0.0) as total_time2,
         NULLIF(st2.rows, 0) as rows2,
         NULLIF(st2.shared_blks_dirtied, 0) as shared_blks_dirtied2,
         NULLIF(st2.dirtied_pct, 0.0) as dirtied_pct2,
         NULLIF(st2.shared_hit_pct, 0.0) as shared_hit_pct2,
+        NULLIF(st2.wal_bytes, 0) as wal_bytes2,
+        NULLIF(st2.wal_bytes_pct, 0.0) as wal_bytes_pct2,
         NULLIF(st2.calls, 0) as calls2,
         row_number() over (ORDER BY st1.shared_blks_dirtied DESC NULLS LAST) as rn_dirtied1,
         row_number() over (ORDER BY st2.shared_blks_dirtied DESC NULLS LAST) as rn_dirtied2
@@ -2172,12 +2148,16 @@ BEGIN
             '<th title="Total number of shared blocks dirtied by the statement">Dirtied</th>'
             '<th title="Shared blocks dirtied by this statement as a percentage of all shared blocks dirtied in a cluster">%Total</th>'
             '<th title="Shared blocks hits as a percentage of shared blocks fetched (read + hit)">Hits(%)</th>'
+            '{statement_wal_bytes?wal_hdr}'
             '<th title="Time spent by the statement">Elapsed(s)</th>'
             '<th title="Total number of rows retrieved or affected by the statement">Rows</th>'
             '<th title="Number of times the statement was executed">Executions</th>'
           '</tr>'
           '{rows}'
         '</table>',
+      'statement_wal_bytes?wal_hdr',
+        '<th title="Total amount of WAL bytes generated by the statement">WAL</th>'
+        '<th title="WAL bytes of this statement as a percentage of total WAL bytes generated by a cluster">%Total</th>',
       'stmt_tpl',
         '<tr {interval1}>'
           '<td {rowtdspanhdr_mono}><p><a HREF="#%2$s">%2$s</a></p>'
@@ -2186,8 +2166,9 @@ BEGIN
           '<td {label} {title1}>1</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
+          '<td {value}>%7$s</td>'
+          '{statement_wal_bytes?wal_row1}'
+          '<td {value}>%10$s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
         '</tr>'
@@ -2195,14 +2176,22 @@ BEGIN
           '<td {label} {title2}>2</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
+          '<td {value}>%15$s</td>'
+          '{statement_wal_bytes?wal_row2}'
+          '<td {value}>%18$s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
         '</tr>'
-        '<tr style="visibility:collapse"></tr>');
+        '<tr style="visibility:collapse"></tr>',
+      'statement_wal_bytes?wal_row1',
+        '<td {value}>%8$s</td>'
+        '<td {value}>%9$s</td>',
+      'statement_wal_bytes?wal_row2',
+        '<td {value}>%16$s</td>'
+        '<td {value}>%17$s</td>'
+    );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting on top queries by shared dirtied
     FOR r_result IN c_sh_dirt LOOP
         tab_row := format(
@@ -2214,12 +2203,16 @@ BEGIN
             r_result.shared_blks_dirtied1,
             round(CAST(r_result.dirtied_pct1 AS numeric),2),
             round(CAST(r_result.shared_hit_pct1 AS numeric),2),
+            pg_size_pretty(r_result.wal_bytes1),
+            round(CAST(r_result.wal_bytes_pct1 AS numeric),2),
             round(CAST(r_result.total_time1 AS numeric),1),
             r_result.rows1,
             r_result.calls1,
             r_result.shared_blks_dirtied2,
             round(CAST(r_result.dirtied_pct2 AS numeric),2),
             round(CAST(r_result.shared_hit_pct2 AS numeric),2),
+            pg_size_pretty(r_result.wal_bytes2),
+            round(CAST(r_result.wal_bytes_pct2 AS numeric),2),
             round(CAST(r_result.total_time2 AS numeric),1),
             r_result.rows2,
             r_result.calls2
@@ -2300,7 +2293,7 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting on top queries by shared written
     FOR r_result IN c_sh_wr LOOP
@@ -2422,7 +2415,7 @@ BEGIN
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting on top queries by shared written
     FOR r_result IN c_sh_wr LOOP
         tab_row := format(
@@ -2521,7 +2514,7 @@ BEGIN
         '</tr>'
       );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting on top queries by elapsed time
     FOR r_result IN c_wal_size LOOP
         tab_row := format(
@@ -2635,7 +2628,7 @@ BEGIN
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting on top queries by shared_blks_fetched
     FOR r_result IN c_wal_size LOOP
         tab_row := format(
@@ -2755,7 +2748,7 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting on top queries by temp usage
     FOR r_result IN c_temp LOOP
@@ -2925,7 +2918,7 @@ BEGIN
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting on top queries by temp usage
     FOR r_result IN c_temp LOOP
@@ -3004,28 +2997,28 @@ DECLARE
     c_queries CURSOR FOR
     SELECT
       left(md5(userid::text || datid::text || queryid::text),10) AS queryid_pgc,
-      query,
-      row_number() OVER (qid ORDER BY ss.queryid_md5 ASC) AS q_ord,
-      count(*) OVER (qid) AS q_cnt
-    FROM
-      queries_list ql
-      JOIN (
-          SELECT DISTINCT server_id, datid, userid, queryid, queryid_md5
-          FROM sample_statements
-          WHERE
-            server_id = sserver_id
-            AND (
-              sample_id BETWEEN start1_id AND end1_id
-              OR sample_id BETWEEN start2_id AND end2_id
-            )
-        ) ss USING (datid, userid, queryid)
-      JOIN stmt_list USING (server_id, queryid_md5)
-    WINDOW qid AS (PARTITION BY userid, datid, queryid)
-    ORDER BY queryid, datid, userid, queryid_md5 ASC;
+      query
+    FROM (
+      SELECT
+        server_id, queryid, min(sample_id) AS sample_id
+      FROM
+        queries_list ql
+        JOIN sample_statements ss USING (datid, userid, queryid)
+      WHERE
+        ss.server_id = sserver_id
+        AND (
+          sample_id BETWEEN start1_id AND end1_id
+          OR sample_id BETWEEN start2_id AND end2_id
+        )
+      GROUP BY server_id, queryid
+      ) queryid_first
+      JOIN sample_statements q_version USING (server_id, sample_id, queryid)
+      JOIN stmt_list USING (server_id, queryid_md5);
 
     qr_result   RECORD;
     report      text := '';
     query_text  text := '';
+    qlen_limit  integer;
     jtab_tpl    jsonb;
 BEGIN
     jtab_tpl := jsonb_build_object(
@@ -3037,34 +3030,24 @@ BEGIN
           '</tr>'
           '{rows}'
         '</table>',
-      'stmt_tpl_first',
+      'stmt_tpl',
         '<tr>'
-          '<td class="mono hdr" id="%2$s" rowspan="%1$s">%2$s</td>'
-          '<td {mono}>%3$s</td>'
-        '</tr>',
-      'stmt_tpl_next',
-        '<tr>'
-          '<td {mono}>%1$s</td>'
+          '<td class="mono hdr" id="%1$s">%1$s</td>'
+          '<td {mono}>%2$s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+
+    qlen_limit := (jreportset #>> '{report_properties,max_query_length}')::integer;
 
     FOR qr_result IN c_queries LOOP
         query_text := replace(qr_result.query,'<','&lt;');
         query_text := replace(query_text,'>','&gt;');
-        IF qr_result.q_ord = 1 THEN
-          report := report||format(
-              jtab_tpl #>> ARRAY['stmt_tpl_first'],
-              qr_result.q_cnt,
-              qr_result.queryid_pgc,
-              query_text
-          );
-        ELSE
-          report := report||format(
-              jtab_tpl #>> ARRAY['stmt_tpl_next'],
-              query_text
-          );
-        END IF;
+        report := report||format(
+            jtab_tpl #>> ARRAY['stmt_tpl'],
+            qr_result.queryid_pgc,
+            left(query_text,qlen_limit)
+        );
     END LOOP;
 
     IF report != '' THEN

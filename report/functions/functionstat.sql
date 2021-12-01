@@ -116,7 +116,7 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     FOR r_result IN c_fun_stats LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['row_tpl'],
@@ -220,7 +220,7 @@ BEGIN
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     FOR r_result IN c_fun_stats LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['row_tpl'],
@@ -305,7 +305,7 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     FOR r_result IN c_fun_stats LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['row_tpl'],
@@ -409,7 +409,7 @@ BEGIN
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     FOR r_result IN c_fun_stats LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['row_tpl'],
@@ -496,7 +496,7 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     FOR r_result IN c_fun_stats LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['row_tpl'],
@@ -600,7 +600,7 @@ BEGIN
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     FOR r_result IN c_fun_stats LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['row_tpl'],

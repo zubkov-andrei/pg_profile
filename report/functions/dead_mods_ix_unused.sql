@@ -13,13 +13,16 @@ DECLARE
         n_dead_tup as n_dead_tup,
         n_dead_tup * 100 / NULLIF(COALESCE(n_live_tup, 0) + COALESCE(n_dead_tup, 0), 0) AS dead_pct,
         last_autovacuum,
-        pg_size_pretty(relsize) AS relsize
+        COALESCE(
+          pg_size_pretty(relsize),
+          '['||pg_size_pretty(relpages_bytes)||']'
+        ) AS relsize
     FROM v_sample_stat_tables st
         -- Database name
         JOIN sample_stat_database sample_db USING (server_id, sample_id, datid)
     WHERE st.server_id=n_id AND NOT sample_db.datistemplate AND sample_id = e_id
         -- Min 5 MB in size
-        AND st.relsize > 5 * 1024^2
+        AND COALESCE(st.relsize,st.relpages_bytes) > 5 * 1024^2
         AND st.n_dead_tup > 0
     ORDER BY n_dead_tup*100/NULLIF(COALESCE(n_live_tup, 0) + COALESCE(n_dead_tup, 0), 0) DESC,
       st.datid ASC, st.relid ASC
@@ -54,7 +57,7 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting vacuum stats
     FOR r_result IN c_tbl_stats(sserver_id, end_id, topn) LOOP
         report := report||format(
@@ -94,14 +97,17 @@ DECLARE
         n_mod_since_analyze AS mods,
         n_mod_since_analyze*100/NULLIF(COALESCE(n_live_tup, 0) + COALESCE(n_dead_tup, 0), 0) AS mods_pct,
         last_autoanalyze,
-        pg_size_pretty(relsize) AS relsize
+        COALESCE(
+          pg_size_pretty(relsize),
+          '['||pg_size_pretty(relpages_bytes)||']'
+        ) AS relsize
     FROM v_sample_stat_tables st
         -- Database name and existance condition
         JOIN sample_stat_database sample_db USING (server_id, sample_id, datid)
     WHERE st.server_id = n_id AND NOT sample_db.datistemplate AND sample_id = e_id
         AND st.relkind IN ('r','m')
         -- Min 5 MB in size
-        AND relsize > 5 * 1024^2
+        AND COALESCE(st.relsize,st.relpages_bytes) > 5 * 1024^2
         AND n_mod_since_analyze > 0
         AND n_live_tup + n_dead_tup > 0
     ORDER BY n_mod_since_analyze*100/NULLIF(COALESCE(n_live_tup, 0) + COALESCE(n_dead_tup, 0), 0) DESC,
@@ -139,7 +145,7 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
     -- Reporting vacuum stats
     FOR r_result IN c_tbl_stats(sserver_id, end_id, topn) LOOP
         report := report||format(

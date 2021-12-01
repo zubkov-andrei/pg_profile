@@ -61,7 +61,7 @@ BEGIN
         '</tr>');
 
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting table stats
     FOR r_result IN c_tbl_stats LOOP
@@ -137,7 +137,7 @@ BEGIN
         '<tr style="visibility:collapse"></tr>');
 
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset #> ARRAY['htbl'], jtab_tpl);
+    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
 
     -- Reporting summary databases stats
     FOR r_result IN c_tbl_stats LOOP

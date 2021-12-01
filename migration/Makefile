@@ -1,9 +1,9 @@
 MIGRATION = \
-	$(EXTENSION)--0.3.3--$(PGPROFILE_VERSION).sql
+	$(EXTENSION)--0.3.4--$(PGPROFILE_VERSION).sql
 
 #MIGRATION_FULL =
 
-$(EXTENSION)--0.2.1--$(PGPROFILE_VERSION).sql: migration/migration--0.2--0.3.sql $(data) migration/drop_functions.sql $(functions)
+$(EXTENSION)--0.2.1--0.3.1.sql: migration/migration--0.2--0.3.sql $(data) migration/drop_functions.sql $(functions)
 	sed \
 	-e '1i \\\echo Use "ALTER EXTENSION $(EXTENSION) UPDATE" to load this file. \\quit' \
 	$(sed_extension) \
@@ -39,3 +39,13 @@ $(EXTENSION)--0.3.3--0.3.4.sql: migration/migration--0.3.3--0.3.4.sql migration/
 	migration/drop_functions.sql \
 	$(functions) \
 	> $(EXTENSION)--0.3.3--0.3.4.sql
+
+$(EXTENSION)--0.3.4--0.3.5.sql: migration/migration--0.3.4--0.3.5.sql migration/drop_functions.sql $(functions)
+	sed \
+	-e '1i \\\echo Use "ALTER EXTENSION $(EXTENSION) UPDATE" to load this file. \\quit' \
+	$(sed_extension) \
+	schema/roles.sql \
+	migration/migration--0.3.4--0.3.5.sql \
+	migration/drop_functions.sql \
+	$(functions) \
+	> $(EXTENSION)--0.3.4--0.3.5.sql
