@@ -4,7 +4,8 @@ INSERT INTO import_queries_version_order VALUES
 ('pg_profile','0.3.2','pg_profile','0.3.1'),
 ('pg_profile','0.3.3','pg_profile','0.3.2'),
 ('pg_profile','0.3.4','pg_profile','0.3.3'),
-('pg_profile','0.3.5','pg_profile','0.3.4')
+('pg_profile','0.3.5','pg_profile','0.3.4'),
+('pg_profile','0.3.6','pg_profile','0.3.5')
 ;
 
 /* ==== Data importing queries ==== */

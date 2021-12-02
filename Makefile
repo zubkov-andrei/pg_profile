@@ -1,4 +1,4 @@
-PGPROFILE_VERSION = 0.3.5
+PGPROFILE_VERSION = 0.3.6
 EXTENSION = pg_profile
 
 include migration/Makefile
@@ -8,7 +8,7 @@ TAR_pkg = $(EXTENSION)--$(PGPROFILE_VERSION).tar.gz $(EXTENSION)--$(PGPROFILE_VE
 
 DATA_built = $(EXTENSION)--$(PGPROFILE_VERSION).sql $(EXTENSION).control $(MIGRATION)
 
-EXTRA_CLEAN = $(TAR_pkg) $(MIGRATION_FULL) $(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql
+EXTRA_CLEAN = $(TAR_pkg) $(MIGRATION) $(MIGRATION_FULL) $(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql
 
 REGRESS = \
 	create_extension \

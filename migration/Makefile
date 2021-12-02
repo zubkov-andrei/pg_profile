@@ -1,5 +1,6 @@
 MIGRATION = \
-	$(EXTENSION)--0.3.4--$(PGPROFILE_VERSION).sql
+	$(EXTENSION)--0.3.4--$(PGPROFILE_VERSION).sql \
+	$(EXTENSION)--0.3.5--$(PGPROFILE_VERSION).sql
 
 #MIGRATION_FULL =
 
@@ -40,7 +41,7 @@ $(EXTENSION)--0.3.3--0.3.4.sql: migration/migration--0.3.3--0.3.4.sql migration/
 	$(functions) \
 	> $(EXTENSION)--0.3.3--0.3.4.sql
 
-$(EXTENSION)--0.3.4--0.3.5.sql: migration/migration--0.3.4--0.3.5.sql migration/drop_functions.sql $(functions)
+$(EXTENSION)--0.3.4--0.3.6.sql: migration/migration--0.3.4--0.3.5.sql migration/drop_functions.sql $(functions)
 	sed \
 	-e '1i \\\echo Use "ALTER EXTENSION $(EXTENSION) UPDATE" to load this file. \\quit' \
 	$(sed_extension) \
@@ -48,4 +49,12 @@ $(EXTENSION)--0.3.4--0.3.5.sql: migration/migration--0.3.4--0.3.5.sql migration/
 	migration/migration--0.3.4--0.3.5.sql \
 	migration/drop_functions.sql \
 	$(functions) \
-	> $(EXTENSION)--0.3.4--0.3.5.sql
+	migration/migration--0.3.5--0.3.6.sql \
+	> $(EXTENSION)--0.3.4--0.3.6.sql
+
+$(EXTENSION)--0.3.5--0.3.6.sql: migration/migration--0.3.5--0.3.6.sql
+	sed \
+	-e '1i \\\echo Use "ALTER EXTENSION $(EXTENSION) UPDATE" to load this file. \\quit' \
+	$(sed_extension) \
+	migration/migration--0.3.5--0.3.6.sql \
+	> $(EXTENSION)--0.3.5--0.3.6.sql
