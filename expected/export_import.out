@@ -33,20 +33,26 @@ SELECT profile.import_data('profile.export') > 0;
 /* === Integral check - reports must match === */
 \a
 \t on
+WITH res AS (
+  SELECT
+    profile.get_report('local',1,4) AS imported,
+    replace(profile.get_report('src_local',1,4),'<p>Server name: <strong>src_local</strong></p>',
+        '<p>Server name: <strong>local</strong></p>') AS exported
+)
 SELECT
   CASE
     WHEN
-      md5(profile.get_report('local',1,3)) !=
-      md5(replace(profile.get_report('src_local',1,3),'<p>Server name: <strong>src_local</strong></p>',
-        '<p>Server name: <strong>local</strong></p>'))
+      md5(imported) !=
+      md5(exported)
     THEN
-      format(E'<imported_start>\n%s\n<imported_end>\n<exported_start>\n%s\n<exported_end>',profile.get_report('local',1,3),
-        replace(profile.get_report('src_local',1,3),'<p>Server name: <strong>src_local</strong></p>',
-        '<p>Server name: <strong>local</strong></p>')
+      format(E'<imported_start>\n%s\n<imported_end>\n<exported_start>\n%s\n<exported_end>',
+        imported,
+        exported
       )
     ELSE
       'ok'
-  END as match;
+  END as match
+FROM res;
 ok
 \a
 \t off

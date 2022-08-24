@@ -40,7 +40,27 @@ BEGIN
     DELETE FROM last_stat_archiver WHERE server_id = dserver_id;
     DELETE FROM sample_stat_tablespaces WHERE server_id = dserver_id;
     DELETE FROM tablespaces_list WHERE server_id = dserver_id;
+    /*
+     * We have several constraints that should be deferred to avoid
+     * violation due to several cascade deletion branches
+     */
+    SET CONSTRAINTS
+        fk_stat_indexes_indexes,
+        fk_toast_table,
+        fk_st_tablespaces_tablespaces,
+        fk_st_tables_tables,
+        fk_user_functions_functions,
+        fk_stmt_list
+      DEFERRED;
     DELETE FROM samples WHERE server_id = dserver_id;
+    SET CONSTRAINTS
+        fk_stat_indexes_indexes,
+        fk_toast_table,
+        fk_st_tablespaces_tablespaces,
+        fk_st_tables_tables,
+        fk_user_functions_functions,
+        fk_stmt_list
+      IMMEDIATE;
     DELETE FROM servers WHERE server_id = dserver_id;
     GET DIAGNOSTICS del_rows = ROW_COUNT;
     RETURN del_rows;
@@ -180,3 +200,249 @@ SET search_path=@extschema@ AS $$
 $$ LANGUAGE sql;
 COMMENT ON FUNCTION show_servers_size_sampling() IS
   'Displays relation sizes sampling settings for all servers';
+
+CREATE FUNCTION delete_samples(IN server_id integer, IN start_id integer = NULL, IN end_id integer = NULL)
+RETURNS integer
+SET search_path=@extschema@ AS $$
+DECLARE
+  smp_delcount  integer;
+BEGIN
+  /*
+  * There could exist sample before deletion interval using
+  * dictionary values having last_sample_id value in deletion
+  * interval. So we need to move such last_sample_id values
+  * to the past
+  * We need to do so only if there is at last one sample before
+  * deletion interval. Usually there won't any, because this
+  * could happen only when there is a baseline in use or manual
+  * deletion is performed.
+  */
+  IF (SELECT count(*) > 0 FROM samples s
+    WHERE s.server_id = delete_samples.server_id AND sample_id < start_id) OR
+    (SELECT count(*) > 0 FROM bl_samples bs
+    WHERE bs.server_id = delete_samples.server_id
+      AND bs.sample_id BETWEEN start_id AND end_id)
+  THEN
+    -- Statements list
+    UPDATE stmt_list uls
+    SET last_sample_id = new_lastids.last_sample_id
+    FROM (
+      SELECT queryid_md5, max(rf.sample_id) AS last_sample_id
+      FROM
+        sample_statements rf JOIN stmt_list lst USING (server_id, queryid_md5)
+        LEFT JOIN bl_samples bl ON
+          (bl.server_id, bl.sample_id) = (rf.server_id, rf.sample_id) AND bl.sample_id BETWEEN start_id AND end_id
+      WHERE
+        rf.server_id = delete_samples.server_id
+        AND lst.last_sample_id BETWEEN start_id AND end_id
+        AND (rf.sample_id < start_id OR bl.sample_id IS NOT NULL)
+      GROUP BY queryid_md5
+      ) new_lastids
+    WHERE
+      (uls.server_id, uls.queryid_md5) = (delete_samples.server_id, new_lastids.queryid_md5)
+      AND uls.last_sample_id BETWEEN start_id AND end_id;
+
+    UPDATE tablespaces_list uls
+    SET last_sample_id = new_lastids.last_sample_id
+    FROM (
+      SELECT tablespaceid, max(rf.sample_id) AS last_sample_id
+      FROM
+        sample_stat_tablespaces rf JOIN tablespaces_list lst
+          USING (server_id, tablespaceid)
+        LEFT JOIN bl_samples bl ON
+          (bl.server_id, bl.sample_id) = (rf.server_id, rf.sample_id) AND bl.sample_id BETWEEN start_id AND end_id
+      WHERE
+        rf.server_id = delete_samples.server_id
+        AND lst.last_sample_id BETWEEN start_id AND end_id
+        AND (rf.sample_id < start_id OR bl.sample_id IS NOT NULL)
+      GROUP BY tablespaceid
+      ) new_lastids
+    WHERE
+      (uls.server_id, uls.tablespaceid) =
+      (delete_samples.server_id, new_lastids.tablespaceid)
+      AND uls.last_sample_id BETWEEN start_id AND end_id;
+
+    -- Roles
+    UPDATE roles_list uls
+    SET last_sample_id = new_lastids.last_sample_id
+    FROM (
+      SELECT userid, max(rf.sample_id) AS last_sample_id
+      FROM
+        sample_statements rf JOIN roles_list lst
+          USING (server_id, userid)
+        LEFT JOIN bl_samples bl ON
+          (bl.server_id, bl.sample_id) = (rf.server_id, rf.sample_id) AND bl.sample_id BETWEEN start_id AND end_id
+      WHERE
+        rf.server_id = delete_samples.server_id
+        AND lst.last_sample_id BETWEEN start_id AND end_id
+        AND (rf.sample_id < start_id OR bl.sample_id IS NOT NULL)
+      GROUP BY userid
+      ) new_lastids
+    WHERE
+      (uls.server_id, uls.userid) =
+      (delete_samples.server_id, new_lastids.userid)
+      AND uls.last_sample_id BETWEEN start_id AND end_id;
+
+    -- Indexes
+    UPDATE indexes_list uls
+    SET last_sample_id = new_lastids.last_sample_id
+    FROM (
+      SELECT indexrelid, max(rf.sample_id) AS last_sample_id
+      FROM
+        sample_stat_indexes rf JOIN indexes_list lst
+          USING (server_id, indexrelid)
+        LEFT JOIN bl_samples bl ON
+          (bl.server_id, bl.sample_id) = (rf.server_id, rf.sample_id) AND bl.sample_id BETWEEN start_id AND end_id
+      WHERE
+        rf.server_id = delete_samples.server_id
+        AND lst.last_sample_id BETWEEN start_id AND end_id
+        AND (rf.sample_id < start_id OR bl.sample_id IS NOT NULL)
+      GROUP BY indexrelid
+      ) new_lastids
+    WHERE
+      (uls.server_id, uls.indexrelid) =
+      (delete_samples.server_id, new_lastids.indexrelid)
+      AND uls.last_sample_id BETWEEN start_id AND end_id;
+
+    -- Tables
+    UPDATE tables_list uls
+    SET last_sample_id = new_lastids.last_sample_id
+    FROM (
+      SELECT relid, max(rf.sample_id) AS last_sample_id
+      FROM
+        sample_stat_tables rf JOIN tables_list lst
+          USING (server_id, relid)
+        LEFT JOIN bl_samples bl ON
+          (bl.server_id, bl.sample_id) = (rf.server_id, rf.sample_id) AND bl.sample_id BETWEEN start_id AND end_id
+      WHERE
+        rf.server_id = delete_samples.server_id
+        AND lst.last_sample_id BETWEEN start_id AND end_id
+        AND (rf.sample_id < start_id OR bl.sample_id IS NOT NULL)
+      GROUP BY relid
+      ) new_lastids
+    WHERE
+      (uls.server_id, uls.relid) =
+      (delete_samples.server_id, new_lastids.relid)
+      AND uls.last_sample_id BETWEEN start_id AND end_id;
+
+    -- Functions
+    UPDATE funcs_list uls
+    SET last_sample_id = new_lastids.last_sample_id
+    FROM (
+      SELECT funcid, max(rf.sample_id) AS last_sample_id
+      FROM
+        sample_stat_user_functions rf JOIN funcs_list lst
+          USING (server_id, funcid)
+        LEFT JOIN bl_samples bl ON
+          (bl.server_id, bl.sample_id) = (rf.server_id, rf.sample_id) AND bl.sample_id BETWEEN start_id AND end_id
+      WHERE
+        rf.server_id = delete_samples.server_id
+        AND lst.last_sample_id BETWEEN start_id AND end_id
+        AND (rf.sample_id < start_id OR bl.sample_id IS NOT NULL)
+      GROUP BY funcid
+      ) new_lastids
+    WHERE
+      (uls.server_id, uls.funcid) =
+      (delete_samples.server_id, new_lastids.funcid)
+      AND uls.last_sample_id BETWEEN start_id AND end_id;
+  END IF;
+
+  -- Delete specified samples without baseline samples
+  SET CONSTRAINTS
+      fk_stat_indexes_indexes,
+      fk_toast_table,
+      fk_st_tablespaces_tablespaces,
+      fk_st_tables_tables,
+      fk_user_functions_functions,
+      fk_stmt_list
+    DEFERRED;
+  DELETE FROM samples dsmp
+  USING
+    servers srv
+    JOIN samples smp USING (server_id)
+    LEFT JOIN bl_samples bls USING (server_id, sample_id)
+  WHERE
+    (dsmp.server_id, dsmp.sample_id) =
+    (smp.server_id, smp.sample_id) AND
+    smp.sample_id != srv.last_sample_id AND
+    srv.server_id = delete_samples.server_id AND
+    bls.sample_id IS NULL AND (
+      (start_id IS NULL AND end_id IS NULL) OR
+      smp.sample_id BETWEEN delete_samples.start_id AND delete_samples.end_id
+    )
+  ;
+  GET DIAGNOSTICS smp_delcount := ROW_COUNT;
+  SET CONSTRAINTS
+      fk_stat_indexes_indexes,
+      fk_toast_table,
+      fk_st_tablespaces_tablespaces,
+      fk_st_tables_tables,
+      fk_user_functions_functions,
+      fk_stmt_list
+    IMMEDIATE;
+
+  IF smp_delcount > 0 THEN
+    -- Delete obsolete values of postgres parameters
+    DELETE FROM sample_settings ss
+    USING (
+      SELECT ss.server_id, max(first_seen) AS first_seen, setting_scope, name
+      FROM sample_settings ss
+      WHERE ss.server_id = delete_samples.server_id AND first_seen <=
+        (SELECT min(sample_time) FROM samples s WHERE s.server_id = delete_samples.server_id)
+      GROUP BY ss.server_id, setting_scope, name) AS ss_ref
+    WHERE ss.server_id = ss_ref.server_id AND
+      ss.setting_scope = ss_ref.setting_scope AND
+      ss.name = ss_ref.name AND
+      ss.first_seen < ss_ref.first_seen;
+    -- Delete obsolete values of postgres parameters from previous versions of postgres on server
+    DELETE FROM sample_settings ss
+    WHERE ss.server_id = delete_samples.server_id AND first_seen <
+      (SELECT min(first_seen) FROM sample_settings mss WHERE mss.server_id = delete_samples.server_id AND name = 'version' AND setting_scope = 2);
+  END IF;
+
+  RETURN smp_delcount;
+END;
+$$ LANGUAGE plpgsql;
+COMMENT ON FUNCTION delete_samples(integer, integer, integer) IS
+  'Manually deletes server samples for provided server identifier. By default deletes all samples';
+
+CREATE FUNCTION delete_samples(IN server_name name, IN start_id integer = NULL, IN end_id integer = NULL)
+RETURNS integer
+SET search_path=@extschema@ AS $$
+  SELECT delete_samples(server_id, start_id, end_id)
+  FROM servers s
+  WHERE s.server_name = delete_samples.server_name
+$$ LANGUAGE sql;
+COMMENT ON FUNCTION delete_samples(name, integer, integer) IS
+  'Manually deletes server samples for provided server name. By default deletes all samples';
+
+CREATE FUNCTION delete_samples(IN start_id integer = NULL, IN end_id integer = NULL)
+RETURNS integer
+SET search_path=@extschema@ AS $$
+  SELECT delete_samples(server_id, start_id, end_id)
+  FROM servers s
+  WHERE s.server_name = 'local'
+$$ LANGUAGE sql;
+COMMENT ON FUNCTION delete_samples(integer, integer) IS
+  'Manually deletes server samples of local server. By default deletes all samples';
+
+CREATE FUNCTION delete_samples(IN server_name name, IN time_range tstzrange)
+RETURNS integer
+SET search_path=@extschema@ AS $$
+  SELECT delete_samples(server_id, min(sample_id), max(sample_id))
+  FROM servers srv JOIN samples smp USING (server_id)
+  WHERE
+    srv.server_name = delete_samples.server_name AND
+    delete_samples.time_range @> smp.sample_time
+  GROUP BY server_id
+$$ LANGUAGE sql;
+COMMENT ON FUNCTION delete_samples(name, integer, integer) IS
+  'Manually deletes server samples for provided server name and time interval';
+
+CREATE FUNCTION delete_samples(IN time_range tstzrange)
+RETURNS integer
+SET search_path=@extschema@ AS $$
+  SELECT delete_samples('local', time_range);
+$$ LANGUAGE sql;
+COMMENT ON FUNCTION delete_samples(name, integer, integer) IS
+  'Manually deletes server samples for time interval on local server';

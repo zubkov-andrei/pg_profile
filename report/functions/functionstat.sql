@@ -60,12 +60,13 @@ SET search_path=@extschema@ AS $$
     GROUP BY st.server_id,st.datid,st.funcid,sample_db.datname,st.schemaname,st.funcname,st.funcargs
 $$ LANGUAGE sql;
 
-CREATE FUNCTION func_top_time_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION func_top_time_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
 
-    c_fun_stats CURSOR FOR
+    c_fun_stats CURSOR (topn integer) FOR
     SELECT
         dbname,
         schemaname,
@@ -76,7 +77,7 @@ DECLARE
         NULLIF(self_time, 0.0) as self_time,
         NULLIF(m_time, 0.0) as m_time,
         NULLIF(m_stime, 0.0) as m_stime
-    FROM top_functions
+    FROM top_functions1
     WHERE total_time > 0
     ORDER BY
       total_time DESC,
@@ -116,8 +117,8 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
-    FOR r_result IN c_fun_stats LOOP
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
+    FOR r_result IN c_fun_stats((report_context #>> '{report_properties,topn}')::integer) LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['row_tpl'],
             r_result.dbname,
@@ -140,13 +141,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION func_top_time_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-    IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION func_top_time_diff_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
 
-    c_fun_stats CURSOR FOR
+    c_fun_stats CURSOR (topn integer) FOR
     SELECT * FROM (SELECT
         COALESCE(f1.dbname,f2.dbname) as dbname,
         COALESCE(f1.schemaname,f2.schemaname) as schemaname,
@@ -220,8 +221,8 @@ BEGIN
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
-    FOR r_result IN c_fun_stats LOOP
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
+    FOR r_result IN c_fun_stats((report_context #>> '{report_properties,topn}')::integer) LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['row_tpl'],
             r_result.dbname,
@@ -249,12 +250,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION func_top_calls_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION func_top_calls_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
 
-    c_fun_stats CURSOR FOR
+    c_fun_stats CURSOR(topn integer) FOR
     SELECT
         dbname,
         schemaname,
@@ -265,7 +267,7 @@ DECLARE
         NULLIF(self_time, 0.0) as self_time,
         NULLIF(m_time, 0.0) as m_time,
         NULLIF(m_stime, 0.0) as m_stime
-    FROM top_functions
+    FROM top_functions1
     WHERE calls > 0
     ORDER BY
       calls DESC,
@@ -305,8 +307,8 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
-    FOR r_result IN c_fun_stats LOOP
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
+    FOR r_result IN c_fun_stats((report_context #>> '{report_properties,topn}')::integer) LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['row_tpl'],
             r_result.dbname,
@@ -329,13 +331,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION func_top_calls_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-    IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION func_top_calls_diff_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
 
-    c_fun_stats CURSOR FOR
+    c_fun_stats CURSOR(topn integer) FOR
     SELECT * FROM (SELECT
         COALESCE(f1.dbname,f2.dbname) as dbname,
         COALESCE(f1.schemaname,f2.schemaname) as schemaname,
@@ -409,8 +411,8 @@ BEGIN
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
-    FOR r_result IN c_fun_stats LOOP
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
+    FOR r_result IN c_fun_stats((report_context #>> '{report_properties,topn}')::integer) LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['row_tpl'],
             r_result.dbname,
@@ -440,12 +442,13 @@ $$ LANGUAGE plpgsql;
 
 /* ==== Trigger report functions ==== */
 
-CREATE FUNCTION func_top_trg_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION func_top_trg_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
 
-    c_fun_stats CURSOR FOR
+    c_fun_stats CURSOR(start_id integer, end_id integer, topn integer) FOR
     SELECT
         dbname,
         schemaname,
@@ -496,8 +499,12 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
-    FOR r_result IN c_fun_stats LOOP
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
+    FOR r_result IN c_fun_stats(
+      (report_context #>> '{report_properties,start1_id}')::integer,
+      (report_context #>> '{report_properties,end1_id}')::integer,
+      (report_context #>> '{report_properties,topn}')::integer)
+    LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['row_tpl'],
             r_result.dbname,
@@ -520,13 +527,14 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION func_top_trg_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-    IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION func_top_trg_diff_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
 
-    c_fun_stats CURSOR FOR
+    c_fun_stats CURSOR(start1_id integer, end1_id integer,
+      start2_id integer, end2_id integer, topn integer) FOR
     SELECT * FROM (SELECT
         COALESCE(f1.dbname,f2.dbname) as dbname,
         COALESCE(f1.schemaname,f2.schemaname) as schemaname,
@@ -600,8 +608,14 @@ BEGIN
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
-    FOR r_result IN c_fun_stats LOOP
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
+    FOR r_result IN c_fun_stats(
+      (report_context #>> '{report_properties,start1_id}')::integer,
+      (report_context #>> '{report_properties,end1_id}')::integer,
+      (report_context #>> '{report_properties,start2_id}')::integer,
+      (report_context #>> '{report_properties,end2_id}')::integer,
+      (report_context #>> '{report_properties,topn}')::integer)
+    LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['row_tpl'],
             r_result.dbname,

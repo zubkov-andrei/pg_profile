@@ -1,26 +1,49 @@
 /* ========= Internal functions ========= */
 
-CREATE FUNCTION get_connstr(IN sserver_id integer) RETURNS text SET search_path=@extschema@ SET lock_timeout=300000 AS $$
+CREATE FUNCTION get_connstr(IN sserver_id integer, INOUT properties jsonb)
+SET search_path=@extschema@ SET lock_timeout=300000 AS $$
 DECLARE
-    server_connstr text = null;
+    server_connstr    text = NULL;
+    server_host       text = NULL;
 BEGIN
+    ASSERT properties IS NOT NULL, 'properties must be not null';
     --Getting server_connstr
     SELECT connstr INTO server_connstr FROM servers n WHERE n.server_id = sserver_id;
-    IF (server_connstr IS NULL) THEN
-        RAISE 'server_id not found';
-    ELSE
-        RETURN server_connstr;
+    ASSERT server_connstr IS NOT NULL, 'server_id not found';
+    /*
+    When host= parameter is not specified, connection to unix socket is assumed.
+    Unix socket can be in non-default location, so we need to specify it
+    */
+    IF (SELECT count(*) = 0 FROM regexp_matches(server_connstr,$o$((\s|^)host\s*=)$o$)) AND
+      (SELECT count(*) != 0 FROM pg_catalog.pg_settings
+      WHERE name = 'unix_socket_directories' AND boot_val != reset_val)
+    THEN
+      -- Get suitable socket name from available list
+      server_host := (SELECT COALESCE(t[1],t[4])
+        FROM pg_catalog.pg_settings,
+          regexp_matches(reset_val,'("(("")|[^"])+")|([^,]+)','g') AS t
+        WHERE name = 'unix_socket_directories' AND boot_val != reset_val
+          -- libpq can't handle sockets with comma in their names
+          AND position(',' IN COALESCE(t[1],t[4])) = 0
+        LIMIT 1
+      );
+      -- quoted string processing
+      IF left(server_host, 1) = '"' AND
+        right(server_host, 1) = '"' AND
+        (length(server_host) > 1)
+      THEN
+        server_host := replace(substring(server_host,2,length(server_host)-2),'""','"');
+      END IF;
+      -- append host parameter to the connection string
+      IF server_host IS NOT NULL AND server_host != '' THEN
+        server_connstr := concat_ws(server_connstr, format('host=%L',server_host), ' ');
+      ELSE
+        server_connstr := concat_ws(server_connstr, format('host=%L','localhost'), ' ');
+      END IF;
     END IF;
-END;
-$$ LANGUAGE plpgsql;
 
-CREATE FUNCTION nodata_wrapper(IN section_text text) RETURNS text SET search_path=@extschema@ AS $$
-BEGIN
-    IF section_text IS NULL OR section_text = '' THEN
-        RETURN '<p>No data in this section</p>';
-    ELSE
-        RETURN section_text;
-    END IF;
+    properties := jsonb_set(properties, '{properties, server_connstr}',
+      to_jsonb(server_connstr));
 END;
 $$ LANGUAGE plpgsql;
 
@@ -30,31 +53,34 @@ DECLARE
     jsontemplkey        text;
     jsondictkey         text;
 
-    c_replace_tab CURSOR FOR
+    c_replace_tab CURSOR(json_scope text) FOR
     SELECT
       '{'||template.key||'}' AS placeholder,
       CASE
         WHEN features.value::boolean THEN template.value
         ELSE COALESCE(template_not.value,'')
       END AS substitution
-    FROM jsonb_each_text(settings #> ARRAY['report_features']) AS features
+    FROM jsonb_each_text(settings #> ARRAY[json_scope]) AS features
       JOIN jsonb_each_text(templates) AS template ON (strpos(template.key,features.key||'?') = 1)
       LEFT JOIN jsonb_each_text(templates) AS template_not ON (template_not.key = '!'||template.key)
     ;
 
     r_replace RECORD;
+    jscope    text;
 BEGIN
     res_jsonb := templates;
     /* Conditional template placeholders processing
     * based on available report features
     */
-    FOR r_replace IN c_replace_tab LOOP
-      FOR jsontemplkey IN SELECT jsonb_object_keys(res_jsonb) LOOP
-        res_jsonb := jsonb_set(res_jsonb, ARRAY[jsontemplkey],
-          to_jsonb(replace(res_jsonb #>> ARRAY[jsontemplkey],
-          r_replace.placeholder, r_replace.substitution)));
-      END LOOP; -- over table templates
-    END LOOP; -- over feature-based replacements
+    FOREACH jscope IN ARRAY ARRAY['report_properties', 'report_features'] LOOP
+      FOR r_replace IN c_replace_tab(jscope) LOOP
+        FOR jsontemplkey IN SELECT jsonb_object_keys(res_jsonb) LOOP
+          res_jsonb := jsonb_set(res_jsonb, ARRAY[jsontemplkey],
+            to_jsonb(replace(res_jsonb #>> ARRAY[jsontemplkey],
+            r_replace.placeholder, r_replace.substitution)));
+        END LOOP; -- over table templates
+      END LOOP; -- over feature-based replacements
+    END LOOP; -- over json settings scope
     -- Replacing common html/css placeholders
     FOR jsontemplkey IN SELECT jsonb_object_keys(res_jsonb) LOOP
       FOR jsondictkey IN SELECT jsonb_object_keys(settings #> ARRAY['htbl']) LOOP

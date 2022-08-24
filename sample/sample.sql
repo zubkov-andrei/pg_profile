@@ -6,48 +6,15 @@ DECLARE
     s_id              integer;
     topn              integer;
     ret               integer;
-    server_properties jsonb = '{"extensions":[],"settings":[],"timings":{}}'; -- version, extensions, etc.
+    server_properties jsonb = '{"extensions":[],"settings":[],"timings":{},"properties":{}}'; -- version, extensions, etc.
     qres              record;
-    server_connstr    text;
     settings_refresh  boolean = true;
     collect_timings   boolean = false;
 
     server_query      text;
-    server_host       text = NULL;
 BEGIN
     -- Get server connstr
-    server_connstr := get_connstr(sserver_id);
-    /*
-     When host= parameter is not specified, connection to unix socket is assumed.
-     Unix socket can be in non-default location, so we need to specify it
-    */
-    IF (SELECT count(*) = 0 FROM regexp_matches(server_connstr,$o$((\s|^)host\s*=)$o$)) AND
-      (SELECT count(*) != 0 FROM pg_catalog.pg_settings
-      WHERE name = 'unix_socket_directories' AND boot_val != reset_val)
-    THEN
-      -- Get suitable socket name from available list
-      server_host := (SELECT COALESCE(t[1],t[4])
-        FROM pg_catalog.pg_settings,
-          regexp_matches(reset_val,'("(("")|[^"])+")|([^,]+)','g') AS t
-        WHERE name = 'unix_socket_directories' AND boot_val != reset_val
-          -- libpq can't handle sockets with comma in their names
-          AND position(',' IN COALESCE(t[1],t[4])) = 0
-        LIMIT 1
-      );
-      -- quoted string processing
-      IF starts_with(server_host,'"') AND
-         starts_with(reverse(server_host),'"') AND
-         (length(server_host) > 1)
-      THEN
-        server_host := replace(substring(server_host,2,length(server_host)-2),'""','"');
-      END IF;
-      -- append host parameter to the connection string
-      IF server_host IS NOT NULL AND server_host != '' THEN
-        server_connstr := concat_ws(server_connstr, format('host=%L',server_host), ' ');
-      ELSE
-        server_connstr := concat_ws(server_connstr, format('host=%L','localhost'), ' ');
-      END IF;
-    END IF;
+    SELECT properties INTO server_properties FROM get_connstr(sserver_id, server_properties);
 
     -- Getting timing collection setting
     BEGIN
@@ -79,12 +46,6 @@ BEGIN
         PERFORM dblink_disconnect('server_connection');
     END IF;
 
-    -- Creating a new sample record
-    UPDATE servers SET last_sample_id = last_sample_id + 1 WHERE server_id = sserver_id
-      RETURNING last_sample_id INTO s_id;
-    INSERT INTO samples(sample_time,server_id,sample_id)
-      VALUES (now(),sserver_id,s_id);
-
     -- Only one running take_sample() function allowed per server!
     -- Explicitly lock server in servers table
     BEGIN
@@ -92,6 +53,13 @@ BEGIN
     EXCEPTION
         WHEN OTHERS THEN RAISE 'Can''t get lock on server. Is there another take_sample() function running on this server?';
     END;
+
+    -- Creating a new sample record
+    UPDATE servers SET last_sample_id = last_sample_id + 1 WHERE server_id = sserver_id
+      RETURNING last_sample_id INTO s_id;
+    INSERT INTO samples(sample_time,server_id,sample_id)
+      VALUES (now(),sserver_id,s_id);
+
     -- Getting max_sample_age setting
     BEGIN
         ret := COALESCE(current_setting('{pg_profile}.max_sample_age')::integer);
@@ -101,7 +69,7 @@ BEGIN
     -- Applying skip sizes policy
     IF skip_sizes IS NULL THEN
       IF num_nulls(qres.size_smp_wnd_start, qres.size_smp_wnd_dur, qres.size_smp_interval) > 0 THEN
-        skip_sizes = false;
+        skip_sizes := false;
       ELSE
         /*
         Skip sizes collection if there was a sample with sizes recently
@@ -138,7 +106,9 @@ BEGIN
     END IF;
 
     -- Server connection
-    PERFORM dblink_connect('server_connection',server_connstr);
+    PERFORM dblink_connect('server_connection', server_properties #>> '{properties,server_connstr}');
+    -- Transaction
+    PERFORM dblink('server_connection','BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
     -- Setting application name
     PERFORM dblink('server_connection','SET application_name=''{pg_profile}''');
     -- Setting lock_timout prevents hanging of take_sample() call due to DDL in long transaction
@@ -175,6 +145,7 @@ BEGIN
           'FROM pg_catalog.pg_extension '
           'WHERE extname IN ('
             '''pg_stat_statements'','
+            '''pg_wait_sampling'','
             '''pg_stat_kcache'''
           ')')
         AS dbl(extname name, extnamespace name, extversion text)
@@ -329,7 +300,7 @@ BEGIN
         SELECT count(*) = 1 FROM jsonb_to_recordset(server_properties #> '{settings}')
           AS x(name text, reset_val text)
         WHERE name = 'server_version_num'
-          AND reset_val::integer < 140000
+          AND reset_val::integer >= 140000
       )
       THEN
         server_query := 'SELECT '
@@ -348,6 +319,49 @@ BEGIN
             'dbs.temp_files, '
             'dbs.temp_bytes, '
             'dbs.deadlocks, '
+            'dbs.checksum_failures, '
+            'dbs.checksum_last_failure, '
+            'dbs.blk_read_time, '
+            'dbs.blk_write_time, '
+            'dbs.session_time, '
+            'dbs.active_time, '
+            'dbs.idle_in_transaction_time, '
+            'dbs.sessions, '
+            'dbs.sessions_abandoned, '
+            'dbs.sessions_fatal, '
+            'dbs.sessions_killed, '
+            'dbs.stats_reset, '
+            'pg_database_size(dbs.datid) as datsize, '
+            '0 as datsize_delta, '
+            'db.datistemplate '
+          'FROM pg_catalog.pg_stat_database dbs '
+          'JOIN pg_catalog.pg_database db ON (dbs.datid = db.oid) '
+          'WHERE dbs.datname IS NOT NULL';
+      WHEN (
+        SELECT count(*) = 1 FROM jsonb_to_recordset(server_properties #> '{settings}')
+          AS x(name text, reset_val text)
+        WHERE name = 'server_version_num'
+          AND reset_val::integer >= 120000
+      )
+      THEN
+        server_query := 'SELECT '
+            'dbs.datid, '
+            'dbs.datname, '
+            'dbs.xact_commit, '
+            'dbs.xact_rollback, '
+            'dbs.blks_read, '
+            'dbs.blks_hit, '
+            'dbs.tup_returned, '
+            'dbs.tup_fetched, '
+            'dbs.tup_inserted, '
+            'dbs.tup_updated, '
+            'dbs.tup_deleted, '
+            'dbs.conflicts, '
+            'dbs.temp_files, '
+            'dbs.temp_bytes, '
+            'dbs.deadlocks, '
+            'dbs.checksum_failures, '
+            'dbs.checksum_last_failure, '
             'dbs.blk_read_time, '
             'dbs.blk_write_time, '
             'NULL as session_time, '
@@ -368,7 +382,7 @@ BEGIN
         SELECT count(*) = 1 FROM jsonb_to_recordset(server_properties #> '{settings}')
           AS x(name text, reset_val text)
         WHERE name = 'server_version_num'
-          AND reset_val::integer >= 140000
+          AND reset_val::integer < 120000
       )
       THEN
         server_query := 'SELECT '
@@ -387,15 +401,17 @@ BEGIN
             'dbs.temp_files, '
             'dbs.temp_bytes, '
             'dbs.deadlocks, '
+            'NULL as checksum_failures, '
+            'NULL as checksum_last_failure, '
             'dbs.blk_read_time, '
             'dbs.blk_write_time, '
-            'dbs.session_time, '
-            'dbs.active_time, '
-            'dbs.idle_in_transaction_time, '
-            'dbs.sessions, '
-            'dbs.sessions_abandoned, '
-            'dbs.sessions_fatal, '
-            'dbs.sessions_killed, '
+            'NULL as session_time, '
+            'NULL as active_time, '
+            'NULL as idle_in_transaction_time, '
+            'NULL as sessions, '
+            'NULL as sessions_abandoned, '
+            'NULL as sessions_fatal, '
+            'NULL as sessions_killed, '
             'dbs.stats_reset, '
             'pg_database_size(dbs.datid) as datsize, '
             '0 as datsize_delta, '
@@ -424,6 +440,8 @@ BEGIN
         temp_files,
         temp_bytes,
         deadlocks,
+        checksum_failures,
+        checksum_last_failure,
         blk_read_time,
         blk_write_time,
         session_time,
@@ -455,6 +473,8 @@ BEGIN
         temp_files AS temp_files,
         temp_bytes AS temp_bytes,
         deadlocks AS deadlocks,
+        checksum_failures as checksum_failures,
+        checksum_last_failure as checksum_failures,
         blk_read_time AS blk_read_time,
         blk_write_time AS blk_write_time,
         session_time AS session_time,
@@ -484,6 +504,8 @@ BEGIN
         temp_files bigint,
         temp_bytes bigint,
         deadlocks bigint,
+        checksum_failures bigint,
+        checksum_last_failure timestamp with time zone,
         blk_read_time double precision,
         blk_write_time double precision,
         session_time double precision,
@@ -522,6 +544,8 @@ BEGIN
       temp_files,
       temp_bytes,
       deadlocks,
+      checksum_failures,
+      checksum_last_failure,
       blk_read_time,
       blk_write_time,
       session_time,
@@ -554,6 +578,8 @@ BEGIN
         cur.temp_files - COALESCE(lst.temp_files,0),
         cur.temp_bytes - COALESCE(lst.temp_bytes,0),
         cur.deadlocks - COALESCE(lst.deadlocks,0),
+        cur.checksum_failures - COALESCE(lst.checksum_failures,0),
+        cur.checksum_last_failure,
         cur.blk_read_time - COALESCE(lst.blk_read_time,0),
         cur.blk_write_time - COALESCE(lst.blk_write_time,0),
         cur.session_time - COALESCE(lst.session_time,0),
@@ -574,12 +600,15 @@ BEGIN
     WHERE cur.sample_id = s_id AND cur.server_id = sserver_id;
 
     /*
-    * In case of statistics reset full database size is incorrectly
-    * considered as increment by previous query. So, we need to update it
-    * with correct value
+    * In case of statistics reset full database size, and checksum checksum_failures
+    * is incorrectly considered as increment by previous query.
+    * So, we need to update it with correct value
     */
     UPDATE sample_stat_database sdb
-    SET datsize_delta = cur.datsize - lst.datsize
+    SET
+      datsize_delta = cur.datsize - lst.datsize,
+      checksum_failures = cur.checksum_failures - lst.checksum_failures,
+      checksum_last_failure = cur.checksum_last_failure
     FROM
       last_stat_database cur
       JOIN last_stat_database lst ON
@@ -653,6 +682,24 @@ BEGIN
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
       server_properties := jsonb_set(server_properties,'{timings,collect statement stats,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,collect wait sampling stats}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
+    -- Search for wait sampling extension
+    CASE
+      -- pg_wait_sampling statistics collection
+      WHEN (
+        SELECT count(*) = 1
+        FROM jsonb_to_recordset(server_properties #> '{extensions}') AS ext(extname text)
+        WHERE extname = 'pg_wait_sampling'
+      ) THEN
+        PERFORM collect_pg_wait_sampling_stats(server_properties, sserver_id, s_id, topn);
+      ELSE
+        NULL;
+    END CASE;
+
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,collect wait sampling stats,end}',to_jsonb(clock_timestamp()));
       server_properties := jsonb_set(server_properties,'{timings,query pg_stat_bgwriter}',jsonb_build_object('start',clock_timestamp()));
     END IF;
 
@@ -882,7 +929,7 @@ BEGIN
     END IF;
 
     -- Collecting stat info for objects of all databases
-    server_properties := collect_obj_stats(server_properties, sserver_id, s_id, server_connstr, skip_sizes);
+    server_properties := collect_obj_stats(server_properties, sserver_id, s_id, skip_sizes);
     ASSERT server_properties IS NOT NULL, 'lost properties';
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
@@ -890,6 +937,7 @@ BEGIN
       server_properties := jsonb_set(server_properties,'{timings,disconnect}',jsonb_build_object('start',clock_timestamp()));
     END IF;
 
+    PERFORM dblink('server_connection', 'COMMIT');
     PERFORM dblink_disconnect('server_connection');
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
@@ -907,32 +955,21 @@ BEGIN
       AND lst.sample_id = s_id;
     -- Tables
     UPDATE tables_list AS tl
-    SET schemaname = lst.schemaname, relname = lst.relname
+    SET (schemaname, relname) = (lst.schemaname, lst.relname)
     FROM last_stat_tables AS lst
-    WHERE tl.server_id = lst.server_id AND tl.datid = lst.datid AND tl.relid = lst.relid AND tl.relkind = lst.relkind
-      AND (tl.schemaname != lst.schemaname OR tl.relname != lst.relname)
-      AND lst.sample_id = s_id;
-    -- Indexes
-    UPDATE indexes_list AS il
-    SET schemaname = lst.schemaname, indexrelname = lst.indexrelname
-    FROM last_stat_indexes AS lst
-    WHERE il.server_id = lst.server_id AND il.datid = lst.datid AND il.indexrelid = lst.indexrelid
-      AND il.relid = lst.relid
-      AND (il.schemaname != lst.schemaname OR il.indexrelname != lst.indexrelname)
+    WHERE (tl.server_id, tl.datid, tl.relid, tl.relkind) =
+        (lst.server_id, lst.datid, lst.relid, lst.relkind)
+      AND (tl.schemaname, tl.relname) != (lst.schemaname, lst.relname)
       AND lst.sample_id = s_id;
     -- Functions
     UPDATE funcs_list AS fl
-    SET schemaname = lst.schemaname, funcname = lst.funcname, funcargs = lst.funcargs
+    SET (schemaname, funcname, funcargs) =
+      (lst.schemaname, lst.funcname, lst.funcargs)
     FROM last_stat_user_functions AS lst
-    WHERE fl.server_id = lst.server_id AND fl.datid = lst.datid AND fl.funcid = lst.funcid
-      AND (fl.schemaname != lst.schemaname OR fl.funcname != lst.funcname OR fl.funcargs != lst.funcargs)
-      AND lst.sample_id = s_id;
-    -- Tablespaces
-    UPDATE tablespaces_list AS tl
-    SET tablespacename = lst.tablespacename, tablespacepath = lst.tablespacepath
-    FROM last_stat_tablespaces AS lst
-    WHERE tl.server_id = lst.server_id AND tl.tablespaceid = lst.tablespaceid
-      AND (tl.tablespacename != lst.tablespacename OR tl.tablespacepath != lst.tablespacepath)
+    WHERE (fl.server_id, fl.datid, fl.funcid) =
+        (lst.server_id, lst.datid, lst.funcid)
+      AND (fl.schemaname, fl.funcname, fl.funcargs) !=
+        (lst.schemaname, lst.funcname, lst.funcargs)
       AND lst.sample_id = s_id;
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
@@ -940,23 +977,30 @@ BEGIN
       server_properties := jsonb_set(server_properties,'{timings,calculate tablespace stats}',jsonb_build_object('start',clock_timestamp()));
     END IF;
 
-    INSERT INTO tablespaces_list (
+    INSERT INTO tablespaces_list AS itl (
         server_id,
+        last_sample_id,
         tablespaceid,
         tablespacename,
         tablespacepath
       )
     SELECT
-      lst.server_id,
-      lst.tablespaceid,
-      lst.tablespacename,
-      lst.tablespacepath
+      cur.server_id,
+      NULL,
+      cur.tablespaceid,
+      cur.tablespacename,
+      cur.tablespacepath
     FROM
-      last_stat_tablespaces lst
-      LEFT JOIN tablespaces_list tl USING (server_id, tablespaceid)
+      last_stat_tablespaces cur
     WHERE
-      lst.server_id = sserver_id
-      AND tl.tablespaceid IS NULL;
+      (cur.server_id, cur.sample_id) = (sserver_id, s_id)
+    ON CONFLICT ON CONSTRAINT pk_tablespace_list DO
+    UPDATE SET
+        (last_sample_id, tablespacename, tablespacepath) =
+        (EXCLUDED.last_sample_id, EXCLUDED.tablespacename, EXCLUDED.tablespacepath)
+      WHERE
+        (itl.last_sample_id, itl.tablespacename, itl.tablespacepath) IS DISTINCT FROM
+        (EXCLUDED.last_sample_id, EXCLUDED.tablespacename, EXCLUDED.tablespacepath);
 
     -- Calculate diffs for tablespaces
     INSERT INTO sample_stat_tablespaces(
@@ -1132,78 +1176,81 @@ BEGIN
       server_properties := jsonb_set(server_properties,'{timings,delete obsolete samples}',jsonb_build_object('start',clock_timestamp()));
     END IF;
 
+    -- Updating dictionary tables setting last_sample_id
+    UPDATE tablespaces_list utl SET last_sample_id = s_id - 1
+    FROM tablespaces_list tl LEFT JOIN sample_stat_tablespaces cur
+      ON (cur.server_id, cur.sample_id, cur.tablespaceid) =
+        (tl.server_id, s_id, tl.tablespaceid)
+    WHERE
+      tl.last_sample_id IS NULL AND
+      (utl.server_id, utl.tablespaceid) = (tl.server_id, tl.tablespaceid) AND
+      tl.server_id = sserver_id AND cur.server_id IS NULL;
+
+    UPDATE funcs_list ufl SET last_sample_id = s_id - 1
+    FROM funcs_list fl LEFT JOIN sample_stat_user_functions cur
+      ON (cur.server_id, cur.sample_id, cur.datid, cur.funcid) =
+        (fl.server_id, s_id, fl.datid, fl.funcid)
+    WHERE
+      fl.last_sample_id IS NULL AND
+      fl.server_id = sserver_id AND cur.server_id IS NULL AND
+      (ufl.server_id, ufl.datid, ufl.funcid) =
+      (fl.server_id, fl.datid, fl.funcid);
+
+    UPDATE indexes_list uil SET last_sample_id = s_id - 1
+    FROM indexes_list il LEFT JOIN sample_stat_indexes cur
+      ON (cur.server_id, cur.sample_id, cur.datid, cur.indexrelid) =
+        (il.server_id, s_id, il.datid, il.indexrelid)
+    WHERE
+      il.last_sample_id IS NULL AND
+      il.server_id = sserver_id AND cur.server_id IS NULL AND
+      (uil.server_id, uil.datid, uil.indexrelid) =
+      (il.server_id, il.datid, il.indexrelid);
+
+    UPDATE tables_list utl SET last_sample_id = s_id - 1
+    FROM tables_list tl LEFT JOIN sample_stat_tables cur
+      ON (cur.server_id, cur.sample_id, cur.datid, cur.relid) =
+        (tl.server_id, s_id, tl.datid, tl.relid)
+    WHERE
+      tl.last_sample_id IS NULL AND
+      tl.server_id = sserver_id AND cur.server_id IS NULL AND
+      (utl.server_id, utl.datid, utl.relid) =
+      (tl.server_id, tl.datid, tl.relid);
+
+    UPDATE stmt_list slu SET last_sample_id = s_id - 1
+    FROM sample_statements ss RIGHT JOIN stmt_list sl
+      ON (ss.server_id, ss.sample_id, ss.queryid_md5) =
+        (sl.server_id, s_id, sl.queryid_md5)
+    WHERE
+      sl.server_id = sserver_id AND
+      sl.last_sample_id IS NULL AND
+      ss.server_id IS NULL AND
+      (slu.server_id, slu.queryid_md5) = (sl.server_id, sl.queryid_md5);
+
+    UPDATE roles_list rlu SET last_sample_id = s_id - 1
+    FROM
+        sample_statements ss
+      RIGHT JOIN roles_list rl
+      ON (ss.server_id, ss.sample_id, ss.userid) =
+        (rl.server_id, s_id, rl.userid)
+    WHERE
+      rl.server_id = sserver_id AND
+      rl.last_sample_id IS NULL AND
+      ss.server_id IS NULL AND
+      (rlu.server_id, rlu.userid) = (rl.server_id, rl.userid);
+
     -- Deleting obsolete baselines
     DELETE FROM baselines
     WHERE keep_until < now()
       AND server_id = sserver_id;
+
     -- Deleting obsolete samples
-    DELETE FROM samples s
-      USING servers n
-    WHERE n.server_id = s.server_id AND s.server_id = sserver_id
+    PERFORM num_nulls(min(s.sample_id),max(s.sample_id)) > 0 OR
+      delete_samples(sserver_id, min(s.sample_id), max(s.sample_id)) > 0
+    FROM samples s JOIN
+      servers n USING (server_id)
+    WHERE s.server_id = sserver_id
         AND s.sample_time < now() - (COALESCE(n.max_sample_age,ret) || ' days')::interval
         AND (s.server_id,s.sample_id) NOT IN (SELECT server_id,sample_id FROM bl_samples WHERE server_id = sserver_id);
-    -- Deleting unused statements
-    DELETE FROM stmt_list
-        WHERE server_id = sserver_id AND queryid_md5 NOT IN
-            (SELECT queryid_md5 FROM sample_statements
-                UNION
-             SELECT queryid_md5 FROM sample_kcache);
-
-    -- Delete unused tablespaces from list
-    DELETE FROM tablespaces_list
-    WHERE server_id = sserver_id
-      AND (server_id, tablespaceid) NOT IN (
-        SELECT server_id, tablespaceid FROM sample_stat_tablespaces
-        WHERE server_id = sserver_id
-    );
-
-    -- Delete unused roles from roles_list
-    WITH used_roles AS (
-        SELECT DISTINCT userid FROM sample_statements WHERE server_id = sserver_id
-    )
-    DELETE FROM roles_list
-    WHERE server_id = sserver_id
-      AND userid NOT IN (SELECT userid FROM used_roles)
-    ;
-
-    -- Delete unused indexes from indexes list
-    DELETE FROM indexes_list
-    WHERE server_id = sserver_id
-      AND (datid, indexrelid) NOT IN (
-        SELECT datid, indexrelid FROM sample_stat_indexes
-        WHERE server_id = sserver_id
-    );
-
-    -- Delete unused tables from tables list
-    WITH used_tables AS (
-        SELECT server_id, datid, relid FROM sample_stat_tables WHERE server_id = sserver_id
-        UNION ALL
-        SELECT server_id, datid, relid FROM indexes_list WHERE server_id = sserver_id)
-    DELETE FROM tables_list
-    WHERE server_id = sserver_id
-      AND (datid, relid) NOT IN (SELECT datid, relid FROM used_tables)
-      AND (datid, reltoastrelid) NOT IN (SELECT datid, relid FROM used_tables);
-
-    -- Delete unused functions from functions list
-    DELETE FROM funcs_list
-    WHERE server_id = sserver_id
-      AND (server_id, funcid) NOT IN (
-        SELECT server_id, funcid FROM sample_stat_user_functions WHERE server_id = sserver_id
-    );
-
-    -- Delete obsolete values of postgres parameters
-    DELETE FROM sample_settings ss
-    USING (
-      SELECT server_id, max(first_seen) AS first_seen, setting_scope, name
-      FROM sample_settings
-      WHERE server_id = sserver_id AND first_seen <= (SELECT min(sample_time) FROM samples WHERE server_id = sserver_id)
-      GROUP BY server_id, setting_scope, name) AS ss_ref
-    WHERE ss.server_id = ss_ref.server_id AND ss.setting_scope = ss_ref.setting_scope AND ss.name = ss_ref.name
-      AND ss.first_seen < ss_ref.first_seen;
-    -- Delete obsolete values of postgres parameters from previous versions of postgres on server
-    DELETE FROM sample_settings
-    WHERE server_id = sserver_id AND first_seen <
-      (SELECT min(first_seen) FROM sample_settings WHERE server_id = sserver_id AND name = 'version' AND setting_scope = 2);
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
       server_properties := jsonb_set(server_properties,'{timings,delete obsolete samples,end}',to_jsonb(clock_timestamp()));
@@ -1308,7 +1355,7 @@ $$ LANGUAGE sql;
 
 COMMENT ON FUNCTION take_sample() IS 'Statistics sample creation function (for all enabled servers). Must be explicitly called periodically.';
 
-CREATE FUNCTION collect_obj_stats(IN properties jsonb, IN sserver_id integer, IN s_id integer, IN connstr text,
+CREATE FUNCTION collect_obj_stats(IN properties jsonb, IN sserver_id integer, IN s_id integer,
   IN skip_sizes boolean
 ) RETURNS jsonb SET search_path=@extschema@ AS $$
 DECLARE
@@ -1343,16 +1390,18 @@ BEGIN
 
     -- Load new data from statistic views of all cluster databases
     FOR qres IN c_dblist LOOP
-      db_connstr := concat_ws(' ',connstr,
+      db_connstr := concat_ws(' ',properties #>> '{properties,server_connstr}',
         format($o$dbname='%s'$o$,replace(qres.datname,$o$'$o$,$o$\'$o$))
       );
       PERFORM dblink_connect('server_db_connection',db_connstr);
+      -- Transaction
+      PERFORM dblink('server_db_connection','BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
       -- Setting application name
-      PERFORM dblink('server_connection','SET application_name=''{pg_profile}''');
+      PERFORM dblink('server_db_connection','SET application_name=''{pg_profile}''');
       -- Setting lock_timout prevents hanging of take_sample() call due to DDL in long transaction
       PERFORM dblink('server_db_connection','SET lock_timeout=3000');
       -- Reset search_path for security reasons
-      PERFORM dblink('server_connection','SET search_path=''''');
+      PERFORM dblink('server_db_connection','SET search_path=''''');
 
       IF (properties #>> '{collect_timings}')::boolean THEN
         result := jsonb_set(result,ARRAY['timings',format('db:%s collect tables stats',qres.datname)],jsonb_build_object('start',clock_timestamp()));
@@ -1737,7 +1786,8 @@ BEGIN
         'f.self_time,'
         'p.prorettype::regtype::text =''trigger'' AS trg_fn '
       'FROM pg_catalog.pg_stat_user_functions f '
-        'JOIN pg_catalog.pg_proc p ON (f.funcid = p.oid)';
+        'JOIN pg_catalog.pg_proc p ON (f.funcid = p.oid) '
+      'WHERE pg_get_function_arguments(f.funcid) IS NOT NULL';
 
       INSERT INTO last_stat_user_functions(
         server_id,
@@ -1778,6 +1828,7 @@ BEGIN
 
       ANALYZE last_stat_user_functions;
 
+      PERFORM dblink('server_db_connection', 'COMMIT');
       PERFORM dblink_disconnect('server_db_connection');
       IF (result #>> '{collect_timings}')::boolean THEN
         result := jsonb_set(result,ARRAY['timings',format('db:%s collect functions stats',qres.datname),'end'],to_jsonb(clock_timestamp()));
@@ -2048,8 +2099,9 @@ BEGIN
 
     -- Insert marked objects statistics increments
     -- New table names
-    INSERT INTO tables_list (
+    INSERT INTO tables_list AS itl (
       server_id,
+      last_sample_id,
       datid,
       relid,
       relkind,
@@ -2059,6 +2111,7 @@ BEGIN
     )
     SELECT
       cur.server_id,
+      NULL,
       cur.datid,
       cur.relid,
       cur.relkind,
@@ -2067,12 +2120,16 @@ BEGIN
       cur.relname
     FROM
       last_stat_tables cur
-      LEFT JOIN tables_list tl USING (server_id, datid, relid)
     WHERE
-      (cur.server_id, cur.in_sample) =
-      (sserver_id, true)
-      AND tl.server_id IS NULL
-    ;
+      (cur.server_id, cur.sample_id, cur.in_sample) =
+      (sserver_id, s_id, true)
+    ON CONFLICT ON CONSTRAINT pk_tables_list DO
+      UPDATE SET
+        (last_sample_id, reltoastrelid, schemaname, relname) =
+        (EXCLUDED.last_sample_id, EXCLUDED.reltoastrelid, EXCLUDED.schemaname, EXCLUDED.relname)
+      WHERE
+        (itl.last_sample_id, itl.reltoastrelid, itl.schemaname, itl.relname) IS DISTINCT FROM
+        (EXCLUDED.last_sample_id, EXCLUDED.reltoastrelid, EXCLUDED.schemaname, EXCLUDED.relname);
 
     -- Tables
     INSERT INTO sample_stat_tables (
@@ -2298,8 +2355,9 @@ BEGIN
     END IF;
 
     -- New index names
-    INSERT INTO indexes_list (
+    INSERT INTO indexes_list AS iil (
       server_id,
+      last_sample_id,
       datid,
       indexrelid,
       relid,
@@ -2308,6 +2366,7 @@ BEGIN
     )
     SELECT
       cur.server_id,
+      NULL,
       cur.datid,
       cur.indexrelid,
       cur.relid,
@@ -2315,12 +2374,17 @@ BEGIN
       cur.indexrelname
     FROM
       last_stat_indexes cur
-      LEFT JOIN indexes_list il USING (server_id, datid, indexrelid)
     WHERE
-      (cur.server_id, cur.in_sample) =
-      (sserver_id, true)
-      AND il.server_id IS NULL
-    ;
+      (cur.server_id, cur.sample_id, cur.in_sample) =
+      (sserver_id, s_id, true)
+    ON CONFLICT ON CONSTRAINT pk_indexes_list DO
+      UPDATE SET
+        (last_sample_id, relid, schemaname, indexrelname) =
+        (EXCLUDED.last_sample_id, EXCLUDED.relid, EXCLUDED.schemaname, EXCLUDED.indexrelname)
+      WHERE
+        (iil.last_sample_id, iil.relid, iil.schemaname, iil.indexrelname) IS DISTINCT FROM
+        (EXCLUDED.last_sample_id, EXCLUDED.relid, EXCLUDED.schemaname, EXCLUDED.indexrelname);
+
     -- Index stats
     INSERT INTO sample_stat_indexes (
       server_id,
@@ -2468,8 +2532,9 @@ BEGIN
     END IF;
 
     -- New function names
-    INSERT INTO funcs_list (
+    INSERT INTO funcs_list AS ifl (
       server_id,
+      last_sample_id,
       datid,
       funcid,
       schemaname,
@@ -2478,6 +2543,7 @@ BEGIN
     )
     SELECT
       cur.server_id,
+      NULL,
       cur.datid,
       cur.funcid,
       cur.schemaname,
@@ -2485,12 +2551,19 @@ BEGIN
       cur.funcargs
     FROM
       last_stat_user_functions cur
-      LEFT JOIN funcs_list fl USING (server_id, datid, funcid)
     WHERE
-      (cur.server_id, cur.in_sample) =
-      (sserver_id, true)
-      AND fl.server_id IS NULL
-    ;
+      (cur.server_id, cur.sample_id, cur.in_sample) =
+      (sserver_id, s_id, true)
+    ON CONFLICT ON CONSTRAINT pk_funcs_list DO
+      UPDATE SET
+        (last_sample_id, funcid, schemaname, funcname, funcargs) =
+        (EXCLUDED.last_sample_id, EXCLUDED.funcid, EXCLUDED.schemaname,
+          EXCLUDED.funcname, EXCLUDED.funcargs)
+      WHERE
+        (ifl.last_sample_id, ifl.funcid, ifl.schemaname,
+          ifl.funcname, ifl.funcargs) IS DISTINCT FROM
+        (EXCLUDED.last_sample_id, EXCLUDED.funcid, EXCLUDED.schemaname,
+          EXCLUDED.funcname, EXCLUDED.funcargs);
 
     -- Function stats
     INSERT INTO sample_stat_user_functions (

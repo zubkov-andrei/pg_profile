@@ -1,5 +1,6 @@
 /* ==== Export and import functions ==== */
 
+DROP FUNCTION IF EXISTS export_data(name, integer, integer, boolean);
 CREATE FUNCTION export_data(IN server_name name = NULL, IN min_sample_id integer = NULL,
   IN max_sample_id integer = NULL, IN obfuscate_queries boolean = FALSE)
 RETURNS TABLE(
@@ -23,7 +24,7 @@ BEGIN
     SELECT extversion INTO STRICT r_result FROM pg_catalog.pg_extension WHERE extname = '{pg_profile}';
     ext_version := r_result.extversion;
   ELSE
-    ext_version := '{extension_version}';
+    RAISE 'Export is not supported for manual installed version';
   END IF;
   RETURN QUERY EXECUTE $q$SELECT $3, row_to_json(s)
     FROM (SELECT $1 AS extension,
@@ -41,7 +42,10 @@ BEGIN
             JOIN pg_extension ext ON (dep.refobjid = ext.oid)
             JOIN pg_class rel ON (rel.oid = dep.objid AND rel.relkind= 'r')
             LEFT OUTER JOIN fkdeps con ON (con.reloid = dep.objid)
-          WHERE ext.extname = $1 AND rel.relname NOT LIKE ('import%') AND con.reloid IS NULL
+          WHERE ext.extname = $1 AND rel.relname NOT IN
+              ('import_queries', 'import_queries_version_order',
+              'report', 'report_static', 'report_struct')
+            AND con.reloid IS NULL
       UNION
       -- and add all tables that have resolved dependencies by previously added tables
           SELECT con.reloid as reloid, con.relname, recurse.inc_rels||array_agg(con.reloid) OVER()
@@ -58,7 +62,9 @@ BEGIN
         JOIN pg_extension ext ON (dep.refobjid = ext.oid)
         JOIN pg_class rel ON (rel.oid = dep.objid AND rel.relkind= 'r')
         JOIN pg_constraint con ON (con.conrelid = dep.objid AND con.contype = 'f')
-      WHERE ext.extname = $1 AND rel.relname NOT LIKE ('import%')
+      WHERE ext.extname = $1 AND rel.relname NOT IN
+        ('import_queries', 'import_queries_version_order',
+        'report', 'report_static', 'report_struct')
       GROUP BY rel.oid, rel.relname
     )
     SELECT json_agg(row_to_json(tl)) FROM
@@ -144,7 +150,8 @@ BEGIN
                 CASE $5
                   WHEN TRUE THEN pg_catalog.md5(rows.query)
                   ELSE rows.query
-                END AS query
+                END AS query,
+                last_sample_id
                FROM %I AS rows WHERE (server_id,queryid_md5) IN
                 (SELECT server_id, queryid_md5 FROM sample_statements WHERE
                   ($2 IS NULL OR $2 = server_id) AND
@@ -174,7 +181,8 @@ $$ LANGUAGE plpgsql;
 COMMENT ON FUNCTION export_data(IN server_name name, IN min_sample_id integer,
   IN max_sample_id integer, IN obfuscate_queries boolean) IS 'Export collected data as a table';
 
-CREATE FUNCTION import_data(data regclass) RETURNS bigint
+DROP FUNCTION IF EXISTS import_data;
+CREATE FUNCTION import_data(data regclass, server_name_prefix text = NULL) RETURNS bigint
 SET search_path=@extschema@ AS $$
 DECLARE
   import_meta     jsonb;
@@ -233,7 +241,8 @@ BEGIN
    * a mapping between local and importing servers to use on data load.
    */
   FOR r_result IN EXECUTE format($q$SELECT
-      imp_srv.server_name         imp_server_name,
+      COALESCE($3,'')||
+        imp_srv.server_name       imp_server_name,
       ls.server_name              local_server_name,
       imp_srv.server_created      imp_server_created,
       ls.server_created           local_server_created,
@@ -280,12 +289,13 @@ BEGIN
           LEFT OUTER JOIN sample_settings set ON (set.server_id = srv.server_id AND set.name = 'system_identifier')
         ) ls ON
         ((imp_srv.server_created = ls.server_created AND d.row_data->>'reset_val' = ls.system_identifier)
-          OR imp_srv.server_name = ls.server_name)
+          OR COALESCE($3,'')||imp_srv.server_name = ls.server_name)
     $q$,
     data)
   USING
     servers_list,
-    tables_list
+    tables_list,
+    server_name_prefix
   LOOP
     IF r_result.imp_server_created = r_result.local_server_created AND
       r_result.imp_system_identifier = r_result.local_system_identifier
@@ -380,6 +390,7 @@ BEGIN
     )
     SELECT
       q.query,
+      q.exec_order,
       tbllist.section_id as section_id,
       tbllist.relname
     FROM
@@ -414,4 +425,5 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION import_data(data regclass) IS 'Import sample data from table, exported by export_data function';
+COMMENT ON FUNCTION import_data(regclass, text) IS
+  'Import sample data from table, exported by export_data function';

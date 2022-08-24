@@ -4,10 +4,32 @@ UPDATE profile.samples SET sample_time = now() - '2 days'::interval - '10 minute
 UPDATE profile.samples SET sample_time = now() - '1 days'::interval - '10 minutes'::interval WHERE server_id = 1 AND sample_id = 4;
 UPDATE profile.samples SET sample_time = now() - '23 hours'::interval - '10 minutes'::interval WHERE server_id = 1 AND sample_id = 5;
 SELECT server,result FROM profile.take_sample();
+BEGIN;
+  SELECT profile.delete_samples();
+  SELECT sample FROM profile.show_samples() ORDER BY sample;
+ROLLBACK;
 SELECT count(*) FROM profile.samples WHERE sample_time < now() - '1 days'::interval;
 SELECT * FROM profile.set_server_max_sample_age('local',1);
 /* Testing baseline creation */
 SELECT * FROM profile.create_baseline('testline1',2,4);
+BEGIN;
+  SELECT profile.delete_samples('local',tstzrange(
+      (SELECT sample_time FROM profile.samples WHERE sample_id = 1),
+      (SELECT sample_time FROM profile.samples WHERE sample_id = 5),
+      '[]'
+    )
+  );
+  SELECT sample FROM profile.show_samples() ORDER BY sample;
+ROLLBACK;
+BEGIN;
+  SELECT profile.delete_samples(tstzrange(
+      (SELECT sample_time FROM profile.samples WHERE sample_id = 1),
+      (SELECT sample_time FROM profile.samples WHERE sample_id = 5),
+      '[]'
+    )
+  );
+  SELECT sample FROM profile.show_samples() ORDER BY sample;
+ROLLBACK;
 SELECT * FROM profile.create_baseline('testline2',2,4);
 SELECT count(*) FROM profile.baselines;
 SELECT * FROM profile.keep_baseline('testline2',-1);

@@ -50,7 +50,7 @@ SET search_path=@extschema@ AS $$
   WHERE s.server_id = sserver_id AND s.first_seen > s_start.sample_time AND s.first_seen <= s_end.sample_time
 $$ LANGUAGE SQL;
 
-CREATE FUNCTION settings_and_changes_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer)
+CREATE FUNCTION settings_and_changes_htbl(IN report_context jsonb, IN sserver_id integer)
   RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report_defined text := '';
@@ -62,7 +62,7 @@ DECLARE
     notes          text[];
 
     --Cursor for top(cnt) queries ordered by elapsed time
-    c_settings CURSOR FOR
+    c_settings CURSOR(start1_id integer, end1_id integer) FOR
     SELECT
       first_seen,
       setting_scope,
@@ -75,7 +75,7 @@ DECLARE
       pending_restart,
       changed,
       default_val
-    FROM settings_and_changes(sserver_id, start_id, end_id) st
+    FROM settings_and_changes(sserver_id, start1_id, end1_id) st
     ORDER BY default_val AND NOT changed ASC, name,setting_scope,first_seen,pending_restart ASC NULLS FIRST;
 
     r_result RECORD;
@@ -124,9 +124,13 @@ BEGIN
           '<td {value}><strong>%s</strong></td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
 
-    FOR r_result IN c_settings LOOP
+    FOR r_result IN c_settings(
+        (report_context #>> '{report_properties,start1_id}')::integer,
+        (report_context #>> '{report_properties,end1_id}')::integer
+      )
+    LOOP
         notes := ARRAY[''];
         IF r_result.changed THEN
           notes := array_append(notes,r_result.first_seen::text);
@@ -181,8 +185,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION settings_and_changes_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-    IN start2_id integer, IN end2_id integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION settings_and_changes_diff_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report_defined text := '';
     report_default text := '';
@@ -196,7 +200,9 @@ DECLARE
     v_new_tpl   text;
 
     --Cursor for top(cnt) queries ordered by elapsed time
-    c_settings CURSOR FOR
+    c_settings CURSOR(start1_id integer, end1_id integer,
+      start2_id integer, end2_id integer)
+    FOR
     SELECT
       first_seen,
       setting_scope,
@@ -293,9 +299,15 @@ BEGIN
           '<td {value}><strong>%s</strong></td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
 
-    FOR r_result IN c_settings LOOP
+    FOR r_result IN c_settings(
+        (report_context #>> '{report_properties,start1_id}')::integer,
+        (report_context #>> '{report_properties,end1_id}')::integer,
+        (report_context #>> '{report_properties,start2_id}')::integer,
+        (report_context #>> '{report_properties,end2_id}')::integer
+      )
+    LOOP
       CASE
         WHEN r_result.name1 IS NULL THEN
           v_init_tpl := 'init_tpl_i2';

@@ -9,7 +9,7 @@ Periodic samples can help you finding most resource intensive activities in the 
 
 You can take an explicit samples before running any batch processing, and after it will be done.
 
-Any time you take a sample, _pg_stat_statements_reset()_ will be called, ensuring you will not loose statements due to reaching *pg_stat_statements.max*. Also, report will contain section, informing you if captured statements count in any sample reaches 90% of _pg_stat_statements.max_.
+Any time you take a sample, _pg_stat_statements_reset()_ will be called, ensuring you will not loose statements due to reaching *pg_stat_statements.max*. Also, report will contain section, informing you if captured statements count in any sample reaches 90% of _pg_stat_statements.max_. Reset performed by _pg_profile_ extention will affect statistics collected by other monitoring tools from _pg_stat_statements_ view.
 
 *pg_profile*, installed in one cluster is able to collect statistics from other clusters, called *servers*. You just need to define some servers, providing names and connection strings and make sure connection can be established to all databases of all defined servers. Now you can track statistics on your standbys from master, or from any other server. Once extension is installed, a *local* server is automatically created - this is a *server* for cluster where *pg_profile* resides.
 
@@ -35,6 +35,7 @@ Consider setting following Statistics Collector parameters:
 track_activities = on
 track_counts = on
 track_io_timing = on
+track_wal_io_timing = on      # Since Postgres 14
 track_functions = all/pl
 ```
 
@@ -44,6 +45,20 @@ If you need statement statistics in reports, then database, mentioned in server 
 * _pg_stat_statements.track = 'top'_ - _all_ value will affect accuracy of _%Total_ fields for statements-related sections of report.
 
 If CPU and filesystem statistics is needed, consider installing *pg_stat_kcache* extension.
+
+## Supported versions
+## PostgreSQL
+* **14** supported since version 0.3.4
+* **13** supported since version 0.1.3
+* **12** supported since version 0.1.0
+## _pg_stat_statements_ extension
+* **1.9** supported since version 4.0
+* **1.8** supported since version 0.1.2
+## _pg_stat_kcache_ extension
+* **2.2.1** supported since version 4.0
+* **2.2.0** supported since version 0.3.1
+* **2.1.3** supported since version 0.2.1
+
 
 ## Installation
 

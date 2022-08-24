@@ -9,6 +9,20 @@ SELECT server,result FROM profile.take_sample();
  local  | OK
 (1 row)
 
+BEGIN;
+  SELECT profile.delete_samples();
+ delete_samples 
+----------------
+              5
+(1 row)
+
+  SELECT sample FROM profile.show_samples() ORDER BY sample;
+ sample 
+--------
+      6
+(1 row)
+
+ROLLBACK;
 SELECT count(*) FROM profile.samples WHERE sample_time < now() - '1 days'::interval;
  count 
 -------
@@ -28,6 +42,50 @@ SELECT * FROM profile.create_baseline('testline1',2,4);
                1
 (1 row)
 
+BEGIN;
+  SELECT profile.delete_samples('local',tstzrange(
+      (SELECT sample_time FROM profile.samples WHERE sample_id = 1),
+      (SELECT sample_time FROM profile.samples WHERE sample_id = 5),
+      '[]'
+    )
+  );
+ delete_samples 
+----------------
+              2
+(1 row)
+
+  SELECT sample FROM profile.show_samples() ORDER BY sample;
+ sample 
+--------
+      2
+      3
+      4
+      6
+(4 rows)
+
+ROLLBACK;
+BEGIN;
+  SELECT profile.delete_samples(tstzrange(
+      (SELECT sample_time FROM profile.samples WHERE sample_id = 1),
+      (SELECT sample_time FROM profile.samples WHERE sample_id = 5),
+      '[]'
+    )
+  );
+ delete_samples 
+----------------
+              2
+(1 row)
+
+  SELECT sample FROM profile.show_samples() ORDER BY sample;
+ sample 
+--------
+      2
+      3
+      4
+      6
+(4 rows)
+
+ROLLBACK;
 SELECT * FROM profile.create_baseline('testline2',2,4);
  create_baseline 
 -----------------

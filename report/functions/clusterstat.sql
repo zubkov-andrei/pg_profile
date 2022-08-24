@@ -63,18 +63,18 @@ SET search_path=@extschema@ AS $$
   ORDER BY bgwr1.sample_id ASC
 $$ LANGUAGE sql;
 
-CREATE FUNCTION cluster_stats_reset_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION cluster_stats_reset_htbl(IN report_context jsonb, IN sserver_id integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
 
     --Cursor for db stats
-    c_dbstats CURSOR FOR
+    c_dbstats CURSOR (start1_id integer, end1_id integer) FOR
     SELECT
         sample_id,
         bgwriter_stats_reset,
         archiver_stats_reset
-    FROM cluster_stats_reset(sserver_id,start_id,end_id)
+    FROM cluster_stats_reset(sserver_id, start1_id, end1_id)
     ORDER BY COALESCE(bgwriter_stats_reset,archiver_stats_reset) ASC;
 
     r_result RECORD;
@@ -97,10 +97,14 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
 
     -- Reporting summary databases stats
-    FOR r_result IN c_dbstats LOOP
+    FOR r_result IN c_dbstats(
+        (report_context #>> '{report_properties,start1_id}')::integer,
+        (report_context #>> '{report_properties,end1_id}')::integer
+      )
+    LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['sample_tpl'],
             r_result.sample_id,
@@ -117,14 +121,14 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION cluster_stats_reset_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-IN start2_id integer, IN end2_id integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION cluster_stats_reset_diff_htbl(IN report_context jsonb, IN sserver_id integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
 
     --Cursor for db stats
-    c_dbstats CURSOR FOR
+    c_dbstats CURSOR(start1_id integer, end1_id integer,
+      start2_id integer, end2_id integer) FOR
     SELECT
         interval_num,
         sample_id,
@@ -167,10 +171,16 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
 
     -- Reporting summary databases stats
-    FOR r_result IN c_dbstats LOOP
+    FOR r_result IN c_dbstats(
+        (report_context #>> '{report_properties,start1_id}')::integer,
+        (report_context #>> '{report_properties,end1_id}')::integer,
+        (report_context #>> '{report_properties,start2_id}')::integer,
+        (report_context #>> '{report_properties,end2_id}')::integer
+      )
+    LOOP
       CASE r_result.interval_num
         WHEN 1 THEN
           report := report||format(
@@ -197,13 +207,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION cluster_stats_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION cluster_stats_htbl(IN report_context jsonb, IN sserver_id integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
 
     --Cursor for db stats
-    c_dbstats CURSOR FOR
+    c_dbstats CURSOR (start1_id integer, end1_id integer) FOR
     SELECT
         NULLIF(checkpoints_timed, 0) as checkpoints_timed,
         NULLIF(checkpoints_req, 0) as checkpoints_req,
@@ -215,10 +225,10 @@ DECLARE
         NULLIF(buffers_backend_fsync, 0) as buffers_backend_fsync,
         NULLIF(maxwritten_clean, 0) as maxwritten_clean,
         NULLIF(buffers_alloc, 0) as buffers_alloc,
-        pg_size_pretty(NULLIF(wal_size, 0)) as wal_size,
+        NULLIF(wal_size, 0) as wal_size,
         NULLIF(archived_count, 0) as archived_count,
         NULLIF(failed_count, 0) as failed_count
-    FROM cluster_stats(sserver_id,start_id,end_id);
+    FROM cluster_stats(sserver_id, start1_id, end1_id);
 
     r_result RECORD;
 BEGIN
@@ -237,9 +247,13 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting summary bgwriter stats
-    FOR r_result IN c_dbstats LOOP
+    FOR r_result IN c_dbstats(
+        (report_context #>> '{report_properties,start1_id}')::integer,
+        (report_context #>> '{report_properties,end1_id}')::integer
+      )
+    LOOP
         report := report||format(jtab_tpl #>> ARRAY['val_tpl'],'Scheduled checkpoints',r_result.checkpoints_timed);
         report := report||format(jtab_tpl #>> ARRAY['val_tpl'],'Requested checkpoints',r_result.checkpoints_req);
         report := report||format(jtab_tpl #>> ARRAY['val_tpl'],'Checkpoint write time (s)',round(cast(r_result.checkpoint_write_time/1000 as numeric),2));
@@ -250,7 +264,7 @@ BEGIN
         report := report||format(jtab_tpl #>> ARRAY['val_tpl'],'Backend fsync count',r_result.buffers_backend_fsync);
         report := report||format(jtab_tpl #>> ARRAY['val_tpl'],'Bgwriter interrupts (too many buffers)',r_result.maxwritten_clean);
         report := report||format(jtab_tpl #>> ARRAY['val_tpl'],'Number of buffers allocated',r_result.buffers_alloc);
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],'WAL generated',r_result.wal_size);
+        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],'WAL generated',pg_size_pretty(r_result.wal_size));
         report := report||format(jtab_tpl #>> ARRAY['val_tpl'],'WAL segments archived',r_result.archived_count);
         report := report||format(jtab_tpl #>> ARRAY['val_tpl'],'WAL segments archive failed',r_result.failed_count);
     END LOOP;
@@ -263,14 +277,14 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION cluster_stats_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-IN start2_id integer, IN end2_id integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION cluster_stats_diff_htbl(IN report_context jsonb, IN sserver_id integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
 
     --Cursor for db stats
-    c_dbstats CURSOR FOR
+    c_dbstats CURSOR(start1_id integer, end1_id integer,
+      start2_id integer, end2_id integer) FOR
     SELECT
         NULLIF(stat1.checkpoints_timed, 0) as checkpoints_timed1,
         NULLIF(stat1.checkpoints_req, 0) as checkpoints_req1,
@@ -282,7 +296,7 @@ DECLARE
         NULLIF(stat1.buffers_backend_fsync, 0) as buffers_backend_fsync1,
         NULLIF(stat1.maxwritten_clean, 0) as maxwritten_clean1,
         NULLIF(stat1.buffers_alloc, 0) as buffers_alloc1,
-        pg_size_pretty(NULLIF(stat1.wal_size, 0)) as wal_size1,
+        NULLIF(stat1.wal_size, 0) as wal_size1,
         NULLIF(stat1.archived_count, 0) as archived_count1,
         NULLIF(stat1.failed_count, 0) as failed_count1,
         NULLIF(stat2.checkpoints_timed, 0) as checkpoints_timed2,
@@ -295,7 +309,7 @@ DECLARE
         NULLIF(stat2.buffers_backend_fsync, 0) as buffers_backend_fsync2,
         NULLIF(stat2.maxwritten_clean, 0) as maxwritten_clean2,
         NULLIF(stat2.buffers_alloc, 0) as buffers_alloc2,
-        pg_size_pretty(NULLIF(stat2.wal_size, 0)) as wal_size2,
+        NULLIF(stat2.wal_size, 0) as wal_size2,
         NULLIF(stat2.archived_count, 0) as archived_count2,
         NULLIF(stat2.failed_count, 0) as failed_count2
     FROM cluster_stats(sserver_id,start1_id,end1_id) stat1
@@ -321,9 +335,15 @@ BEGIN
           '<td {interval2}><div {value}>%s</div></td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting summary bgwriter stats
-    FOR r_result IN c_dbstats LOOP
+    FOR r_result IN c_dbstats(
+        (report_context #>> '{report_properties,start1_id}')::integer,
+        (report_context #>> '{report_properties,end1_id}')::integer,
+        (report_context #>> '{report_properties,start2_id}')::integer,
+        (report_context #>> '{report_properties,end2_id}')::integer
+      )
+    LOOP
         report := report||format(jtab_tpl #>> ARRAY['val_tpl'],'Scheduled checkpoints',r_result.checkpoints_timed1,r_result.checkpoints_timed2);
         report := report||format(jtab_tpl #>> ARRAY['val_tpl'],'Requested checkpoints',r_result.checkpoints_req1,r_result.checkpoints_req2);
         report := report||format(jtab_tpl #>> ARRAY['val_tpl'],'Checkpoint write time (s)',
@@ -338,7 +358,8 @@ BEGIN
         report := report||format(jtab_tpl #>> ARRAY['val_tpl'],'Backend fsync count',r_result.buffers_backend_fsync1,r_result.buffers_backend_fsync2);
         report := report||format(jtab_tpl #>> ARRAY['val_tpl'],'Bgwriter interrupts (too many buffers)',r_result.maxwritten_clean1,r_result.maxwritten_clean2);
         report := report||format(jtab_tpl #>> ARRAY['val_tpl'],'Number of buffers allocated',r_result.buffers_alloc1,r_result.buffers_alloc2);
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],'WAL generated',r_result.wal_size1,r_result.wal_size2);
+        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],'WAL generated',
+          pg_size_pretty(r_result.wal_size1),pg_size_pretty(r_result.wal_size2));
         report := report||format(jtab_tpl #>> ARRAY['val_tpl'],'WAL segments archived',r_result.archived_count1,r_result.archived_count2);
         report := report||format(jtab_tpl #>> ARRAY['val_tpl'],'WAL segments archive failed',r_result.failed_count1,r_result.failed_count2);
     END LOOP;

@@ -7,11 +7,17 @@ CREATE TABLE tables_list(
     reltoastrelid       oid,
     schemaname          name NOT NULL,
     relname             name NOT NULL,
+    last_sample_id      integer,
     CONSTRAINT pk_tables_list PRIMARY KEY (server_id, datid, relid),
+    CONSTRAINT fk_tables_list_samples FOREIGN KEY (server_id, last_sample_id)
+      REFERENCES samples (server_id, sample_id) ON DELETE CASCADE,
     CONSTRAINT fk_toast_table FOREIGN KEY (server_id, datid, reltoastrelid)
-      REFERENCES tables_list (server_id, datid, relid) ON DELETE RESTRICT ON UPDATE RESTRICT,
+      REFERENCES tables_list (server_id, datid, relid)
+      ON DELETE NO ACTION ON UPDATE RESTRICT
+      DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT uk_toast_table UNIQUE (server_id, datid, reltoastrelid)
 );
+CREATE INDEX ix_tables_list_samples ON tables_list(server_id, last_sample_id);
 COMMENT ON TABLE tables_list IS 'Table names and schemas, captured in samples';
 
 CREATE TABLE sample_stat_tables (
@@ -58,8 +64,13 @@ CREATE TABLE sample_stat_tables (
     CONSTRAINT fk_st_tables_tablespace FOREIGN KEY (server_id, sample_id, tablespaceid)
       REFERENCES sample_stat_tablespaces(server_id, sample_id, tablespaceid) ON DELETE CASCADE,
     CONSTRAINT fk_st_tables_tables FOREIGN KEY (server_id, datid, relid)
-      REFERENCES tables_list(server_id, datid, relid) ON DELETE RESTRICT ON UPDATE RESTRICT
+      REFERENCES tables_list(server_id, datid, relid)
+      ON DELETE NO ACTION ON UPDATE RESTRICT
+      DEFERRABLE INITIALLY IMMEDIATE
 );
+CREATE INDEX is_sample_stat_tables_ts ON sample_stat_tables(server_id, sample_id, tablespaceid);
+CREATE INDEX ix_sample_stat_tables_rel ON sample_stat_tables(server_id, datid, relid);
+
 COMMENT ON TABLE sample_stat_tables IS 'Stats increments for user tables in all databases by samples';
 
 CREATE VIEW v_sample_stat_tables AS
@@ -156,10 +167,7 @@ ALTER TABLE last_stat_tables ADD CONSTRAINT pk_last_stat_tables
   PRIMARY KEY (server_id, sample_id, datid, relid);
 ALTER TABLE last_stat_tables ADD CONSTRAINT fk_last_stat_tables_dat
   FOREIGN KEY (server_id, sample_id, datid)
-  REFERENCES last_stat_database(server_id, sample_id, datid) ON DELETE RESTRICT;
-ALTER TABLE last_stat_tables ADD CONSTRAINT fk_last_stat_tablespaces
-  FOREIGN KEY (server_id, sample_id, tablespaceid)
-  REFERENCES last_stat_tablespaces(server_id, sample_id, tablespaceid) ON DELETE RESTRICT;
+  REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE RESTRICT;
 COMMENT ON TABLE last_stat_tables IS 'Last sample data for calculating diffs in next sample';
 
 CREATE TABLE sample_stat_tables_total (
@@ -195,4 +203,6 @@ CREATE TABLE sample_stat_tables_total (
     CONSTRAINT fk_st_tablespaces_tot_dat FOREIGN KEY (server_id, sample_id, tablespaceid)
       REFERENCES sample_stat_tablespaces(server_id, sample_id, tablespaceid) ON DELETE CASCADE
 );
+CREATE INDEX ix_sample_stat_tables_total_ts ON sample_stat_tables_total(server_id, sample_id, tablespaceid);
+
 COMMENT ON TABLE sample_stat_tables_total IS 'Total stats for all tables in all databases by samples';

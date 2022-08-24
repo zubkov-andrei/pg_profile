@@ -56,17 +56,18 @@ SET search_path=@extschema@ AS $$
   ORDER BY ws1.sample_id ASC
 $$ LANGUAGE sql;
 
-CREATE FUNCTION wal_stats_reset_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION wal_stats_reset_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
 
     --Cursor for db stats
-    c_dbstats CURSOR FOR
+    c_dbstats CURSOR(start1_id integer, end1_id integer) FOR
     SELECT
         sample_id,
         wal_stats_reset
-    FROM wal_stats_reset(sserver_id,start_id,end_id)
+    FROM wal_stats_reset(sserver_id,start1_id,end1_id)
     ORDER BY wal_stats_reset ASC;
 
     r_result RECORD;
@@ -87,10 +88,14 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
 
     -- Reporting summary databases stats
-    FOR r_result IN c_dbstats LOOP
+    FOR r_result IN c_dbstats(
+        (report_context #>> '{report_properties,start1_id}')::integer,
+        (report_context #>> '{report_properties,end1_id}')::integer
+      )
+    LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['sample_tpl'],
             r_result.sample_id,
@@ -106,14 +111,15 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION wal_stats_reset_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-IN start2_id integer, IN end2_id integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION wal_stats_reset_diff_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
 
     --Cursor for db stats
-    c_dbstats CURSOR FOR
+    c_dbstats CURSOR(start1_id integer, end1_id integer,
+      start2_id integer, end2_id integer) FOR
     SELECT
         interval_num,
         sample_id,
@@ -152,10 +158,16 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
 
     -- Reporting summary databases stats
-    FOR r_result IN c_dbstats LOOP
+    FOR r_result IN c_dbstats(
+        (report_context #>> '{report_properties,start1_id}')::integer,
+        (report_context #>> '{report_properties,end1_id}')::integer,
+        (report_context #>> '{report_properties,start2_id}')::integer,
+        (report_context #>> '{report_properties,end2_id}')::integer
+      )
+    LOOP
       CASE r_result.interval_num
         WHEN 1 THEN
           report := report||format(
@@ -180,15 +192,16 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION wal_stats_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION wal_stats_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
 
-    report_duration float = (jreportset #> ARRAY['report_properties','interval_duration_sec'])::float;
+    report_duration float = (report_context #> ARRAY['report_properties','interval_duration_sec'])::float;
 
     --Cursor for db stats
-    c_dbstats CURSOR FOR
+    c_dbstats CURSOR(start1_id integer, end1_id integer) FOR
     SELECT
         NULLIF(wal_records, 0) as wal_records,
         NULLIF(wal_fpi, 0) as wal_fpi,
@@ -198,7 +211,7 @@ DECLARE
         NULLIF(wal_sync, 0) as wal_sync,
         NULLIF(wal_write_time, 0.0) as wal_write_time,
         NULLIF(wal_sync_time, 0.0) as wal_sync_time
-    FROM wal_stats(sserver_id,start_id,end_id);
+    FROM wal_stats(sserver_id,start1_id,end1_id);
 
     r_result RECORD;
 BEGIN
@@ -217,9 +230,13 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting summary bgwriter stats
-    FOR r_result IN c_dbstats LOOP
+    FOR r_result IN c_dbstats(
+        (report_context #>> '{report_properties,start1_id}')::integer,
+        (report_context #>> '{report_properties,end1_id}')::integer
+      )
+    LOOP
         report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
           'Total amount of WAL generated', 'WAL generated', pg_size_pretty(r_result.wal_bytes));
         report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
@@ -276,17 +293,18 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION wal_stats_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-IN start2_id integer, IN end2_id integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION wal_stats_diff_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
 
-    report1_duration float = (jreportset #> ARRAY['report_properties','interval1_duration_sec'])::float;
-    report2_duration float = (jreportset #> ARRAY['report_properties','interval2_duration_sec'])::float;
+    report1_duration float = (report_context #> ARRAY['report_properties','interval1_duration_sec'])::float;
+    report2_duration float = (report_context #> ARRAY['report_properties','interval2_duration_sec'])::float;
 
     --Cursor for db stats
-    c_dbstats CURSOR FOR
+    c_dbstats CURSOR(start1_id integer, end1_id integer,
+      start2_id integer, end2_id integer) FOR
     SELECT
         NULLIF(stat1.wal_records, 0) as wal_records1,
         NULLIF(stat1.wal_fpi, 0) as wal_fpi1,
@@ -327,9 +345,15 @@ BEGIN
           '<td {interval2}><div {value}>%s</div></td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting summary bgwriter stats
-    FOR r_result IN c_dbstats LOOP
+    FOR r_result IN c_dbstats(
+        (report_context #>> '{report_properties,start1_id}')::integer,
+        (report_context #>> '{report_properties,end1_id}')::integer,
+        (report_context #>> '{report_properties,start2_id}')::integer,
+        (report_context #>> '{report_properties,end2_id}')::integer
+      )
+    LOOP
         report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
           'Total amount of WAL generated', 'WAL generated',
           pg_size_pretty(r_result.wal_bytes1), pg_size_pretty(r_result.wal_bytes2));

@@ -1,5 +1,38 @@
 # pg_profile changelog
 
+## 4.0
+- Corrected nested-level statements support (#37)
+- Added username field in statement-related sections
+- Statement statistics collection optimized
+- _pg_stat_kcache_ 2.2.1 (#39)
+
+## 3.9
+- Support of the *pg_wait_sampling* extension
+- Manual samples delete functions (reported by @xinferum in #30)
+- Obsolete samples management optimized
+- bugfix: take_sample() function was waited on a lock on servers table entry due to missplaced lock check routine
+
+## 3.8
+- Checksum failures detection
+- Server name prefix for importing server names to avoid name conflicts during import
+- Added Block I/O times in Database statistics section
+- Report generation engine completely rewritten for future improvements
+- Other fixes and optimizations
+
+## 3.7
+- per-database checksum_failures is tracked and reported if detected during report interval
+- fixed session statistics import
+- fixed error in the docs #27
+
+## 0.3.6
+- WAL fields in statements by blocks dirtied report section
+- *pg_class.relpages* is collected in samples now. This data is used in estimations while *pg_relations_size()* data is unavailable due to relation size collection policy.
+- set application_name while taking a sample
+- fixed #29 reported by @xinferum (relation size collection window)
+- query texts in reports is now truncated to 20 000 characters by default
+- internal fixes and optimizations
+- fixed #31 reported by @sgrinko "ERROR: integer out of range" while collecting relation size data based on pg_class.relpages
+
 ## 0.3.5
 - WAL fields in statements by blocks dirtied report section
 - *pg_class.relpages* is collected in samples now. This data is used in estimations while *pg_relations_size()* data is unavailable due to relation size collection policy.

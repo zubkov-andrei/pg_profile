@@ -20,21 +20,22 @@ RETURNS TABLE(
     GROUP BY st.server_id, st.tablespaceid, st.tablespacename, st.tablespacepath
 $$ LANGUAGE sql;
 
-CREATE FUNCTION tablespaces_stats_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION tablespaces_stats_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
 
     --Cursor for stats
-    c_tbl_stats CURSOR FOR
+    c_tbl_stats CURSOR(start1_id integer, end1_id integer) FOR
     SELECT
         st.tablespacename,
         st.tablespacepath,
         pg_size_pretty(NULLIF(st_last.size, 0)) as size,
         pg_size_pretty(NULLIF(st.size_delta, 0)) as size_delta
-    FROM tablespace_stats(sserver_id,start_id,end_id) st
+    FROM tablespace_stats(sserver_id,start1_id,end1_id) st
       LEFT OUTER JOIN v_sample_stat_tablespaces st_last ON
-        (st_last.server_id = st.server_id AND st_last.sample_id = end_id AND st_last.tablespaceid = st.tablespaceid)
+        (st_last.server_id = st.server_id AND st_last.sample_id = end1_id AND st_last.tablespaceid = st.tablespaceid)
     ORDER BY st.tablespacename ASC;
 
     r_result RECORD;
@@ -61,10 +62,14 @@ BEGIN
         '</tr>');
 
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
 
     -- Reporting table stats
-    FOR r_result IN c_tbl_stats LOOP
+    FOR r_result IN c_tbl_stats(
+        (report_context #>> '{report_properties,start1_id}')::integer,
+        (report_context #>> '{report_properties,end1_id}')::integer
+      )
+    LOOP
           report := report||format(
               jtab_tpl #>> ARRAY['ts_tpl'],
               r_result.tablespacename,
@@ -83,14 +88,16 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION tablespaces_stats_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-IN start2_id integer, IN end2_id integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION tablespaces_stats_diff_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
 
     --Cursor for stats
-    c_tbl_stats CURSOR FOR
+    c_tbl_stats CURSOR(start1_id integer, end1_id integer,
+      start2_id integer, end2_id integer)
+    FOR
     SELECT
         COALESCE(stat1.tablespacename,stat2.tablespacename) AS tablespacename,
         COALESCE(stat1.tablespacepath,stat2.tablespacepath) AS tablespacepath,
@@ -137,10 +144,16 @@ BEGIN
         '<tr style="visibility:collapse"></tr>');
 
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
 
     -- Reporting summary databases stats
-    FOR r_result IN c_tbl_stats LOOP
+    FOR r_result IN c_tbl_stats(
+        (report_context #>> '{report_properties,start1_id}')::integer,
+        (report_context #>> '{report_properties,end1_id}')::integer,
+        (report_context #>> '{report_properties,start2_id}')::integer,
+        (report_context #>> '{report_properties,end2_id}')::integer
+      )
+    LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['ts_tpl'],
             r_result.tablespacename,

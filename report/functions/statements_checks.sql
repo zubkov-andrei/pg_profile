@@ -80,10 +80,29 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION check_stmt_all_setting(IN sserver_id integer, IN start_id integer, IN end_id integer)
-RETURNS integer SET search_path=@extschema@ AS $$
-    SELECT count(1)::integer
-    FROM v_sample_settings
-    WHERE server_id = sserver_id AND name = 'pg_stat_statements.track'
-        AND setting = 'all' AND sample_id BETWEEN start_id + 1 AND end_id;
+CREATE FUNCTION check_stmt_cnt_first_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
+SELECT check_stmt_cnt(
+  sserver_id,
+  (report_context #>> '{report_properties,start1_id}')::integer,
+  (report_context #>> '{report_properties,end1_id}')::integer
+)
+$$ LANGUAGE sql;
+
+CREATE FUNCTION check_stmt_cnt_second_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
+SELECT check_stmt_cnt(
+  sserver_id,
+  (report_context #>> '{report_properties,start2_id}')::integer,
+  (report_context #>> '{report_properties,end2_id}')::integer
+)
+$$ LANGUAGE sql;
+
+CREATE FUNCTION check_stmt_cnt_all_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
+SELECT check_stmt_cnt(
+  sserver_id,
+  0,
+  0
+)
 $$ LANGUAGE sql;

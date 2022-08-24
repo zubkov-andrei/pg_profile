@@ -2,9 +2,9 @@
 
 This extension for PostgreSQL helps you to find out most resource-consuming activities in your PostgreSQL databases.
 ## Concepts
-Extension is based on statistic views of PostgreSQL and contrib extension *pg_stat_statements*. It is written in pure pl/pgsql and doesn't need any external libraries or software, but PostgreSQL database itself, and a cron-like tool performing periodic tasks. Initially developed and tested on PostgreSQL 9.6, extension may be incompatible with earlier releases.
+Extension is based on statistic views of PostgreSQL and several contrib extensions. It is written in pure pl/pgsql and doesn't need any external libraries or software, but PostgreSQL database itself, and a cron-like tool performing periodic tasks. Initially developed and tested on PostgreSQL 9.6, extension may be incompatible with earlier releases.
 
-*pg_profile* will use pg_stat_kcache data, providing information about statements CPU usage and filesystem load (if this extension is available).
+*pg_profile* will use *pg_stat_kcache* data, providing information about statements CPU usage and filesystem load (if this extension is available).
 
 Historic repository will be created in your database by this extension. This repository will hold statistic "samples" for your postgres clusters. Sample is taken by calling _take_sample()_ function. PostgreSQL doesn't have any job-like engine, so you'll need to use *cron*.
 
@@ -12,7 +12,9 @@ Periodic samples can help you finding most resource intensive activities in the 
 
 You can take an explicit sample before running any batch processing, and after it will be done.
 
-Any time you are taking a sample, _pg_stat_statements_reset()_ will be called, ensuring you wont loose statements due to reaching *pg_stat_statements.max*. Also, report will contain section, informing you if captured statements count in any sample reaches 90% of _pg_stat_statements.max_.
+Any time you are taking a sample, _pg_stat_statements_reset()_ will be called, ensuring you wont loose statements due to reaching *pg_stat_statements.max*. Also, report will contain section, informing you if captured statements count in any sample reaches 90% of _pg_stat_statements.max_. Resetting of _pg_stat_statements_ data will affect monitoring systems.
+
+If *pg_wait_sampling* extension is available, _pg_profile_ will collect summary wait statistics of the PostgresSQL instance and reset the *pg_wait_sampling_profile* view data. This behaviour can also affect monitoring systems.
 
 *pg_profile*, installed in one cluster is able to collect statistics from other clusters, called *servers*. You just need to define some servers, providing names and connection strings and make sure connection can be established to all databases of all *servers*. Now you can track, for example, statistics on your standbys from master, or from any other server. Once extension is installed, a *local* server is automatically created - this is a server for cluster where *pg_profile* resides.
 
@@ -111,7 +113,7 @@ N.B. pg_profile will connect to all databases on a server, thus password file mu
 
 As an insecure way, you can provide a password in connection string:
 ```
-select server_connstr('local','dbname=postgres port=5432 user=profile_mon password=pwd_mon');
+select set_server_connstr('local','dbname=postgres port=5432 user=profile_mon password=pwd_mon');
 ```
 
 ## Using pg_profile
@@ -240,6 +242,14 @@ Every sample contains statistic information about database workload since previo
   * *sizes_collected* is set if all relation sizes was collectid in this sample
   * *dbstats_reset*, *clustats_reset* and *archstats_reset* is usual null, but will contain *pg_stat_database*, *pg_stat_bgwriter* and *pg_stat_archiver* statistics reset timestamp if it was happend since previous sample
 Sample-collecting functions are also supports the server repository - it will delete obsolete samples and baselines with respect to *retention policy*.
+* **delete_samples([server_name name] [, start_id integer, end_id integer])**
+  Function *delete_samples()* can be used to manually delete samples of specified server.
+  * *server_name* - name of a server to delete samples. Server named 'local' is used if omitted
+  * *start_id*, *end_id* - bounding identifiers of sample interval to delete (inclusive). This function will delete all samples of a server if bounding identifier is omitted
+* **delete_samples(server_name name, time_range tstzrange)**
+  You can use this function to delete all samples contained in specified time range interval
+  * *server_name* - name of a server to delete samples.
+  * *time_range* - time range of samples to delete
 
 #### Taking samples
 
@@ -374,10 +384,11 @@ Now we can perform data import, providing this table to *import_data()* function
 ```
 postgres=# SELECT * FROM import_data('import');
 ```
-Although server descriptions is also imported, your local *pg_profile* servers with matching names will prohibit import operations. Consider temporarily rename those servers. If you'll need to import new data for previously imported servers, they will be matched by system identifier, so fell free to rename imported sever as you wish. All servers are imported in *disabled* state.
+Although server descriptions is also imported, your local *pg_profile* servers with matching names will prohibit import operations. Consider temporarily rename those servers or use *server_name_prefix* parameter to avoid conflicts. If you'll need to import new data for previously imported servers, they will be matched by system identifier, so fell free to rename imported sever as you wish. All servers are imported in *disabled* state.
 *import_data()* function takes only the imported table:
-* **import_data(data regclass)**
+* **import_data(data regclass, server_name_prefix text)**
   * *data* - table containing exported data
+  * *server_name_prefix* - prefix used for importing servers
 This function returns number of rows actually loaded in extension tables.
 After successful import operation you can drop *import* table.
 
@@ -462,6 +473,9 @@ Contains per-database statistics during report interval, based on *pg_stat_datab
   * *Commits* - number of committed transactions (*xact_commit*)
   * *Rollbacks* - number of rolled back transactions (*xact_rollback*)
   * *Deadlocks* - number of deadlocks detected (*deadlocks*)
+* *Checksums* - checksum failures (if any)
+  * *Failures* - number of block checksum failures detected
+  * *Last* - last checksum filure detected
 * *Block statistics* - database blocks read and hit statistics
   * *Hit(%)* - buffer cache hit ratio
   * *Read* - number of disk blocks read in this database (*blks_read*)
@@ -564,6 +578,30 @@ This table contains information about tablespaces sizes and growth:
 * *Size* - tablespace size as it was at time of last sample in report interval
 * *Growth* - tablespace growth during report interval
 
+#### Wait sampling
+
+This section contains data obtained from *pg_wait_sampling* extension if it was available during report interval.
+
+##### Wait events types
+This table provides information about summary time waited in events of each wait event type during report interval. Wait statistics is provided for events, detected by *pg_wait_sampling* extension during statements execution and overall waits (including background activity).
+* *Wait exent type* - the type of wait event (see *pg_stat_activity*)
+* *Statements Waited (s)* - amount of time waited in events of this event type by statements (when _pg_wait_sampling_profile_.queryid_ is not null) in seconds
+* *%Total* - time waited in events of this wait event type by statements as a percentage of overall time waited by statements
+* *All Waited (s)* - amount of time waited in events of this event type by all backends (including background activity)
+* *%Total* - time waited in events of this wait event type by backends as a percentage of overall time waited by backends
+##### Top wait events (statements)
+This table contains top _pg_profile.topn_ wait events by summary time waited during statements execution (when _pg_wait_sampling_profile_.queryid_ is not null).
+* *Wait exent type* - the type of wait event (see *pg_stat_activity*)
+* *Wait exent* - wait event name (see *pg_stat_activity*)
+* *Waited (s)* - amount of time waited in event by statements in seconds
+* *%Total* - time waited in event by statements as a percentage of overall time waited by statements
+##### Top wait events (All)
+This table contains top _pg_profile.topn_ wait events by summary time waited including background activity.
+* *Wait exent type* - the type of wait event (see *pg_stat_activity*)
+* *Wait exent* - wait event name (see *pg_stat_activity*)
+* *Waited (s)* - amount of time waited in event by all backends in seconds
+* *%Total* - time waited in event by all backends as a percentage of overall time waited by backends
+
 ### SQL query statistics
 This report section contains tables of top statements during report interval sorted by several important statistics. Data is captured from *pg_stat_statements* view if it was available at the time of samples.
 
@@ -571,8 +609,7 @@ This report section contains tables of top statements during report interval sor
 
 This table contains top _pg_profile.topn_ statements sorted by elapsed time *total_plan_time* + *total_exec_time* of *pg_stat_statements* view. Available since Postgres 13
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
-notation is shown in square brackets.
+* *Query ID* - Query identifier as provided by the *pg_stat_statements* extension (*queryid*) in hexadecimal notation. Alternative query identifier as a hash of *dbid*, *userid* and *queryid* is shown in square brackets, this identifier is compatible with *pgcenter* utility.
 * *Database* - Statement database name (derived from *dbid* field)
 * *%Total* - total time of this statement as a percentage of total time of all statements in a cluster
 * *Time (s)* - time spent in this statement (in seconds)
@@ -592,8 +629,7 @@ notation is shown in square brackets.
 
 Top _pg_profile.topn_ statements sorted by *total_plan_time* field of *pg_stat_statements* view. Available since Postgres 13
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
-notation is shown in square brackets.
+* *Query ID* - Query identifier as provided by the *pg_stat_statements* extension (*queryid*) in hexadecimal notation. Alternative query identifier as a hash of *dbid*, *userid* and *queryid* is shown in square brackets, this identifier is compatible with *pgcenter* utility.
 * *Database* - Statement database name (derived from *dbid* field)
 * *Plan elapsed (s)* - time spent in planning this statement (*total_plan_time* field)
 * *%Elapsed* - plan time of this statement as a percentage of statement elapsed time
@@ -609,8 +645,7 @@ notation is shown in square brackets.
 
 Top _pg_profile.topn_ statements sorted by *total_time* (or *total_exec_time*) field of *pg_stat_statements* view
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
-notation is shown in square brackets.
+* *Query ID* - Query identifier as provided by the *pg_stat_statements* extension (*queryid*) in hexadecimal notation. Alternative query identifier as a hash of *dbid*, *userid* and *queryid* is shown in square brackets, this identifier is compatible with *pgcenter* utility.
 * *Database* - Statement database name (derived from *dbid* field)
 * *Exec (s)* - time spent executing this statement (*total_exec_time* field)
 * *%Elapsed* - execution time of this statement as a percentage of statement elapsed time
@@ -630,8 +665,7 @@ notation is shown in square brackets.
 
 Top _pg_profile.topn_ statements sorted by *calls* field of *pg_stat_statements* view
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
-notation is shown in square brackets.
+* *Query ID* - Query identifier as provided by the *pg_stat_statements* extension (*queryid*) in hexadecimal notation. Alternative query identifier as a hash of *dbid*, *userid* and *queryid* is shown in square brackets, this identifier is compatible with *pgcenter* utility.
 * *Database* - Statement database name (derived from *dbid* field)
 * *Executions* - count of statement executions (*calls* field)
 * *%Total* - *calls* of this statement as a percentage of total *calls* of all statements in a cluster
@@ -646,8 +680,7 @@ notation is shown in square brackets.
 
 Top _pg_profile.topn_ statements sorted by read and write time (*blk_read_time* + *blk_write_time*)
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
-notation is shown in square brackets.
+* *Query ID* - Query identifier as provided by the *pg_stat_statements* extension (*queryid*) in hexadecimal notation. Alternative query identifier as a hash of *dbid*, *userid* and *queryid* is shown in square brackets, this identifier is compatible with *pgcenter* utility.
 * *Database* - Statement database name (derived from *dbid* field)
 * *IO(s)* - amount of time spent on reading and writing (I/O time) by this statement in seconds (*blk_read_time* + *blk_write_time*)
 * *R(s)* - amount of time spent on reading by this statement in seconds (*blk_read_time*)
@@ -668,8 +701,7 @@ notation is shown in square brackets.
 
 Top _pg_profile.topn_ statements sorted by read and hit blocks, helping to detect the most data processing statements.
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
-notation is shown in square brackets.
+* *Query ID* - Query identifier as provided by the *pg_stat_statements* extension (*queryid*) in hexadecimal notation. Alternative query identifier as a hash of *dbid*, *userid* and *queryid* is shown in square brackets, this identifier is compatible with *pgcenter* utility.
 * *Database* - Statement database name (derived from *dbid* field)
 * *blks fetched* - number of fetched blocks (expression: *shared_blks_hit* + *shared_blks_read*)
 * *%Total* - blocks fetched for this statement as a percentage of total blocks fetched for all statements in a cluster
@@ -682,8 +714,7 @@ notation is shown in square brackets.
 
 Top _pg_profile.topn_ statements sorted by shared reads, helping to detect most read intensive statements.
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
-notation is shown in square brackets.
+* *Query ID* - Query identifier as provided by the *pg_stat_statements* extension (*queryid*) in hexadecimal notation. Alternative query identifier as a hash of *dbid*, *userid* and *queryid* is shown in square brackets, this identifier is compatible with *pgcenter* utility.
 * *Database* - Statement database name (derived from *dbid* field)
 * *Reads* - number of shared read blocks for this statement (*shared_blks_read* field)
 * *%Total* - shared reads for this statement as a percentage of total shared reads for all statements in a cluster
@@ -696,8 +727,7 @@ notation is shown in square brackets.
 
 Top _pg_profile.topn_ statements sorted by shared dirtied buffer count, helping to detect most data changing statements.
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
-notation is shown in square brackets.
+* *Query ID* - Query identifier as provided by the *pg_stat_statements* extension (*queryid*) in hexadecimal notation. Alternative query identifier as a hash of *dbid*, *userid* and *queryid* is shown in square brackets, this identifier is compatible with *pgcenter* utility.
 * *Database* - Statement database name (derived from *dbid* field)
 * *Dirtied* - number of shared blocks dirtied by this statement (*shared_blks_dirtied* field)
 * *%Total* - shared blocks dirtied by this statement as a percentage of total shared blocks dirtied by all statements in a cluster
@@ -712,8 +742,7 @@ notation is shown in square brackets.
 
 Top _pg_profile.topn_ statements, which had to perform writes sorted by written blocks count.
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
-notation is shown in square brackets.
+* *Query ID* - Query identifier as provided by the *pg_stat_statements* extension (*queryid*) in hexadecimal notation. Alternative query identifier as a hash of *dbid*, *userid* and *queryid* is shown in square brackets, this identifier is compatible with *pgcenter* utility.
 * *Database* - Statement database name (derived from *dbid* field)
 * *Written* - number of blocks written by this statement (*shared_blks_written* field)
 * *%Total* - number of blocks written by this statement as a percentage of total blocks written by all statements in a cluster
@@ -727,8 +756,7 @@ notation is shown in square brackets.
 
 Top _pg_profile.topn_ statements, sorted by WAL generated (available since *pg_stat_statements* v1.8)
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
-notation is shown in square brackets.
+* *Query ID* - Query identifier as provided by the *pg_stat_statements* extension (*queryid*) in hexadecimal notation. Alternative query identifier as a hash of *dbid*, *userid* and *queryid* is shown in square brackets, this identifier is compatible with *pgcenter* utility.
 * *Database* - Statement database name (derived from *dbid* field)
 * *WAL* - amount of WAL generated by the statement (*wal_bytes* field)
 * *%Total* - amount of WAL generated by the statement as a percentage of total WAL generated in cluster (*pg_current_wal_lsn()* increment)
@@ -740,8 +768,7 @@ notation is shown in square brackets.
 
 Top _pg_profile.topn_ statements sorted by temp I/O, calculated as the sum of *temp_blks_read*, *temp_blks_written*, *local_blks_read* and *local_blks_written* fields
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
-notation is shown in square brackets.
+* *Query ID* - Query identifier as provided by the *pg_stat_statements* extension (*queryid*) in hexadecimal notation. Alternative query identifier as a hash of *dbid*, *userid* and *queryid* is shown in square brackets, this identifier is compatible with *pgcenter* utility.
 * *Database* - Statement database name (derived from *dbid* field)
 * *Local fetched* - number of retrieved local blocks (expression: *local_blks_hit* + *local_blks_read*)
 * *Hits(%)* - percentage of local blocks got from temp buffers within all local blocks got
@@ -767,8 +794,7 @@ This section contains resource usage statistics provided by *pg_stat_kcache* ext
 
 Top _pg_profile.topn_ statements sorted by sum of fields *user_time* and *system_time* fields of *pg_stat_kcache*.
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
-notation is shown in square brackets.
+* *Query ID* - Query identifier as provided by the *pg_stat_statements* extension (*queryid*) in hexadecimal notation. Alternative query identifier as a hash of *dbid*, *userid* and *queryid* is shown in square brackets, this identifier is compatible with *pgcenter* utility.
 * *Database* - Statement database name (derived from *dbid* field)
 * *User Time* - User CPU time used
   * *Plan (s)* - User CPU time elapsed during planning in seconds (*plan_user_time* field)
@@ -783,8 +809,7 @@ notation is shown in square brackets.
 
 Top _pg_profile.topn_ statements sorted by sum of fields *reads* and *writes* fields of *pg_stat_kcache*.
 
-* *Query ID* - Query identifier as a hash of database, user and query text. Compatible with *pgcenter* utility. Native *pg_stat_statements* field *qieryid* in hexadecimal
-notation is shown in square brackets.
+* *Query ID* - Query identifier as provided by the *pg_stat_statements* extension (*queryid*) in hexadecimal notation. Alternative query identifier as a hash of *dbid*, *userid* and *queryid* is shown in square brackets, this identifier is compatible with *pgcenter* utility.
 * *Database* - Statement database name (derived from *dbid* field)
 * *Read Bytes* - Number of bytes read by the filesystem layer
   * *Plan* - bytes read during planning (*plan_reads* field)
@@ -797,7 +822,7 @@ notation is shown in square brackets.
 
 #### Complete list of SQL texts
 
-Query texts of all statements mentioned in report. You can use *Query ID* link in any statistic table to get there and see query text. Queries in this section are limited to _pg_profile.max_query_length_ (default 20000) characters, but full query text can be obtained from extension tables.
+Query texts of all statements mentioned in report. You can use *Query ID* link in any statistic table to get there and see query text. Queries in this section are limited to _pg_profile.max_query_length_ (default 20000) characters, but full query text can be obtained from extension tables. One *queryid* entry in this list can have several actual query texts captured in different samples. Only three latest queries texts captured will be listed.
 
 ### Schema object statistics
 

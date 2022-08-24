@@ -1,7 +1,7 @@
 /* ==== Settings history table ==== */
 CREATE TABLE sample_settings (
     server_id          integer,
-    first_seen          timestamp (0) with time zone,
+    first_seen         timestamp (0) with time zone,
     setting_scope      smallint, -- Scope of setting. Currently may be 1 for pg_settings and 2 for other adm functions (like version)
     name               text,
     setting            text,
@@ -11,7 +11,7 @@ CREATE TABLE sample_settings (
     sourcefile          text,
     sourceline         integer,
     pending_restart    boolean,
-    CONSTRAINT pk_sample_settings PRIMARY KEY (server_id, first_seen, setting_scope, name),
+    CONSTRAINT pk_sample_settings PRIMARY KEY (server_id, setting_scope, name, first_seen),
     CONSTRAINT fk_sample_settings_servers FOREIGN KEY (server_id)
       REFERENCES servers(server_id) ON DELETE CASCADE
 );

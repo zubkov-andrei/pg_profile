@@ -4,8 +4,12 @@ CREATE TABLE tablespaces_list(
     tablespaceid        oid,
     tablespacename      name NOT NULL,
     tablespacepath      text NOT NULL, -- cannot be changed without changing oid
-    CONSTRAINT pk_tablespace_list PRIMARY KEY (server_id, tablespaceid)
+    last_sample_id      integer,
+    CONSTRAINT pk_tablespace_list PRIMARY KEY (server_id, tablespaceid),
+    CONSTRAINT fk_tablespaces_list_samples FOREIGN KEY (server_id, last_sample_id)
+      REFERENCES samples (server_id, sample_id) ON DELETE CASCADE
 );
+CREATE INDEX ix_tablespaces_list_smp ON tablespaces_list(server_id, last_sample_id);
 COMMENT ON TABLE tablespaces_list IS 'Tablespaces, captured in samples';
 
 CREATE TABLE sample_stat_tablespaces
@@ -18,9 +22,13 @@ CREATE TABLE sample_stat_tablespaces
     CONSTRAINT fk_stattbs_samples FOREIGN KEY (server_id, sample_id)
         REFERENCES samples (server_id, sample_id) ON DELETE CASCADE,
     CONSTRAINT fk_st_tablespaces_tablespaces FOREIGN KEY (server_id, tablespaceid)
-        REFERENCES tablespaces_list(server_id, tablespaceid) ON DELETE RESTRICT ON UPDATE RESTRICT,
-    CONSTRAINT pk_sample_stat_tablespaces PRIMARY KEY (server_id,sample_id,tablespaceid)
+        REFERENCES tablespaces_list(server_id, tablespaceid)
+        ON DELETE NO ACTION ON UPDATE CASCADE
+        DEFERRABLE INITIALLY IMMEDIATE,
+    CONSTRAINT pk_sample_stat_tablespaces PRIMARY KEY (server_id, sample_id, tablespaceid)
 );
+CREATE INDEX ix_sample_stat_tablespaces_ts ON sample_stat_tablespaces(server_id, tablespaceid);
+
 COMMENT ON TABLE sample_stat_tablespaces IS 'Sample tablespaces statistics (fields from pg_tablespace)';
 
 CREATE VIEW v_sample_stat_tablespaces AS

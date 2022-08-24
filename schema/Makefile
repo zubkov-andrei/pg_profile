@@ -1,21 +1,20 @@
 schema_files = \
-	schema/core.sql \
-	schema/cluster.sql \
-	schema/tablespaces.sql \
-	schema/roles.sql \
-	schema/db.sql \
-	schema/tables.sql \
-	schema/indexes.sql \
-	schema/statements.sql \
-	schema/rusage.sql \
-	schema/funcs.sql \
-	schema/import.sql \
-	schema/settings.sql \
-	schema/smpl_timing.sql
+	core.sql \
+	cluster.sql \
+	tablespaces.sql \
+	roles.sql \
+	db.sql \
+	tables.sql \
+	indexes.sql \
+	statements.sql \
+	pg_wait_sampling.sql \
+	rusage.sql \
+	funcs.sql \
+	import.sql \
+	settings.sql \
+	smpl_timing.sql \
+	reports.sql
 
-EXTRA_CLEAN += \
-	schema/schema.sql
-
-schema/schema.sql: $(schema_files)
+schema.sql: $(schema_files)
 	cat $(schema_files) \
-	> schema/schema.sql
+	> schema.sql

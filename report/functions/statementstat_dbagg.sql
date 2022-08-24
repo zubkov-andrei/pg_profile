@@ -18,15 +18,6 @@ SET search_path=@extschema@ AS $$
   WHERE sn.server_id = sserver_id AND sn.sample_id BETWEEN start_id + 1 AND end_id
 $$ LANGUAGE sql;
 
-CREATE FUNCTION profile_checkavail_stmt_io_times(IN sserver_id integer, IN start_id integer, IN end_id integer)
-RETURNS BOOLEAN
-SET search_path=@extschema@ AS $$
--- Check if we have planning times collected for report interval
-  SELECT COALESCE(sum(blk_read_time), 0) + COALESCE(sum(blk_write_time), 0) > 0
-  FROM sample_statements_total sn
-  WHERE sn.server_id = sserver_id AND sn.sample_id BETWEEN start_id + 1 AND end_id
-$$ LANGUAGE sql;
-
 CREATE FUNCTION profile_checkavail_stmt_wal_bytes(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS BOOLEAN
 SET search_path=@extschema@ AS $$
@@ -91,13 +82,14 @@ SET search_path=@extschema@ AS $$
     GROUP BY sample_db.datname, sample_db.datid;
 $$ LANGUAGE sql;
 
-CREATE FUNCTION statements_stats_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION statements_stats_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
 
     --Cursor for db stats
-    c_dbstats CURSOR FOR
+    c_dbstats CURSOR(start1_id integer, end1_id integer, topn integer) FOR
     SELECT
         COALESCE(dbname,'Total') as dbname_t,
         NULLIF(sum(calls), 0) as calls,
@@ -116,7 +108,7 @@ DECLARE
         NULLIF(sum(local_blks_written), 0) as local_blks_written,
         NULLIF(sum(statements), 0) as statements,
         NULLIF(sum(wal_bytes), 0) as wal_bytes
-    FROM statements_stats(sserver_id,start_id,end_id,topn)
+    FROM statements_stats(sserver_id,start1_id,end1_id,topn)
     GROUP BY ROLLUP(dbname)
     ORDER BY dbname NULLS LAST;
 
@@ -189,10 +181,15 @@ BEGIN
     );
 
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
 
     -- Reporting summary databases stats
-    FOR r_result IN c_dbstats LOOP
+    FOR r_result IN c_dbstats(
+        (report_context #>> '{report_properties,start1_id}')::integer,
+        (report_context #>> '{report_properties,end1_id}')::integer,
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stdb_tpl'],
             r_result.dbname_t,
@@ -223,14 +220,16 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION statements_stats_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION statements_stats_diff_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
 
     --Cursor for db stats
-    c_dbstats CURSOR FOR
+    c_dbstats CURSOR(start1_id integer, end1_id integer,
+      start2_id integer, end2_id integer, topn integer)
+    FOR
     SELECT
         COALESCE(COALESCE(st1.dbname,st2.dbname),'Total') as dbname,
         NULLIF(sum(st1.calls), 0) as calls1,
@@ -364,10 +363,17 @@ BEGIN
         '<td {value}>%33$s</td>'
     );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
 
     -- Reporting summary databases stats
-    FOR r_result IN c_dbstats LOOP
+    FOR r_result IN c_dbstats(
+        (report_context #>> '{report_properties,start1_id}')::integer,
+        (report_context #>> '{report_properties,end1_id}')::integer,
+        (report_context #>> '{report_properties,start2_id}')::integer,
+        (report_context #>> '{report_properties,end2_id}')::integer,
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['stdb_tpl'],
             r_result.dbname,

@@ -2,11 +2,13 @@
 
 CREATE FUNCTION top_statements(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS TABLE(
-    server_id                 integer,
+    server_id               integer,
     datid                   oid,
     dbname                  name,
     userid                  oid,
+    username                name,
     queryid                 bigint,
+    toplevel                boolean,
     plans                   bigint,
     plans_pct               float,
     calls                   bigint,
@@ -94,7 +96,9 @@ RETURNS TABLE(
         st.datid as datid,
         sample_db.datname as dbname,
         st.userid as userid,
+        rl.username as username,
         st.queryid as queryid,
+        st.toplevel as toplevel,
         sum(st.plans)::bigint as plans,
         (sum(st.plans)*100/NULLIF(min(tot.plans), 0))::float as plans_pct,
         sum(st.calls)::bigint as calls,
@@ -152,30 +156,42 @@ RETURNS TABLE(
         (COALESCE(sum(kc.exec_reads), 0) + COALESCE(sum(kc.plan_reads), 0))::bigint as reads,
         (COALESCE(sum(kc.exec_writes), 0) + COALESCE(sum(kc.plan_writes), 0))::bigint as writes
     FROM sample_statements st
-        -- kcache join
-        LEFT OUTER JOIN sample_kcache kc USING(server_id, sample_id, userid, datid, queryid)
+        -- User name
+        JOIN roles_list rl USING (server_id, userid)
         -- Database name
         JOIN sample_stat_database sample_db
-        ON (st.server_id=sample_db.server_id AND st.sample_id=sample_db.sample_id AND st.datid=sample_db.datid)
+        USING (server_id, sample_id, datid)
+        -- kcache join
+        LEFT OUTER JOIN sample_kcache kc USING(server_id, sample_id, userid, datid, queryid, toplevel)
         -- Total stats
         CROSS JOIN tot CROSS JOIN totbgwr
     WHERE st.server_id = sserver_id AND st.sample_id BETWEEN start_id + 1 AND end_id
-    GROUP BY st.server_id,st.datid,sample_db.datname,st.userid,st.queryid
+    GROUP BY
+      st.server_id,
+      st.datid,
+      sample_db.datname,
+      st.userid,
+      rl.username,
+      st.queryid,
+      st.toplevel
 $$ LANGUAGE sql;
 
-CREATE FUNCTION top_elapsed_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_elapsed_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report      text := '';
     tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) queries ordered by elapsed time
-    c_elapsed_time CURSOR FOR
+    c_elapsed_time CURSOR(topn integer) FOR
     SELECT
         st.datid,
-        st.userid,
-        st.queryid,
         st.dbname,
+        st.userid,
+        st.username,
+        st.queryid,
+        st.toplevel,
         NULLIF(st.total_time_pct, 0) as total_time_pct,
         NULLIF(st.total_time, 0) as total_time,
         NULLIF(st.total_plan_time, 0) as total_plan_time,
@@ -186,17 +202,20 @@ DECLARE
         NULLIF(st.system_time, 0.0) as system_time,
         NULLIF(st.calls, 0) as calls,
         NULLIF(st.plans, 0) as plans
-    FROM top_statements st
+    FROM top_statements1 st
     ORDER BY st.total_time DESC,
       st.queryid ASC,
+      st.toplevel ASC,
       st.datid ASC,
-      st.userid ASC
+      st.userid ASC,
+      st.dbname ASC,
+      st.username ASC
     LIMIT topn;
 
     r_result RECORD;
 BEGIN
     -- This report section is meaningful only when planning timing is available
-    IF NOT jsonb_extract_path_text(jreportset, 'report_features', 'planning_times')::boolean THEN
+    IF NOT jsonb_extract_path_text(report_context, 'report_features', 'planning_times')::boolean THEN
       RETURN '';
     END IF;
 
@@ -206,9 +225,10 @@ BEGIN
           '<tr>'
             '<th rowspan="2">Query ID</th>'
             '<th rowspan="2">Database</th>'
+            '<th rowspan="2">User</th>'
             '<th rowspan="2" title="Elapsed time as a percentage of total cluster elapsed time">%Total</th>'
             '<th colspan="3">Time (s)</th>'
-            '{stmt_io_times?iotime_hdr1}'
+            '{io_times?iotime_hdr1}'
             '{kcachestatements?kcache_hdr1}'
             '<th rowspan="2" title="Number of times the statement was planned">Plans</th>'
             '<th rowspan="2" title="Number of times the statement was executed">Executions</th>'
@@ -217,7 +237,7 @@ BEGIN
             '<th title="Time spent by the statement">Elapsed</th>'
             '<th title="Time spent planning statement">Plan</th>'
             '<th title="Time spent executing statement">Exec</th>'
-            '{stmt_io_times?iotime_hdr2}'
+            '{io_times?iotime_hdr2}'
             '{kcachestatements?kcache_hdr2}'
           '</tr>'
           '{rows}'
@@ -225,44 +245,51 @@ BEGIN
       'stmt_tpl',
         '<tr>'
           '<td {mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small></p></td>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
           '<td>%4$s</td>'
-          '<td {value}>%5$s</td>'
+          '<td>%5$s</td>'
           '<td {value}>%6$s</td>'
           '<td {value}>%7$s</td>'
           '<td {value}>%8$s</td>'
-          '{stmt_io_times?iotime_row}'
+          '<td {value}>%9$s</td>'
+          '{io_times?iotime_row}'
           '{kcachestatements?kcache_row}'
-          '<td {value}>%13$s</td>'
           '<td {value}>%14$s</td>'
+          '<td {value}>%15$s</td>'
         '</tr>',
-      'stmt_io_times?iotime_hdr1',
+      'nested_tpl',
+        ' <small title="Nested level">(N)</small>',
+      'io_times?iotime_hdr1',
         '<th colspan="2">I/O time (s)</th>',
-      'stmt_io_times?iotime_hdr2',
+      'io_times?iotime_hdr2',
         '<th title="Time spent reading blocks by statement">Read</th>'
         '<th title="Time spent writing blocks by statement">Write</th>',
-      'stmt_io_times?iotime_row',
-        '<td {value}>%9$s</td>'
-        '<td {value}>%10$s</td>',
+      'io_times?iotime_row',
+        '<td {value}>%10$s</td>'
+        '<td {value}>%11$s</td>',
       'kcachestatements?kcache_hdr1',
         '<th colspan="2">CPU time (s)</th>',
       'kcachestatements?kcache_hdr2',
         '<th>Usr</th>'
         '<th>Sys</th>',
       'kcachestatements?kcache_row',
-        '<td {value}>%11$s</td>'
         '<td {value}>%12$s</td>'
+        '<td {value}>%13$s</td>'
       );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting on top queries by elapsed time
-    FOR r_result IN c_elapsed_time LOOP
+    FOR r_result IN c_elapsed_time(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            NULL, --reserved
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
             to_hex(r_result.queryid),
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             r_result.dbname,
+            r_result.username,
             round(CAST(r_result.total_time_pct AS numeric),2),
             round(CAST(r_result.total_time AS numeric),2),
             round(CAST(r_result.total_plan_time AS numeric),2),
@@ -289,20 +316,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION top_elapsed_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-    IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_elapsed_diff_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report      text := '';
     tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) queries ordered by elapsed time
-    c_elapsed_time CURSOR FOR
+    c_elapsed_time CURSOR(topn integer) FOR
     SELECT * FROM (SELECT
         COALESCE(st1.datid,st2.datid) as datid,
-        COALESCE(st1.userid,st2.userid) as userid,
-        COALESCE(st1.queryid,st2.queryid) as queryid,
         COALESCE(st1.dbname,st2.dbname) as dbname,
+        COALESCE(st1.userid,st2.userid) as userid,
+        COALESCE(st1.username,st2.username) as username,
+        COALESCE(st1.queryid,st2.queryid) as queryid,
+        COALESCE(st1.toplevel,st2.toplevel) as toplevel,
         NULLIF(st1.total_time, 0.0) as total_time1,
         NULLIF(st1.total_time_pct, 0.0) as total_time_pct1,
         NULLIF(st1.total_plan_time, 0.0) as total_plan_time1,
@@ -326,11 +355,12 @@ DECLARE
         row_number() over (ORDER BY st1.total_time DESC NULLS LAST) as rn_time1,
         row_number() over (ORDER BY st2.total_time DESC NULLS LAST) as rn_time2
     FROM top_statements1 st1
-        FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid)
+        FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid, toplevel)
     ORDER BY COALESCE(st1.total_time,0) + COALESCE(st2.total_time,0) DESC,
       COALESCE(st1.queryid,st2.queryid) ASC,
       COALESCE(st1.datid,st2.datid) ASC,
-      COALESCE(st1.userid,st2.userid) ASC
+      COALESCE(st1.userid,st2.userid) ASC,
+      COALESCE(st1.toplevel,st2.toplevel) ASC
     ) t1
     WHERE least(
         rn_time1,
@@ -340,7 +370,7 @@ DECLARE
     r_result RECORD;
 BEGIN
     -- This report section is meaningful only when planning timing is available
-    IF NOT jsonb_extract_path_text(jreportset, 'report_features', 'planning_times')::boolean THEN
+    IF NOT jsonb_extract_path_text(report_context, 'report_features', 'planning_times')::boolean THEN
       RETURN '';
     END IF;
 
@@ -351,10 +381,11 @@ BEGIN
           '<tr>'
             '<th rowspan="2">Query ID</th>'
             '<th rowspan="2">Database</th>'
+            '<th rowspan="2">User</th>'
             '<th rowspan="2">I</th>'
             '<th rowspan="2" title="Elapsed time as a percentage of total cluster elapsed time">%Total</th>'
             '<th colspan="3">Time (s)</th>'
-            '{stmt_io_times?iotime_hdr1}'
+            '{io_times?iotime_hdr1}'
             '{kcachestatements?kcache_hdr1}'
             '<th rowspan="2" title="Number of times the statement was planned">Plans</th>'
             '<th rowspan="2" title="Number of times the statement was executed">Executions</th>'
@@ -363,7 +394,7 @@ BEGIN
             '<th title="Time spent by the statement">Elapsed</th>'
             '<th title="Time spent planning statement">Plan</th>'
             '<th title="Time spent executing statement">Exec</th>'
-            '{stmt_io_times?iotime_hdr2}'
+            '{io_times?iotime_hdr2}'
             '{kcachestatements?kcache_hdr2}'
           '</tr>'
           '{rows}'
@@ -371,64 +402,71 @@ BEGIN
       'stmt_tpl',
         '<tr {interval1}>'
           '<td {rowtdspanhdr_mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small></p></td>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
           '<td {rowtdspanhdr}>%4$s</td>'
+          '<td {rowtdspanhdr}>%5$s</td>'
           '<td {label} {title1}>1</td>'
-          '<td {value}>%5$s</td>'
           '<td {value}>%6$s</td>'
           '<td {value}>%7$s</td>'
           '<td {value}>%8$s</td>'
-          '{stmt_io_times?iotime_row1}'
+          '<td {value}>%9$s</td>'
+          '{io_times?iotime_row1}'
           '{kcachestatements?kcache_row1}'
-          '<td {value}>%13$s</td>'
           '<td {value}>%14$s</td>'
+          '<td {value}>%15$s</td>'
         '</tr>'
         '<tr {interval2}>'
           '<td {label} {title2}>2</td>'
-          '<td {value}>%15$s</td>'
           '<td {value}>%16$s</td>'
           '<td {value}>%17$s</td>'
           '<td {value}>%18$s</td>'
-          '{stmt_io_times?iotime_row2}'
+          '<td {value}>%19$s</td>'
+          '{io_times?iotime_row2}'
           '{kcachestatements?kcache_row2}'
-          '<td {value}>%23$s</td>'
           '<td {value}>%24$s</td>'
+          '<td {value}>%25$s</td>'
         '</tr>'
         '<tr style="visibility:collapse"></tr>',
-      'stmt_io_times?iotime_hdr1',
+      'nested_tpl',
+        ' <small title="Nested level">(N)</small>',
+      'io_times?iotime_hdr1',
         '<th colspan="2">I/O time (s)</th>',
-      'stmt_io_times?iotime_hdr2',
+      'io_times?iotime_hdr2',
         '<th title="Time spent reading blocks by statement">Read</th>'
         '<th title="Time spent writing blocks by statement">Write</th>',
-      'stmt_io_times?iotime_row1',
-        '<td {value}>%9$s</td>'
-        '<td {value}>%10$s</td>',
-      'stmt_io_times?iotime_row2',
-        '<td {value}>%19$s</td>'
-        '<td {value}>%20$s</td>',
+      'io_times?iotime_row1',
+        '<td {value}>%10$s</td>'
+        '<td {value}>%11$s</td>',
+      'io_times?iotime_row2',
+        '<td {value}>%20$s</td>'
+        '<td {value}>%21$s</td>',
       'kcachestatements?kcache_hdr1',
         '<th colspan="2">CPU time (s)</th>',
       'kcachestatements?kcache_hdr2',
         '<th>Usr</th>'
         '<th>Sys</th>',
       'kcachestatements?kcache_row1',
-        '<td {value}>%11$s</td>'
-        '<td {value}>%12$s</td>',
+        '<td {value}>%12$s</td>'
+        '<td {value}>%13$s</td>',
       'kcachestatements?kcache_row2',
-        '<td {value}>%21$s</td>'
         '<td {value}>%22$s</td>'
+        '<td {value}>%23$s</td>'
       );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
 
     -- Reporting on top queries by elapsed time
-    FOR r_result IN c_elapsed_time LOOP
+    FOR r_result IN c_elapsed_time(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            NULL, --reserved
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
             to_hex(r_result.queryid),
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             r_result.dbname,
+            r_result.username,
             round(CAST(r_result.total_time_pct1 AS numeric),2),
             round(CAST(r_result.total_time1 AS numeric),2),
             round(CAST(r_result.total_plan_time1 AS numeric),2),
@@ -466,19 +504,22 @@ END;
 $$ LANGUAGE plpgsql;
 
 
-CREATE FUNCTION top_plan_time_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_plan_time_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report      text := '';
     tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for queries ordered by planning time
-    c_elapsed_time CURSOR FOR
+    c_elapsed_time CURSOR(topn integer) FOR
     SELECT
         st.datid,
-        st.userid,
-        st.queryid,
         st.dbname,
+        st.userid,
+        st.username,
+        st.queryid,
+        st.toplevel,
         NULLIF(st.plans, 0) as plans,
         NULLIF(st.calls, 0) as calls,
         NULLIF(st.total_plan_time, 0.0) as total_plan_time,
@@ -487,18 +528,21 @@ DECLARE
         NULLIF(st.max_plan_time, 0.0) as max_plan_time,
         NULLIF(st.mean_plan_time, 0.0) as mean_plan_time,
         NULLIF(st.stddev_plan_time, 0.0) as stddev_plan_time
-    FROM top_statements st
+    FROM top_statements1 st
     ORDER BY st.total_plan_time DESC,
       st.total_exec_time DESC,
       st.queryid ASC,
+      st.toplevel ASC,
       st.datid ASC,
-      st.userid ASC
+      st.userid ASC,
+      st.dbname ASC,
+      st.username ASC
     LIMIT topn;
 
     r_result RECORD;
 BEGIN
     -- This report section is meaningful only when planning timing is available
-    IF NOT jsonb_extract_path_text(jreportset, 'report_features', 'planning_times')::boolean THEN
+    IF NOT jsonb_extract_path_text(report_context, 'report_features', 'planning_times')::boolean THEN
       RETURN '';
     END IF;
 
@@ -508,6 +552,7 @@ BEGIN
           '<tr>'
             '<th rowspan="2">Query ID</th>'
             '<th rowspan="2">Database</th>'
+            '<th rowspan="2">User</th>'
             '<th rowspan="2" title="Time spent planning statement">Plan elapsed (s)</th>'
             '<th rowspan="2" title="Plan elapsed as a percentage of statement elapsed time">%Elapsed</th>'
             '<th colspan="4" title="Planning time statistics">Plan times (ms)</th>'
@@ -525,9 +570,9 @@ BEGIN
       'stmt_tpl',
         '<tr>'
           '<td {mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small></p></td>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
           '<td>%4$s</td>'
-          '<td {value}>%5$s</td>'
+          '<td>%5$s</td>'
           '<td {value}>%6$s</td>'
           '<td {value}>%7$s</td>'
           '<td {value}>%8$s</td>'
@@ -535,18 +580,25 @@ BEGIN
           '<td {value}>%10$s</td>'
           '<td {value}>%11$s</td>'
           '<td {value}>%12$s</td>'
-        '</tr>'
+          '<td {value}>%13$s</td>'
+        '</tr>',
+      'nested_tpl',
+        ' <small title="Nested level">(N)</small>'
       );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting on top queries by elapsed time
-    FOR r_result IN c_elapsed_time LOOP
+    FOR r_result IN c_elapsed_time(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            NULL, --reserved
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
             to_hex(r_result.queryid),
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             r_result.dbname,
+            r_result.username,
             round(CAST(r_result.total_plan_time AS numeric),2),
             round(CAST(r_result.plan_time_pct AS numeric),2),
             round(CAST(r_result.mean_plan_time AS numeric),3),
@@ -571,20 +623,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION top_plan_time_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-    IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_plan_time_diff_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report      text := '';
     tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) queries ordered by elapsed time
-    c_elapsed_time CURSOR FOR
+    c_elapsed_time CURSOR(topn integer) FOR
     SELECT * FROM (SELECT
         COALESCE(st1.datid,st2.datid) as datid,
-        COALESCE(st1.userid,st2.userid) as userid,
-        COALESCE(st1.queryid,st2.queryid) as queryid,
         COALESCE(st1.dbname,st2.dbname) as dbname,
+        COALESCE(st1.userid,st2.userid) as userid,
+        COALESCE(st1.username,st2.username) as username,
+        COALESCE(st1.queryid,st2.queryid) as queryid,
+        COALESCE(st1.toplevel,st2.toplevel) as toplevel,
         NULLIF(st1.plans, 0) as plans1,
         NULLIF(st1.calls, 0) as calls1,
         NULLIF(st1.total_plan_time, 0.0) as total_plan_time1,
@@ -604,12 +658,13 @@ DECLARE
         row_number() over (ORDER BY st1.total_plan_time DESC NULLS LAST) as rn_time1,
         row_number() over (ORDER BY st2.total_plan_time DESC NULLS LAST) as rn_time2
     FROM top_statements1 st1
-        FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid)
+        FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid, toplevel)
     ORDER BY COALESCE(st1.total_plan_time,0) + COALESCE(st2.total_plan_time,0) DESC,
       COALESCE(st1.total_exec_time,0) + COALESCE(st2.total_exec_time,0) DESC,
       COALESCE(st1.queryid,st2.queryid) ASC,
       COALESCE(st1.datid,st2.datid) ASC,
-      COALESCE(st1.userid,st2.userid) ASC
+      COALESCE(st1.userid,st2.userid) ASC,
+      COALESCE(st1.toplevel,st2.toplevel) ASC
     ) t1
     WHERE least(
         rn_time1,
@@ -625,6 +680,7 @@ BEGIN
           '<tr>'
             '<th rowspan="2">Query ID</th>'
             '<th rowspan="2">Database</th>'
+            '<th rowspan="2">User</th>'
             '<th rowspan="2">I</th>'
             '<th rowspan="2" title="Time spent planning statement">Plan elapsed (s)</th>'
             '<th rowspan="2" title="Plan elapsed as a percentage of statement elapsed time">%Elapsed</th>'
@@ -643,10 +699,10 @@ BEGIN
       'stmt_tpl',
         '<tr {interval1}>'
           '<td {rowtdspanhdr_mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small></p></td>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
           '<td {rowtdspanhdr}>%4$s</td>'
+          '<td {rowtdspanhdr}>%5$s</td>'
           '<td {label} {title1}>1</td>'
-          '<td {value}>%5$s</td>'
           '<td {value}>%6$s</td>'
           '<td {value}>%7$s</td>'
           '<td {value}>%8$s</td>'
@@ -654,10 +710,10 @@ BEGIN
           '<td {value}>%10$s</td>'
           '<td {value}>%11$s</td>'
           '<td {value}>%12$s</td>'
+          '<td {value}>%13$s</td>'
         '</tr>'
         '<tr {interval2}>'
           '<td {label} {title2}>2</td>'
-          '<td {value}>%13$s</td>'
           '<td {value}>%14$s</td>'
           '<td {value}>%15$s</td>'
           '<td {value}>%16$s</td>'
@@ -665,20 +721,27 @@ BEGIN
           '<td {value}>%18$s</td>'
           '<td {value}>%19$s</td>'
           '<td {value}>%20$s</td>'
+          '<td {value}>%21$s</td>'
         '</tr>'
-        '<tr style="visibility:collapse"></tr>'
+        '<tr style="visibility:collapse"></tr>',
+      'nested_tpl',
+        ' <small title="Nested level">(N)</small>'
       );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
 
     -- Reporting on top queries by elapsed time
-    FOR r_result IN c_elapsed_time LOOP
+    FOR r_result IN c_elapsed_time(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            NULL, --reserved
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
             to_hex(r_result.queryid),
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             r_result.dbname,
+            r_result.username,
             round(CAST(r_result.total_plan_time1 AS numeric),2),
             round(CAST(r_result.plan_time_pct1 AS numeric),2),
             round(CAST(r_result.mean_plan_time1 AS numeric),3),
@@ -711,19 +774,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION top_exec_time_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_exec_time_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report      text := '';
     tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for queries ordered by execution time
-    c_elapsed_time CURSOR FOR
+    c_elapsed_time CURSOR(topn integer) FOR
     SELECT
         st.datid,
-        st.userid,
-        st.queryid,
         st.dbname,
+        st.userid,
+        st.username,
+        st.queryid,
+        st.toplevel,
         NULLIF(st.calls, 0) as calls,
         NULLIF(st.total_exec_time, 0.0) as total_exec_time,
         NULLIF(st.total_exec_time_pct, 0.0) as total_exec_time_pct,
@@ -737,12 +803,15 @@ DECLARE
         NULLIF(st.rows, 0) as rows,
         NULLIF(st.user_time, 0.0) as user_time,
         NULLIF(st.system_time, 0.0) as system_time
-    FROM top_statements st
+    FROM top_statements1 st
     ORDER BY st.total_exec_time DESC,
       st.total_time DESC,
       st.queryid ASC,
+      st.toplevel ASC,
       st.datid ASC,
-      st.userid ASC
+      st.userid ASC,
+      st.dbname ASC,
+      st.username ASC
     LIMIT topn;
 
     r_result RECORD;
@@ -753,17 +822,18 @@ BEGIN
           '<tr>'
             '<th rowspan="2">Query ID</th>'
             '<th rowspan="2">Database</th>'
+            '<th rowspan="2">User</th>'
             '<th rowspan="2" title="Time spent executing statement">Exec (s)</th>'
             '{planning_times?elapsed_pct_hdr}'
             '<th rowspan="2" title="Exec time as a percentage of total cluster elapsed time">%Total</th>'
-            '{stmt_io_times?iotime_hdr1}'
+            '{io_times?iotime_hdr1}'
             '{kcachestatements?kcache_hdr1}'
             '<th rowspan="2" title="Total number of rows retrieved or affected by the statement">Rows</th>'
             '<th colspan="4" title="Execution time statistics">Execution times (ms)</th>'
             '<th rowspan="2" title="Number of times the statement was executed">Executions</th>'
           '</tr>'
           '<tr>'
-            '{stmt_io_times?iotime_hdr2}'
+            '{io_times?iotime_hdr2}'
             '{kcachestatements?kcache_hdr2}'
             '<th>Mean</th>'
             '<th>Min</th>'
@@ -775,51 +845,58 @@ BEGIN
       'stmt_tpl',
         '<tr>'
           '<td {mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small></p></td>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
           '<td>%4$s</td>'
-          '<td {value}>%5$s</td>'
-          '{planning_times?elapsed_pct_row}'
+          '<td>%5$s</td>'
           '<td {value}>%6$s</td>'
-          '{stmt_io_times?iotime_row}'
+          '{planning_times?elapsed_pct_row}'
+          '<td {value}>%7$s</td>'
+          '{io_times?iotime_row}'
           '{kcachestatements?kcache_row}'
-          '<td {value}>%11$s</td>'
           '<td {value}>%12$s</td>'
           '<td {value}>%13$s</td>'
           '<td {value}>%14$s</td>'
           '<td {value}>%15$s</td>'
           '<td {value}>%16$s</td>'
+          '<td {value}>%17$s</td>'
         '</tr>',
-      'stmt_io_times?iotime_hdr1',
+      'nested_tpl',
+        ' <small title="Nested level">(N)</small>',
+      'io_times?iotime_hdr1',
         '<th colspan="2">I/O time (s)</th>',
-      'stmt_io_times?iotime_hdr2',
+      'io_times?iotime_hdr2',
         '<th title="Time spent reading blocks by statement">Read</th>'
         '<th title="Time spent writing blocks by statement">Write</th>',
-      'stmt_io_times?iotime_row',
-        '<td {value}>%7$s</td>'
-        '<td {value}>%8$s</td>',
+      'io_times?iotime_row',
+        '<td {value}>%8$s</td>'
+        '<td {value}>%9$s</td>',
       'planning_times?elapsed_pct_hdr',
         '<th rowspan="2" title="Exec time as a percentage of statement elapsed time">%Elapsed</th>',
       'planning_times?elapsed_pct_row',
-        '<td {value}>%17$s</td>',
+        '<td {value}>%18$s</td>',
       'kcachestatements?kcache_hdr1',
         '<th colspan="2">CPU time (s)</th>',
       'kcachestatements?kcache_hdr2',
         '<th>Usr</th>'
         '<th>Sys</th>',
       'kcachestatements?kcache_row',
-        '<td {value}>%9$s</td>'
         '<td {value}>%10$s</td>'
+        '<td {value}>%11$s</td>'
       );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting on top queries by elapsed time
-    FOR r_result IN c_elapsed_time LOOP
+    FOR r_result IN c_elapsed_time(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            NULL, --reserved
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
             to_hex(r_result.queryid),
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             r_result.dbname,
+            r_result.username,
             round(CAST(r_result.total_exec_time AS numeric),2),
             round(CAST(r_result.total_exec_time_pct AS numeric),2),
             round(CAST(r_result.blk_read_time AS numeric),2),
@@ -849,20 +926,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION top_exec_time_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-    IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_exec_time_diff_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report      text := '';
     tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) queries ordered by elapsed time
-    c_elapsed_time CURSOR FOR
+    c_elapsed_time CURSOR(topn integer) FOR
     SELECT * FROM (SELECT
         COALESCE(st1.datid,st2.datid) as datid,
-        COALESCE(st1.userid,st2.userid) as userid,
-        COALESCE(st1.queryid,st2.queryid) as queryid,
         COALESCE(st1.dbname,st2.dbname) as dbname,
+        COALESCE(st1.userid,st2.userid) as userid,
+        COALESCE(st1.username,st2.username) as username,
+        COALESCE(st1.queryid,st2.queryid) as queryid,
+        COALESCE(st1.toplevel,st2.toplevel) as toplevel,
         NULLIF(st1.calls, 0) as calls1,
         NULLIF(st1.total_exec_time, 0.0) as total_exec_time1,
         NULLIF(st1.total_exec_time_pct, 0.0) as total_exec_time_pct1,
@@ -892,12 +971,13 @@ DECLARE
         row_number() over (ORDER BY st1.total_exec_time DESC NULLS LAST) as rn_time1,
         row_number() over (ORDER BY st2.total_exec_time DESC NULLS LAST) as rn_time2
     FROM top_statements1 st1
-        FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid)
+        FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid, toplevel)
     ORDER BY COALESCE(st1.total_exec_time,0) + COALESCE(st2.total_exec_time,0) DESC,
       COALESCE(st1.total_time,0) + COALESCE(st2.total_time,0) DESC,
       COALESCE(st1.queryid,st2.queryid) ASC,
       COALESCE(st1.datid,st2.datid) ASC,
-      COALESCE(st1.userid,st2.userid) ASC
+      COALESCE(st1.userid,st2.userid) ASC,
+      COALESCE(st1.toplevel,st2.toplevel) ASC
     ) t1
     WHERE least(
         rn_time1,
@@ -913,18 +993,19 @@ BEGIN
           '<tr>'
             '<th rowspan="2">Query ID</th>'
             '<th rowspan="2">Database</th>'
+            '<th rowspan="2">User</th>'
             '<th rowspan="2">I</th>'
             '<th rowspan="2" title="Time spent executing statement">Exec (s)</th>'
             '{planning_times?elapsed_pct_hdr}'
             '<th rowspan="2" title="Exec time as a percentage of total cluster elapsed time">%Total</th>'
-            '{stmt_io_times?iotime_hdr1}'
+            '{io_times?iotime_hdr1}'
             '{kcachestatements?kcache_hdr1}'
             '<th rowspan="2" title="Total number of rows retrieved or affected by the statement">Rows</th>'
             '<th colspan="4" title="Execution time statistics">Execution times (ms)</th>'
             '<th rowspan="2" title="Number of times the statement was executed">Executions</th>'
           '</tr>'
           '<tr>'
-            '{stmt_io_times?iotime_hdr2}'
+            '{io_times?iotime_hdr2}'
             '{kcachestatements?kcache_hdr2}'
             '<th>Mean</th>'
             '<th>Min</th>'
@@ -936,76 +1017,83 @@ BEGIN
       'stmt_tpl',
         '<tr {interval1}>'
           '<td {rowtdspanhdr_mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small></p></td>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
           '<td {rowtdspanhdr}>%4$s</td>'
+          '<td {rowtdspanhdr}>%5$s</td>'
           '<td {label} {title1}>1</td>'
-          '<td {value}>%5$s</td>'
-          '{planning_times?elapsed_pct_row1}'
           '<td {value}>%6$s</td>'
-          '{stmt_io_times?iotime_row1}'
+          '{planning_times?elapsed_pct_row1}'
+          '<td {value}>%7$s</td>'
+          '{io_times?iotime_row1}'
           '{kcachestatements?kcache_row1}'
-          '<td {value}>%11$s</td>'
           '<td {value}>%12$s</td>'
           '<td {value}>%13$s</td>'
           '<td {value}>%14$s</td>'
           '<td {value}>%15$s</td>'
           '<td {value}>%16$s</td>'
+          '<td {value}>%17$s</td>'
         '</tr>'
         '<tr {interval2}>'
           '<td {label} {title2}>2</td>'
-          '<td {value}>%17$s</td>'
-          '{planning_times?elapsed_pct_row2}'
           '<td {value}>%18$s</td>'
-          '{stmt_io_times?iotime_row2}'
+          '{planning_times?elapsed_pct_row2}'
+          '<td {value}>%19$s</td>'
+          '{io_times?iotime_row2}'
           '{kcachestatements?kcache_row2}'
-          '<td {value}>%23$s</td>'
           '<td {value}>%24$s</td>'
           '<td {value}>%25$s</td>'
           '<td {value}>%26$s</td>'
           '<td {value}>%27$s</td>'
           '<td {value}>%28$s</td>'
+          '<td {value}>%29$s</td>'
         '</tr>'
         '<tr style="visibility:collapse"></tr>',
-      'stmt_io_times?iotime_hdr1',
+      'nested_tpl',
+        ' <small title="Nested level">(N)</small>',
+      'io_times?iotime_hdr1',
         '<th colspan="2">I/O time (s)</th>',
-      'stmt_io_times?iotime_hdr2',
+      'io_times?iotime_hdr2',
         '<th title="Time spent reading blocks by statement">Read</th>'
         '<th title="Time spent writing blocks by statement">Write</th>',
-      'stmt_io_times?iotime_row1',
-        '<td {value}>%7$s</td>'
-        '<td {value}>%8$s</td>',
-      'stmt_io_times?iotime_row2',
-        '<td {value}>%19$s</td>'
-        '<td {value}>%20$s</td>',
+      'io_times?iotime_row1',
+        '<td {value}>%8$s</td>'
+        '<td {value}>%9$s</td>',
+      'io_times?iotime_row2',
+        '<td {value}>%20$s</td>'
+        '<td {value}>%21$s</td>',
       'planning_times?elapsed_pct_hdr',
         '<th rowspan="2" title="Exec time as a percentage of statement elapsed time">%Elapsed</th>',
       'planning_times?elapsed_pct_row1',
-        '<td {value}>%29$s</td>',
-      'planning_times?elapsed_pct_row2',
         '<td {value}>%30$s</td>',
+      'planning_times?elapsed_pct_row2',
+        '<td {value}>%31$s</td>',
       'kcachestatements?kcache_hdr1',
         '<th colspan="2">CPU time (s)</th>',
       'kcachestatements?kcache_hdr2',
         '<th>Usr</th>'
         '<th>Sys</th>',
       'kcachestatements?kcache_row1',
-        '<td {value}>%9$s</td>'
-        '<td {value}>%10$s</td>',
+        '<td {value}>%10$s</td>'
+        '<td {value}>%11$s</td>',
       'kcachestatements?kcache_row2',
-        '<td {value}>%21$s</td>'
         '<td {value}>%22$s</td>'
+        '<td {value}>%23$s</td>'
       );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
 
     -- Reporting on top queries by elapsed time
-    FOR r_result IN c_elapsed_time LOOP
+    FOR r_result IN c_elapsed_time(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            NULL, --reserved
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
             to_hex(r_result.queryid),
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             r_result.dbname,
+            r_result.username,
             round(CAST(r_result.total_exec_time1 AS numeric),2),
             round(CAST(r_result.total_exec_time_pct1 AS numeric),2),
             round(CAST(r_result.blk_read_time1 AS numeric),2),
@@ -1048,19 +1136,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION top_exec_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_exec_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report      text := '';
     tab_row     text := '';
     jtab_tpl    jsonb;
 
     -- Cursor for topn querues ordered by executions
-    c_calls CURSOR FOR
+    c_calls CURSOR(topn integer) FOR
     SELECT
         st.datid,
-        st.userid,
-        st.queryid,
         st.dbname,
+        st.userid,
+        st.username,
+        st.queryid,
+        st.toplevel,
         NULLIF(st.calls, 0) as calls,
         NULLIF(st.calls_pct, 0.0) as calls_pct,
         NULLIF(st.total_exec_time, 0.0) as total_exec_time,
@@ -1069,12 +1160,15 @@ DECLARE
         NULLIF(st.mean_exec_time, 0.0) as mean_exec_time,
         NULLIF(st.stddev_exec_time, 0.0) as stddev_exec_time,
         NULLIF(st.rows, 0) as rows
-    FROM top_statements st
+    FROM top_statements1 st
     ORDER BY st.calls DESC,
       st.total_time DESC,
       st.queryid ASC,
+      st.toplevel ASC,
       st.datid ASC,
-      st.userid ASC
+      st.userid ASC,
+      st.dbname ASC,
+      st.username ASC
     LIMIT topn;
 
     r_result RECORD;
@@ -1085,6 +1179,7 @@ BEGIN
           '<tr>'
             '<th>Query ID</th>'
             '<th>Database</th>'
+            '<th>User</th>'
             '<th title="Number of times the statement was executed">Executions</th>'
             '<th title="Executions of this statement as a percentage of total executions of all statements in a cluster">%Total</th>'
             '<th title="Total number of rows retrieved or affected by the statement">Rows</th>'
@@ -1099,7 +1194,8 @@ BEGIN
       'stmt_tpl',
         '<tr>'
           '<td {mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small></p></td>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
+          '<td>%4$s</td>'
           '<td>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
@@ -1109,17 +1205,24 @@ BEGIN
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
-        '</tr>');
+        '</tr>',
+      'nested_tpl',
+        ' <small title="Nested level">(N)</small>'
+      );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting on top 10 queries by executions
-    FOR r_result IN c_calls LOOP
+    FOR r_result IN c_calls(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            NULL, --reserved
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
             to_hex(r_result.queryid),
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             r_result.dbname,
+            r_result.username,
             r_result.calls,
             round(CAST(r_result.calls_pct AS numeric),2),
             r_result.rows,
@@ -1144,20 +1247,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION top_exec_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-    IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_exec_diff_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report      text := '';
     tab_row     text := '';
     jtab_tpl    jsonb;
 
     -- Cursor for topn querues ordered by executions
-    c_calls CURSOR FOR
+    c_calls CURSOR(topn integer) FOR
     SELECT * FROM (SELECT
         COALESCE(st1.datid,st2.datid) as datid,
-        COALESCE(st1.userid,st2.userid) as userid,
-        COALESCE(st1.queryid,st2.queryid) as queryid,
         COALESCE(st1.dbname,st2.dbname) as dbname,
+        COALESCE(st1.userid,st2.userid) as userid,
+        COALESCE(st1.username,st2.username) as username,
+        COALESCE(st1.queryid,st2.queryid) as queryid,
+        COALESCE(st1.toplevel,st2.toplevel) as toplevel,
         NULLIF(st1.calls, 0) as calls1,
         NULLIF(st1.calls_pct, 0.0) as calls_pct1,
         NULLIF(st1.total_exec_time, 0.0) as total_exec_time1,
@@ -1177,12 +1282,13 @@ DECLARE
         row_number() over (ORDER BY st1.calls DESC NULLS LAST) as rn_calls1,
         row_number() over (ORDER BY st2.calls DESC NULLS LAST) as rn_calls2
     FROM top_statements1 st1
-        FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid)
+        FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid, toplevel)
     ORDER BY COALESCE(st1.calls,0) + COALESCE(st2.calls,0) DESC,
       COALESCE(st1.total_time,0) + COALESCE(st2.total_time,0) DESC,
       COALESCE(st1.queryid,st2.queryid) ASC,
       COALESCE(st1.datid,st2.datid) ASC,
-      COALESCE(st1.userid,st2.userid) ASC
+      COALESCE(st1.userid,st2.userid) ASC,
+      COALESCE(st1.toplevel,st2.toplevel) ASC
     ) t1
     WHERE least(
         rn_calls1,
@@ -1198,6 +1304,7 @@ BEGIN
           '<tr>'
             '<th>Query ID</th>'
             '<th>Database</th>'
+            '<th>User</th>'
             '<th>I</th>'
             '<th title="Number of times the statement was executed">Executions</th>'
             '<th title="Executions of this statement as a percentage of total executions of all statements in a cluster">%Total</th>'
@@ -1213,7 +1320,8 @@ BEGIN
       'stmt_tpl',
         '<tr {interval1}>'
           '<td {rowtdspanhdr_mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small></p></td>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
+          '<td {rowtdspanhdr}>%4$s</td>'
           '<td {rowtdspanhdr}>%s</td>'
           '<td {label} {title1}>1</td>'
           '<td {value}>%s</td>'
@@ -1236,18 +1344,25 @@ BEGIN
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
         '</tr>'
-        '<tr style="visibility:collapse"></tr>');
+        '<tr style="visibility:collapse"></tr>',
+      'nested_tpl',
+        ' <small title="Nested level">(N)</small>'
+      );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
 
     -- Reporting on top 10 queries by executions
-    FOR r_result IN c_calls LOOP
+    FOR r_result IN c_calls(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            NULL, --reserved
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
             to_hex(r_result.queryid),
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             r_result.dbname,
+            r_result.username,
             r_result.calls1,
             round(CAST(r_result.calls_pct1 AS numeric),2),
             r_result.rows1,
@@ -1280,19 +1395,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION top_iowait_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_iowait_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report      text := '';
     tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) querues ordered by I/O Wait time
-    c_iowait_time CURSOR FOR
+    c_iowait_time CURSOR(topn integer) FOR
     SELECT
         st.datid,
-        st.userid,
-        st.queryid,
         st.dbname,
+        st.userid,
+        st.username,
+        st.queryid,
+        st.toplevel,
         NULLIF(st.total_time, 0.0) as total_time,
         NULLIF(st.io_time, 0.0) as io_time,
         NULLIF(st.blk_read_time, 0.0) as blk_read_time,
@@ -1305,13 +1423,16 @@ DECLARE
         NULLIF(st.local_blks_written, 0) as local_blks_written,
         NULLIF(st.temp_blks_written, 0) as temp_blks_written,
         NULLIF(st.calls, 0) as calls
-    FROM top_statements st
+    FROM top_statements1 st
     WHERE st.io_time > 0
     ORDER BY st.io_time DESC,
       st.total_time DESC,
       st.queryid ASC,
+      st.toplevel ASC,
       st.datid ASC,
-      st.userid ASC
+      st.userid ASC,
+      st.dbname ASC,
+      st.username ASC
     LIMIT topn;
 
     r_result RECORD;
@@ -1322,6 +1443,7 @@ BEGIN
           '<tr>'
             '<th rowspan="2">Query ID</th>'
             '<th rowspan="2">Database</th>'
+            '<th rowspan="2">User</th>'
             '<th rowspan="2" title="Time spent by the statement reading and writing blocks">IO(s)</th>'
             '<th rowspan="2" title="Time spent by the statement reading blocks">R(s)</th>'
             '<th rowspan="2" title="Time spent by the statement writing blocks">W(s)</th>'
@@ -1344,7 +1466,8 @@ BEGIN
       'stmt_tpl',
         '<tr>'
           '<td {mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small></p></td>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
+          '<td>%4$s</td>'
           '<td>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
@@ -1358,17 +1481,24 @@ BEGIN
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
-        '</tr>');
+        '</tr>',
+      'nested_tpl',
+        ' <small title="Nested level">(N)</small>'
+      );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting on top 10 queries by I/O wait time
-    FOR r_result IN c_iowait_time LOOP
+    FOR r_result IN c_iowait_time(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            NULL, --reserved
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
             to_hex(r_result.queryid),
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             r_result.dbname,
+            r_result.username,
             round(CAST(r_result.io_time AS numeric),3),
             round(CAST(r_result.blk_read_time AS numeric),3),
             round(CAST(r_result.blk_write_time AS numeric),3),
@@ -1397,20 +1527,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION top_iowait_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-    IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_iowait_diff_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report      text := '';
     tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) querues ordered by I/O Wait time
-    c_iowait_time CURSOR FOR
+    c_iowait_time CURSOR(topn integer) FOR
     SELECT * FROM (SELECT
         COALESCE(st1.datid,st2.datid) as datid,
-        COALESCE(st1.userid,st2.userid) as userid,
-        COALESCE(st1.queryid,st2.queryid) as queryid,
         COALESCE(st1.dbname,st2.dbname) as dbname,
+        COALESCE(st1.userid,st2.userid) as userid,
+        COALESCE(st1.username,st2.username) as username,
+        COALESCE(st1.queryid,st2.queryid) as queryid,
+        COALESCE(st1.toplevel,st2.toplevel) as toplevel,
         NULLIF(st1.calls, 0) as calls1,
         NULLIF(st1.total_time, 0.0) as total_time1,
         NULLIF(st1.io_time, 0.0) as io_time1,
@@ -1438,13 +1570,14 @@ DECLARE
         row_number() over (ORDER BY st1.io_time DESC NULLS LAST) as rn_iotime1,
         row_number() over (ORDER BY st2.io_time DESC NULLS LAST) as rn_iotime2
     FROM top_statements1 st1
-        FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid)
+        FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid, toplevel)
     WHERE COALESCE(st1.io_time, 0.0) + COALESCE(st2.io_time, 0.0) > 0
     ORDER BY COALESCE(st1.io_time, 0.0) + COALESCE(st2.io_time, 0.0) DESC,
       COALESCE(st1.total_time, 0.0) + COALESCE(st2.total_time, 0.0) DESC,
       COALESCE(st1.queryid,st2.queryid) ASC,
       COALESCE(st1.datid,st2.datid) ASC,
-      COALESCE(st1.userid,st2.userid) ASC
+      COALESCE(st1.userid,st2.userid) ASC,
+      COALESCE(st1.toplevel,st2.toplevel) ASC
     ) t1
     WHERE least(
         rn_iotime1,
@@ -1460,6 +1593,7 @@ BEGIN
           '<tr>'
             '<th rowspan="2">Query ID</th>'
             '<th rowspan="2">Database</th>'
+            '<th rowspan="2">User</th>'
             '<th rowspan="2">I</th>'
             '<th rowspan="2" title="Time spent by the statement reading and writing blocks">IO(s)</th>'
             '<th rowspan="2" title="Time spent by the statement reading blocks">R(s)</th>'
@@ -1483,7 +1617,8 @@ BEGIN
       'stmt_tpl',
         '<tr {interval1}>'
           '<td {rowtdspanhdr_mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small></p></td>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
+          '<td {rowtdspanhdr}>%4$s</td>'
           '<td {rowtdspanhdr}>%s</td>'
           '<td {label} {title1}>1</td>'
           '<td {value}>%s</td>'
@@ -1514,17 +1649,24 @@ BEGIN
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
         '</tr>'
-        '<tr style="visibility:collapse"></tr>');
+        '<tr style="visibility:collapse"></tr>',
+      'nested_tpl',
+        ' <small title="Nested level">(N)</small>'
+      );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting on top 10 queries by I/O wait time
-    FOR r_result IN c_iowait_time LOOP
+    FOR r_result IN c_iowait_time(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            NULL, --reserved
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
             to_hex(r_result.queryid),
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             r_result.dbname,
+            r_result.username,
             round(CAST(r_result.io_time1 AS numeric),3),
             round(CAST(r_result.blk_read_time1 AS numeric),3),
             round(CAST(r_result.blk_write_time1 AS numeric),3),
@@ -1565,7 +1707,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION top_shared_blks_fetched_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
+CREATE FUNCTION top_shared_blks_fetched_htbl(IN report_context jsonb, IN sserver_id integer)
   RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report      text := '';
@@ -1573,24 +1715,29 @@ DECLARE
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) queries ordered by shared_blks_fetched
-    c_shared_blks_fetched CURSOR FOR
+    c_shared_blks_fetched CURSOR(topn integer) FOR
     SELECT
         st.datid,
-        st.userid,
-        st.queryid,
         st.dbname,
+        st.userid,
+        st.username,
+        st.queryid,
+        st.toplevel,
         NULLIF(st.total_time, 0.0) as total_time,
         NULLIF(st.rows, 0) as rows,
         NULLIF(st.shared_blks_fetched, 0) as shared_blks_fetched,
         NULLIF(st.shared_blks_fetched_pct, 0.0) as shared_blks_fetched_pct,
         NULLIF(st.shared_hit_pct, 0.0) as shared_hit_pct,
         NULLIF(st.calls, 0) as calls
-    FROM top_statements st
+    FROM top_statements1 st
     WHERE shared_blks_fetched > 0
     ORDER BY st.shared_blks_fetched DESC,
       st.queryid ASC,
+      st.toplevel ASC,
       st.datid ASC,
-      st.userid ASC
+      st.userid ASC,
+      st.dbname ASC,
+      st.username ASC
     LIMIT topn;
 
     r_result RECORD;
@@ -1601,6 +1748,7 @@ BEGIN
           '<tr>'
             '<th>Query ID</th>'
             '<th>Database</th>'
+            '<th>User</th>'
             '<th title="Shared blocks fetched (read and hit) by the statement">blks fetched</th>'
             '<th title="Shared blocks fetched by this statement as a percentage of all shared blocks fetched in a cluster">%Total</th>'
             '<th title="Shared blocks hits as a percentage of shared blocks fetched (read + hit)">Hits(%)</th>'
@@ -1613,7 +1761,8 @@ BEGIN
       'stmt_tpl',
         '<tr>'
           '<td {mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small></p></td>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
+          '<td>%4$s</td>'
           '<td>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
@@ -1621,18 +1770,25 @@ BEGIN
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
-        '</tr>');
+        '</tr>',
+      'nested_tpl',
+        ' <small title="Nested level">(N)</small>'
+      );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
 
     -- Reporting on top queries by shared_blks_fetched
-    FOR r_result IN c_shared_blks_fetched LOOP
+    FOR r_result IN c_shared_blks_fetched(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            NULL, --reserved
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
             to_hex(r_result.queryid),
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             r_result.dbname,
+            r_result.username,
             r_result.shared_blks_fetched,
             round(CAST(r_result.shared_blks_fetched_pct AS numeric),2),
             round(CAST(r_result.shared_hit_pct AS numeric),2),
@@ -1655,20 +1811,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION top_shared_blks_fetched_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-    IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_shared_blks_fetched_diff_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report      text := '';
     tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) queries ordered by shared_blks_fetched
-    c_shared_blks_fetched CURSOR FOR
+    c_shared_blks_fetched CURSOR(topn integer) FOR
     SELECT * FROM (SELECT
         COALESCE(st1.datid,st2.datid) as datid,
-        COALESCE(st1.userid,st2.userid) as userid,
-        COALESCE(st1.queryid,st2.queryid) as queryid,
         COALESCE(st1.dbname,st2.dbname) as dbname,
+        COALESCE(st1.userid,st2.userid) as userid,
+        COALESCE(st1.username,st2.username) as username,
+        COALESCE(st1.queryid,st2.queryid) as queryid,
+        COALESCE(st1.toplevel,st2.toplevel) as toplevel,
         NULLIF(st1.total_time, 0.0) as total_time1,
         NULLIF(st1.rows, 0) as rows1,
         NULLIF(st1.shared_blks_fetched, 0) as shared_blks_fetched1,
@@ -1684,12 +1842,13 @@ DECLARE
         row_number() over (ORDER BY st1.shared_blks_fetched DESC NULLS LAST) as rn_shared_blks_fetched1,
         row_number() over (ORDER BY st2.shared_blks_fetched DESC NULLS LAST) as rn_shared_blks_fetched2
     FROM top_statements1 st1
-        FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid)
+        FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid, toplevel)
     WHERE COALESCE(st1.shared_blks_fetched, 0) + COALESCE(st2.shared_blks_fetched, 0) > 0
     ORDER BY COALESCE(st1.shared_blks_fetched, 0) + COALESCE(st2.shared_blks_fetched, 0) DESC,
       COALESCE(st1.queryid,st2.queryid) ASC,
       COALESCE(st1.datid,st2.datid) ASC,
-      COALESCE(st1.userid,st2.userid) ASC
+      COALESCE(st1.userid,st2.userid) ASC,
+      COALESCE(st1.toplevel,st2.toplevel) ASC
     ) t1
     WHERE least(
         rn_shared_blks_fetched1,
@@ -1705,6 +1864,7 @@ BEGIN
           '<tr>'
             '<th>Query ID</th>'
             '<th>Database</th>'
+            '<th>User</th>'
             '<th>I</th>'
             '<th title="Shared blocks fetched (read and hit) by the statement">blks fetched</th>'
             '<th title="Shared blocks fetched by this statement as a percentage of all shared blocks fetched in a cluster">%Total</th>'
@@ -1718,7 +1878,8 @@ BEGIN
       'stmt_tpl',
         '<tr {interval1}>'
           '<td {rowtdspanhdr_mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small></p></td>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
+          '<td {rowtdspanhdr}>%4$s</td>'
           '<td {rowtdspanhdr}>%s</td>'
           '<td {label} {title1}>1</td>'
           '<td {value}>%s</td>'
@@ -1737,17 +1898,24 @@ BEGIN
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
         '</tr>'
-        '<tr style="visibility:collapse"></tr>');
+        '<tr style="visibility:collapse"></tr>',
+      'nested_tpl',
+        ' <small title="Nested level">(N)</small>'
+      );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting on top queries by shared_blks_fetched
-    FOR r_result IN c_shared_blks_fetched LOOP
+    FOR r_result IN c_shared_blks_fetched(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            NULL, --reserved
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
             to_hex(r_result.queryid),
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             r_result.dbname,
+            r_result.username,
             r_result.shared_blks_fetched1,
             round(CAST(r_result.shared_blks_fetched_pct1 AS numeric),2),
             round(CAST(r_result.shared_hit_pct1 AS numeric),2),
@@ -1776,32 +1944,37 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION top_shared_reads_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
-  RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_shared_reads_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report      text := '';
     tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top queries ordered by reads
-    c_sh_reads CURSOR FOR
+    c_sh_reads CURSOR(topn integer) FOR
     SELECT
         st.datid,
-        st.userid,
-        st.queryid,
         st.dbname,
+        st.userid,
+        st.username,
+        st.queryid,
+        st.toplevel,
         NULLIF(st.total_time, 0.0) as total_time,
         NULLIF(st.rows, 0) as rows,
         NULLIF(st.shared_blks_read, 0) as shared_blks_read,
         NULLIF(st.read_pct, 0.0) as read_pct,
         NULLIF(st.shared_hit_pct, 0.0) as shared_hit_pct,
         NULLIF(st.calls, 0) as calls
-    FROM top_statements st
+    FROM top_statements1 st
     WHERE st.shared_blks_read > 0
     ORDER BY st.shared_blks_read DESC,
       st.queryid ASC,
+      st.toplevel ASC,
       st.datid ASC,
-      st.userid ASC
+      st.userid ASC,
+      st.dbname ASC,
+      st.username ASC
     LIMIT topn;
 
     r_result RECORD;
@@ -1812,6 +1985,7 @@ BEGIN
           '<tr>'
             '<th>Query ID</th>'
             '<th>Database</th>'
+            '<th>User</th>'
             '<th title="Total number of shared blocks read by the statement">Reads</th>'
             '<th title="Shared blocks read by this statement as a percentage of all shared blocks read in a cluster">%Total</th>'
             '<th title="Shared blocks hits as a percentage of shared blocks fetched (read + hit)">Hits(%)</th>'
@@ -1824,7 +1998,8 @@ BEGIN
       'stmt_tpl',
         '<tr>'
           '<td {mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small></p></td>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
+          '<td>%4$s</td>'
           '<td>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
@@ -1832,18 +2007,25 @@ BEGIN
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
-        '</tr>');
+        '</tr>',
+      'nested_tpl',
+        ' <small title="Nested level">(N)</small>'
+      );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
 
     -- Reporting on top queries by reads
-    FOR r_result IN c_sh_reads LOOP
+    FOR r_result IN c_sh_reads(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            NULL, --reserved
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
             to_hex(r_result.queryid),
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             r_result.dbname,
+            r_result.username,
             r_result.shared_blks_read,
             round(CAST(r_result.read_pct AS numeric),2),
             round(CAST(r_result.shared_hit_pct AS numeric),2),
@@ -1866,20 +2048,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION top_shared_reads_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-    IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_shared_reads_diff_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report      text := '';
     tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) queries ordered by reads
-    c_sh_reads CURSOR FOR
+    c_sh_reads CURSOR(topn integer) FOR
     SELECT * FROM (SELECT
         COALESCE(st1.datid,st2.datid) as datid,
-        COALESCE(st1.userid,st2.userid) as userid,
-        COALESCE(st1.queryid,st2.queryid) as queryid,
         COALESCE(st1.dbname,st2.dbname) as dbname,
+        COALESCE(st1.userid,st2.userid) as userid,
+        COALESCE(st1.username,st2.username) as username,
+        COALESCE(st1.queryid,st2.queryid) as queryid,
+        COALESCE(st1.toplevel,st2.toplevel) as toplevel,
         NULLIF(st1.total_time, 0.0) as total_time1,
         NULLIF(st1.rows, 0) as rows1,
         NULLIF(st1.shared_blks_read, 0.0) as shared_blks_read1,
@@ -1895,12 +2079,13 @@ DECLARE
         row_number() over (ORDER BY st1.shared_blks_read DESC NULLS LAST) as rn_reads1,
         row_number() over (ORDER BY st2.shared_blks_read DESC NULLS LAST) as rn_reads2
     FROM top_statements1 st1
-        FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid)
+        FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid, toplevel)
     WHERE COALESCE(st1.shared_blks_read, 0) + COALESCE(st2.shared_blks_read, 0) > 0
     ORDER BY COALESCE(st1.shared_blks_read, 0) + COALESCE(st2.shared_blks_read, 0) DESC,
       COALESCE(st1.queryid,st2.queryid) ASC,
       COALESCE(st1.datid,st2.datid) ASC,
-      COALESCE(st1.userid,st2.userid) ASC
+      COALESCE(st1.userid,st2.userid) ASC,
+      COALESCE(st1.toplevel,st2.toplevel) ASC
     ) t1
     WHERE least(
         rn_reads1,
@@ -1916,6 +2101,7 @@ BEGIN
           '<tr>'
             '<th>Query ID</th>'
             '<th>Database</th>'
+            '<th>User</th>'
             '<th>I</th>'
             '<th title="Total number of shared blocks read by the statement">Reads</th>'
             '<th title="Shared blocks read by this statement as a percentage of all shared blocks read in a cluster">%Total</th>'
@@ -1929,7 +2115,8 @@ BEGIN
       'stmt_tpl',
         '<tr {interval1}>'
           '<td {rowtdspanhdr_mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small></p></td>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
+          '<td {rowtdspanhdr}>%4$s</td>'
           '<td {rowtdspanhdr}>%s</td>'
           '<td {label} {title1}>1</td>'
           '<td {value}>%s</td>'
@@ -1948,17 +2135,24 @@ BEGIN
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
         '</tr>'
-        '<tr style="visibility:collapse"></tr>');
+        '<tr style="visibility:collapse"></tr>',
+      'nested_tpl',
+        ' <small title="Nested level">(N)</small>'
+      );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting on top queries by reads
-    FOR r_result IN c_sh_reads LOOP
+    FOR r_result IN c_sh_reads(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            NULL, --reserved
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
             to_hex(r_result.queryid),
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             r_result.dbname,
+            r_result.username,
             r_result.shared_blks_read1,
             round(CAST(r_result.read_pct1 AS numeric),2),
             round(CAST(r_result.shared_hit_pct1 AS numeric),2),
@@ -1987,20 +2181,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION top_shared_dirtied_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
-  RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_shared_dirtied_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report      text := '';
     tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top queries ordered by shared dirtied
-    c_sh_dirt CURSOR FOR
+    c_sh_dirt CURSOR(topn integer) FOR
     SELECT
         st.datid,
-        st.userid,
-        st.queryid,
         st.dbname,
+        st.userid,
+        st.username,
+        st.queryid,
+        st.toplevel,
         NULLIF(st.total_time, 0.0) as total_time,
         NULLIF(st.rows, 0) as rows,
         NULLIF(st.shared_blks_dirtied, 0) as shared_blks_dirtied,
@@ -2009,12 +2205,15 @@ DECLARE
         NULLIF(st.wal_bytes, 0) as wal_bytes,
         NULLIF(st.wal_bytes_pct, 0.0) as wal_bytes_pct,
         NULLIF(st.calls, 0) as calls
-    FROM top_statements st
+    FROM top_statements1 st
     WHERE st.shared_blks_dirtied > 0
     ORDER BY st.shared_blks_dirtied DESC,
       st.queryid ASC,
+      st.toplevel ASC,
       st.datid ASC,
-      st.userid ASC
+      st.userid ASC,
+      st.dbname ASC,
+      st.username ASC
     LIMIT topn;
 
     r_result RECORD;
@@ -2025,6 +2224,7 @@ BEGIN
           '<tr>'
             '<th>Query ID</th>'
             '<th>Database</th>'
+            '<th>User</th>'
             '<th title="Total number of shared blocks dirtied by the statement">Dirtied</th>'
             '<th title="Shared blocks dirtied by this statement as a percentage of all shared blocks dirtied in a cluster">%Total</th>'
             '<th title="Shared blocks hits as a percentage of shared blocks fetched (read + hit)">Hits(%)</th>'
@@ -2041,31 +2241,38 @@ BEGIN
       'stmt_tpl',
         '<tr>'
           '<td {mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small></p></td>'
-          '<td>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
+          '<td>%4$s</td>'
+          '<td>%5$s</td>'
+          '<td {value}>%6$s</td>'
           '<td {value}>%7$s</td>'
+          '<td {value}>%8$s</td>'
           '{statement_wal_bytes?wal_row}'
-          '<td {value}>%10$s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
+          '<td {value}>%11$s</td>'
+          '<td {value}>%12$s</td>'
+          '<td {value}>%13$s</td>'
         '</tr>',
+      'nested_tpl',
+        ' <small title="Nested level">(N)</small>',
       'statement_wal_bytes?wal_row',
-        '<td {value}>%8$s</td>'
         '<td {value}>%9$s</td>'
+        '<td {value}>%10$s</td>'
     );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
 
     -- Reporting on top queries by shared dirtied
-    FOR r_result IN c_sh_dirt LOOP
+    FOR r_result IN c_sh_dirt(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            NULL, --reserved
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
             to_hex(r_result.queryid),
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             r_result.dbname,
+            r_result.username,
             r_result.shared_blks_dirtied,
             round(CAST(r_result.dirtied_pct AS numeric),2),
             round(CAST(r_result.shared_hit_pct AS numeric),2),
@@ -2090,20 +2297,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION top_shared_dirtied_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-    IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_shared_dirtied_diff_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report      text := '';
     tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top queries ordered by shared dirtied
-    c_sh_dirt CURSOR FOR
+    c_sh_dirt CURSOR(topn integer) FOR
     SELECT * FROM (SELECT
         COALESCE(st1.datid,st2.datid) as datid,
-        COALESCE(st1.userid,st2.userid) as userid,
-        COALESCE(st1.queryid,st2.queryid) as queryid,
         COALESCE(st1.dbname,st2.dbname) as dbname,
+        COALESCE(st1.userid,st2.userid) as userid,
+        COALESCE(st1.username,st2.username) as username,
+        COALESCE(st1.queryid,st2.queryid) as queryid,
+        COALESCE(st1.toplevel,st2.toplevel) as toplevel,
         NULLIF(st1.total_time, 0.0) as total_time1,
         NULLIF(st1.rows, 0) as rows1,
         NULLIF(st1.shared_blks_dirtied, 0) as shared_blks_dirtied1,
@@ -2123,12 +2332,13 @@ DECLARE
         row_number() over (ORDER BY st1.shared_blks_dirtied DESC NULLS LAST) as rn_dirtied1,
         row_number() over (ORDER BY st2.shared_blks_dirtied DESC NULLS LAST) as rn_dirtied2
     FROM top_statements1 st1
-        FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid)
+        FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid, toplevel)
     WHERE COALESCE(st1.shared_blks_dirtied, 0) + COALESCE(st2.shared_blks_dirtied, 0) > 0
     ORDER BY COALESCE(st1.shared_blks_dirtied, 0) + COALESCE(st2.shared_blks_dirtied, 0) DESC,
       COALESCE(st1.queryid,st2.queryid) ASC,
       COALESCE(st1.datid,st2.datid) ASC,
-      COALESCE(st1.userid,st2.userid) ASC
+      COALESCE(st1.userid,st2.userid) ASC,
+      COALESCE(st1.toplevel,st2.toplevel) ASC
     ) t1
     WHERE least(
         rn_dirtied1,
@@ -2144,6 +2354,7 @@ BEGIN
           '<tr>'
             '<th>Query ID</th>'
             '<th>Database</th>'
+            '<th>User</th>'
             '<th>I</th>'
             '<th title="Total number of shared blocks dirtied by the statement">Dirtied</th>'
             '<th title="Shared blocks dirtied by this statement as a percentage of all shared blocks dirtied in a cluster">%Total</th>'
@@ -2161,45 +2372,52 @@ BEGIN
       'stmt_tpl',
         '<tr {interval1}>'
           '<td {rowtdspanhdr_mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small></p></td>'
-          '<td {rowtdspanhdr}>%s</td>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
+          '<td {rowtdspanhdr}>%4$s</td>'
+          '<td {rowtdspanhdr}>%5$s</td>'
           '<td {label} {title1}>1</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
+          '<td {value}>%6$s</td>'
           '<td {value}>%7$s</td>'
+          '<td {value}>%8$s</td>'
           '{statement_wal_bytes?wal_row1}'
-          '<td {value}>%10$s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
+          '<td {value}>%11$s</td>'
+          '<td {value}>%12$s</td>'
+          '<td {value}>%13$s</td>'
         '</tr>'
         '<tr {interval2}>'
           '<td {label} {title2}>2</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
+          '<td {value}>%14$s</td>'
           '<td {value}>%15$s</td>'
+          '<td {value}>%16$s</td>'
           '{statement_wal_bytes?wal_row2}'
-          '<td {value}>%18$s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
+          '<td {value}>%19$s</td>'
+          '<td {value}>%20$s</td>'
+          '<td {value}>%21$s</td>'
         '</tr>'
         '<tr style="visibility:collapse"></tr>',
+      'nested_tpl',
+        ' <small title="Nested level">(N)</small>',
       'statement_wal_bytes?wal_row1',
-        '<td {value}>%8$s</td>'
-        '<td {value}>%9$s</td>',
+        '<td {value}>%9$s</td>'
+        '<td {value}>%10$s</td>',
       'statement_wal_bytes?wal_row2',
-        '<td {value}>%16$s</td>'
         '<td {value}>%17$s</td>'
+        '<td {value}>%18$s</td>'
     );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting on top queries by shared dirtied
-    FOR r_result IN c_sh_dirt LOOP
+    FOR r_result IN c_sh_dirt(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            NULL, --reserved
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
             to_hex(r_result.queryid),
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             r_result.dbname,
+            r_result.username,
             r_result.shared_blks_dirtied1,
             round(CAST(r_result.dirtied_pct1 AS numeric),2),
             round(CAST(r_result.shared_hit_pct1 AS numeric),2),
@@ -2232,20 +2450,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION top_shared_written_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
-  RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_shared_written_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report      text := '';
     tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top queries ordered by shared written
-    c_sh_wr CURSOR FOR
+    c_sh_wr CURSOR(topn integer) FOR
     SELECT
         st.datid,
-        st.userid,
-        st.queryid,
         st.dbname,
+        st.userid,
+        st.username,
+        st.queryid,
+        st.toplevel,
         NULLIF(st.total_time, 0.0) as total_time,
         NULLIF(st.rows, 0) as rows,
         NULLIF(st.shared_blks_written, 0) as shared_blks_written,
@@ -2253,12 +2473,15 @@ DECLARE
         NULLIF(st.backend_written_pct, 0.0) as backend_written_pct,
         NULLIF(st.shared_hit_pct, 0.0) as shared_hit_pct,
         NULLIF(st.calls, 0) as calls
-    FROM top_statements st
+    FROM top_statements1 st
     WHERE st.shared_blks_written > 0
     ORDER BY st.shared_blks_written DESC,
       st.queryid ASC,
+      st.toplevel ASC,
       st.datid ASC,
-      st.userid ASC
+      st.userid ASC,
+      st.dbname ASC,
+      st.username ASC
     LIMIT topn;
 
     r_result RECORD;
@@ -2269,6 +2492,7 @@ BEGIN
           '<tr>'
             '<th>Query ID</th>'
             '<th>Database</th>'
+            '<th>User</th>'
             '<th title="Total number of shared blocks written by the statement">Written</th>'
             '<th title="Shared blocks written by this statement as a percentage of all shared blocks written in a cluster (sum of pg_stat_bgwriter fields buffers_checkpoint, buffers_clean and buffers_backend)">%Total</th>'
             '<th title="Shared blocks written by this statement as a percentage total buffers written directly by a backends (buffers_backend of pg_stat_bgwriter view)">%BackendW</th>'
@@ -2282,7 +2506,8 @@ BEGIN
       'stmt_tpl',
         '<tr>'
           '<td {mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small></p></td>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
+          '<td>%4$s</td>'
           '<td>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
@@ -2291,18 +2516,25 @@ BEGIN
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
-        '</tr>');
+        '</tr>',
+      'nested_tpl',
+        ' <small title="Nested level">(N)</small>'
+      );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
 
     -- Reporting on top queries by shared written
-    FOR r_result IN c_sh_wr LOOP
+    FOR r_result IN c_sh_wr(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            NULL, --reserved
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
             to_hex(r_result.queryid),
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             r_result.dbname,
+            r_result.username,
             r_result.shared_blks_written,
             round(CAST(r_result.tot_written_pct AS numeric),2),
             round(CAST(r_result.backend_written_pct AS numeric),2),
@@ -2326,20 +2558,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION top_shared_written_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-    IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_shared_written_diff_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report      text := '';
     tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) queries ordered by shared written
-    c_sh_wr CURSOR FOR
+    c_sh_wr CURSOR(topn integer) FOR
     SELECT * FROM (SELECT
         COALESCE(st1.datid,st2.datid) as datid,
-        COALESCE(st1.userid,st2.userid) as userid,
-        COALESCE(st1.queryid,st2.queryid) as queryid,
         COALESCE(st1.dbname,st2.dbname) as dbname,
+        COALESCE(st1.userid,st2.userid) as userid,
+        COALESCE(st1.username,st2.username) as username,
+        COALESCE(st1.queryid,st2.queryid) as queryid,
+        COALESCE(st1.toplevel,st2.toplevel) as toplevel,
         NULLIF(st1.total_time, 0.0) as total_time1,
         NULLIF(st1.rows, 0) as rows1,
         NULLIF(st1.shared_blks_written, 0) as shared_blks_written1,
@@ -2357,12 +2591,13 @@ DECLARE
         row_number() over (ORDER BY st1.shared_blks_written DESC NULLS LAST) as rn_written1,
         row_number() over (ORDER BY st2.shared_blks_written DESC NULLS LAST) as rn_written2
     FROM top_statements1 st1
-        FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid)
+        FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid, toplevel)
     WHERE COALESCE(st1.shared_blks_written, 0) + COALESCE(st2.shared_blks_written, 0) > 0
     ORDER BY COALESCE(st1.shared_blks_written, 0) + COALESCE(st2.shared_blks_written, 0) DESC,
       COALESCE(st1.queryid,st2.queryid) ASC,
       COALESCE(st1.datid,st2.datid) ASC,
-      COALESCE(st1.userid,st2.userid) ASC
+      COALESCE(st1.userid,st2.userid) ASC,
+      COALESCE(st1.toplevel,st2.toplevel) ASC
     ) t1
     WHERE least(
         rn_written1,
@@ -2378,6 +2613,7 @@ BEGIN
           '<tr>'
             '<th>Query ID</th>'
             '<th>Database</th>'
+            '<th>User</th>'
             '<th>I</th>'
             '<th title="Total number of shared blocks written by the statement">Written</th>'
             '<th title="Shared blocks written by this statement as a percentage of all shared blocks written in a cluster (sum of pg_stat_bgwriter fields buffers_checkpoint, buffers_clean and buffers_backend)">%Total</th>'
@@ -2392,7 +2628,8 @@ BEGIN
       'stmt_tpl',
         '<tr {interval1}>'
           '<td {rowtdspanhdr_mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small></p></td>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
+          '<td {rowtdspanhdr}>%4$s</td>'
           '<td {rowtdspanhdr}>%s</td>'
           '<td {label} {title1}>1</td>'
           '<td {value}>%s</td>'
@@ -2413,17 +2650,24 @@ BEGIN
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
         '</tr>'
-        '<tr style="visibility:collapse"></tr>');
+        '<tr style="visibility:collapse"></tr>',
+      'nested_tpl',
+        ' <small title="Nested level">(N)</small>'
+      );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting on top queries by shared written
-    FOR r_result IN c_sh_wr LOOP
+    FOR r_result IN c_sh_wr(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            NULL, --reserved
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
             to_hex(r_result.queryid),
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             r_result.dbname,
+            r_result.username,
             r_result.shared_blks_written1,
             round(CAST(r_result.tot_written_pct1 AS numeric),2),
             round(CAST(r_result.backend_written_pct1 AS numeric),2),
@@ -2454,36 +2698,42 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION top_wal_size_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_wal_size_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report      text := '';
     tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for queries ordered by WAL bytes
-    c_wal_size CURSOR FOR
+    c_wal_size CURSOR(topn integer) FOR
     SELECT
         st.datid,
-        st.userid,
-        st.queryid,
         st.dbname,
+        st.userid,
+        st.username,
+        st.queryid,
+        st.toplevel,
         NULLIF(st.wal_bytes, 0) as wal_bytes,
         NULLIF(st.wal_bytes_pct, 0.0) as wal_bytes_pct,
         NULLIF(st.shared_blks_dirtied, 0) as shared_blks_dirtied,
         NULLIF(st.wal_fpi, 0) as wal_fpi,
         NULLIF(st.wal_records, 0) as wal_records
-    FROM top_statements st
+    FROM top_statements1 st
     WHERE st.wal_bytes > 0
     ORDER BY st.wal_bytes DESC,
       st.queryid ASC,
+      st.toplevel ASC,
       st.datid ASC,
-      st.userid ASC
+      st.userid ASC,
+      st.dbname ASC,
+      st.username ASC
     LIMIT topn;
 
     r_result RECORD;
 BEGIN
     -- This report section is meaningful only when WAL stats is available
-    IF NOT jsonb_extract_path_text(jreportset, 'report_features', 'statement_wal_bytes')::boolean THEN
+    IF NOT jsonb_extract_path_text(report_context, 'report_features', 'statement_wal_bytes')::boolean THEN
       RETURN '';
     END IF;
 
@@ -2493,6 +2743,7 @@ BEGIN
           '<tr>'
             '<th>Query ID</th>'
             '<th>Database</th>'
+            '<th>User</th>'
             '<th title="Total amount of WAL bytes generated by the statement">WAL</th>'
             '<th title="WAL bytes of this statement as a percentage of total WAL bytes generated by a cluster">%Total</th>'
             '<th title="Total number of shared blocks dirtied by the statement">Dirtied</th>'
@@ -2504,25 +2755,32 @@ BEGIN
       'stmt_tpl',
         '<tr>'
           '<td {mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small></p></td>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
+          '<td>%4$s</td>'
           '<td>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
-        '</tr>'
+        '</tr>',
+      'nested_tpl',
+        ' <small title="Nested level">(N)</small>'
       );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting on top queries by elapsed time
-    FOR r_result IN c_wal_size LOOP
+    FOR r_result IN c_wal_size(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            NULL, --reserved
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
             to_hex(r_result.queryid),
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             r_result.dbname,
+            r_result.username,
             pg_size_pretty(r_result.wal_bytes),
             round(CAST(r_result.wal_bytes_pct AS numeric),2),
             r_result.shared_blks_dirtied,
@@ -2544,20 +2802,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION top_wal_size_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-    IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_wal_size_diff_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report      text := '';
     tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top queries ordered by WAL bytes
-    c_wal_size CURSOR FOR
+    c_wal_size CURSOR(topn integer) FOR
     SELECT * FROM (SELECT
         COALESCE(st1.datid,st2.datid) as datid,
-        COALESCE(st1.userid,st2.userid) as userid,
-        COALESCE(st1.queryid,st2.queryid) as queryid,
         COALESCE(st1.dbname,st2.dbname) as dbname,
+        COALESCE(st1.userid,st2.userid) as userid,
+        COALESCE(st1.username,st2.username) as username,
+        COALESCE(st1.queryid,st2.queryid) as queryid,
+        COALESCE(st1.toplevel,st2.toplevel) as toplevel,
         NULLIF(st1.wal_bytes, 0) as wal_bytes1,
         NULLIF(st1.wal_bytes_pct, 0.0) as wal_bytes_pct1,
         NULLIF(st1.shared_blks_dirtied, 0) as shared_blks_dirtied1,
@@ -2571,12 +2831,13 @@ DECLARE
         row_number() over (ORDER BY st1.wal_bytes DESC NULLS LAST) as rn_wal1,
         row_number() over (ORDER BY st2.wal_bytes DESC NULLS LAST) as rn_wal2
     FROM top_statements1 st1
-        FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid)
+        FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid, toplevel)
     WHERE COALESCE(st1.wal_bytes, 0) + COALESCE(st2.wal_bytes, 0) > 0
     ORDER BY COALESCE(st1.wal_bytes, 0) + COALESCE(st2.wal_bytes, 0) DESC,
       COALESCE(st1.queryid,st2.queryid) ASC,
       COALESCE(st1.datid,st2.datid) ASC,
-      COALESCE(st1.userid,st2.userid) ASC
+      COALESCE(st1.userid,st2.userid) ASC,
+      COALESCE(st1.toplevel,st2.toplevel) ASC
     ) t1
     WHERE least(
         rn_wal1,
@@ -2586,7 +2847,7 @@ DECLARE
     r_result RECORD;
 BEGIN
     -- This report section is meaningful only when WAL stats is available
-    IF NOT jsonb_extract_path_text(jreportset, 'report_features', 'statement_wal_bytes')::boolean THEN
+    IF NOT jsonb_extract_path_text(report_context, 'report_features', 'statement_wal_bytes')::boolean THEN
       RETURN '';
     END IF;
 
@@ -2597,6 +2858,7 @@ BEGIN
           '<tr>'
             '<th>Query ID</th>'
             '<th>Database</th>'
+            '<th>User</th>'
             '<th>I</th>'
             '<th title="Total amount of WAL bytes generated by the statement">WAL</th>'
             '<th title="WAL bytes of this statement as a percentage of total WAL bytes generated by a cluster">%Total</th>'
@@ -2609,7 +2871,8 @@ BEGIN
       'stmt_tpl',
         '<tr {interval1}>'
           '<td {rowtdspanhdr_mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small></p></td>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
+          '<td {rowtdspanhdr}>%4$s</td>'
           '<td {rowtdspanhdr}>%s</td>'
           '<td {label} {title1}>1</td>'
           '<td {value}>%s</td>'
@@ -2626,17 +2889,24 @@ BEGIN
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
         '</tr>'
-        '<tr style="visibility:collapse"></tr>');
+        '<tr style="visibility:collapse"></tr>',
+      'nested_tpl',
+        ' <small title="Nested level">(N)</small>'
+      );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting on top queries by shared_blks_fetched
-    FOR r_result IN c_wal_size LOOP
+    FOR r_result IN c_wal_size(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            NULL, --reserved
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
             to_hex(r_result.queryid),
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             r_result.dbname,
+            r_result.username,
             pg_size_pretty(r_result.wal_bytes1),
             round(CAST(r_result.wal_bytes_pct1 AS numeric),2),
             r_result.shared_blks_dirtied1,
@@ -2663,19 +2933,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION top_temp_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_temp_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report      text := '';
     tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) querues ordered by temp usage
-    c_temp CURSOR FOR
+    c_temp CURSOR(topn integer) FOR
     SELECT
         st.datid,
-        st.userid,
-        st.queryid,
         st.dbname,
+        st.userid,
+        st.username,
+        st.queryid,
+        st.toplevel,
         NULLIF(st.total_time, 0.0) as total_time,
         NULLIF(st.rows, 0) as rows,
         NULLIF(st.local_blks_fetched, 0) as local_blks_fetched,
@@ -2689,14 +2962,17 @@ DECLARE
         NULLIF(st.local_blks_read, 0) as local_blks_read,
         NULLIF(st.local_read_total_pct, 0.0) as local_read_total_pct,
         NULLIF(st.calls, 0) as calls
-    FROM top_statements st
+    FROM top_statements1 st
     WHERE COALESCE(st.temp_blks_read, 0) + COALESCE(st.temp_blks_written, 0) +
         COALESCE(st.local_blks_read, 0) + COALESCE(st.local_blks_written, 0) > 0
     ORDER BY COALESCE(st.temp_blks_read, 0) + COALESCE(st.temp_blks_written, 0) +
         COALESCE(st.local_blks_read, 0) + COALESCE(st.local_blks_written, 0) DESC,
       st.queryid ASC,
+      st.toplevel ASC,
       st.datid ASC,
-      st.userid ASC
+      st.userid ASC,
+      st.dbname ASC,
+      st.username ASC
     LIMIT topn;
 
     r_result RECORD;
@@ -2708,6 +2984,7 @@ BEGIN
           '<tr>'
             '<th rowspan="2">Query ID</th>'
             '<th rowspan="2">Database</th>'
+            '<th rowspan="2">User</th>'
             '<th rowspan="2" title="Number of local blocks fetched (hit + read)">Local fetched</th>'
             '<th rowspan="2" title="Local blocks hit percentage">Hits(%)</th>'
             '<th colspan="4" title="Number of blocks, used for temporary tables">Local (blk)</th>'
@@ -2731,7 +3008,8 @@ BEGIN
       'stmt_tpl',
         '<tr>'
           '<td {mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small></p></td>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
+          '<td>%4$s</td>'
           '<td>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
@@ -2746,18 +3024,25 @@ BEGIN
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
-        '</tr>');
+        '</tr>',
+      'nested_tpl',
+        ' <small title="Nested level">(N)</small>'
+      );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
 
     -- Reporting on top queries by temp usage
-    FOR r_result IN c_temp LOOP
+    FOR r_result IN c_temp(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            NULL, --reserved
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
             to_hex(r_result.queryid),
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             r_result.dbname,
+            r_result.username,
             r_result.local_blks_fetched,
             round(CAST(r_result.local_hit_pct AS numeric),2),
             r_result.local_blks_written,
@@ -2787,20 +3072,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION top_temp_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-    IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_temp_diff_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report      text := '';
     tab_row     text := '';
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) querues ordered by temp usage
-    c_temp CURSOR FOR
+    c_temp CURSOR(topn integer) FOR
     SELECT * FROM (SELECT
         COALESCE(st1.datid,st2.datid) as datid,
-        COALESCE(st1.userid,st2.userid) as userid,
-        COALESCE(st1.queryid,st2.queryid) as queryid,
         COALESCE(st1.dbname,st2.dbname) as dbname,
+        COALESCE(st1.userid,st2.userid) as userid,
+        COALESCE(st1.username,st2.username) as username,
+        COALESCE(st1.queryid,st2.queryid) as queryid,
+        COALESCE(st1.toplevel,st2.toplevel) as toplevel,
         NULLIF(st1.total_time, 0.0) as total_time1,
         NULLIF(st1.rows, 0) as rows1,
         NULLIF(st1.local_blks_fetched, 0) as local_blks_fetched1,
@@ -2832,7 +3119,7 @@ DECLARE
         row_number() over (ORDER BY COALESCE(st2.temp_blks_read, 0)+ COALESCE(st2.temp_blks_written, 0)+
           COALESCE(st2.local_blks_read, 0)+ COALESCE(st2.local_blks_written, 0)DESC NULLS LAST) as rn_temp2
     FROM top_statements1 st1
-        FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid)
+        FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid, toplevel)
     WHERE COALESCE(st1.temp_blks_read, 0) + COALESCE(st1.temp_blks_written, 0) +
         COALESCE(st1.local_blks_read, 0) + COALESCE(st1.local_blks_written, 0) +
         COALESCE(st2.temp_blks_read, 0) + COALESCE(st2.temp_blks_written, 0) +
@@ -2843,7 +3130,8 @@ DECLARE
         COALESCE(st2.local_blks_read, 0) + COALESCE(st2.local_blks_written, 0) DESC,
       COALESCE(st1.queryid,st2.queryid) ASC,
       COALESCE(st1.datid,st2.datid) ASC,
-      COALESCE(st1.userid,st2.userid) ASC
+      COALESCE(st1.userid,st2.userid) ASC,
+      COALESCE(st1.toplevel,st2.toplevel) ASC
     ) t1
     WHERE least(
         rn_temp1,
@@ -2859,6 +3147,7 @@ BEGIN
           '<tr>'
             '<th rowspan="2">Query ID</th>'
             '<th rowspan="2">Database</th>'
+            '<th rowspan="2">User</th>'
             '<th rowspan="2">I</th>'
             '<th rowspan="2" title="Number of local blocks fetched (hit + read)">Local fetched</th>'
             '<th rowspan="2" title="Local blocks hit percentage">Hits(%)</th>'
@@ -2883,7 +3172,8 @@ BEGIN
       'stmt_tpl',
         '<tr {interval1}>'
           '<td {rowtdspanhdr_mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small></p></td>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
+          '<td {rowtdspanhdr}>%4$s</td>'
           '<td {rowtdspanhdr}>%s</td>'
           '<td {label} {title1}>1</td>'
           '<td {value}>%s</td>'
@@ -2916,18 +3206,25 @@ BEGIN
           '<td {value}>%s</td>'
           '<td {value}>%s</td>'
         '</tr>'
-        '<tr style="visibility:collapse"></tr>');
+        '<tr style="visibility:collapse"></tr>',
+      'nested_tpl',
+        ' <small title="Nested level">(N)</small>'
+      );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
 
     -- Reporting on top queries by temp usage
-    FOR r_result IN c_temp LOOP
+    FOR r_result IN c_temp(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            NULL, --reserved
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
             to_hex(r_result.queryid),
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
             r_result.dbname,
+            r_result.username,
             r_result.local_blks_fetched1,
             round(CAST(r_result.local_hit_pct1 AS numeric),2),
             r_result.local_blks_written1,
@@ -2989,31 +3286,49 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION report_queries(IN jreportset jsonb, IN sserver_id integer,
-    IN start1_id integer, IN end1_id integer,
-    IN start2_id integer = NULL, IN end2_id integer = NULL
-) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION report_queries(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
-    c_queries CURSOR FOR
+    c_queries CURSOR(start1_id integer, end1_id integer,
+      start2_id integer, end2_id integer, topn integer)
+    FOR
     SELECT
-      left(md5(userid::text || datid::text || queryid::text),10) AS queryid_pgc,
+      queryid,
+      ord,
+      row_span,
       query
     FROM (
       SELECT
-        server_id, queryid, min(sample_id) AS sample_id
-      FROM
-        queries_list ql
-        JOIN sample_statements ss USING (datid, userid, queryid)
-      WHERE
-        ss.server_id = sserver_id
-        AND (
-          sample_id BETWEEN start1_id AND end1_id
-          OR sample_id BETWEEN start2_id AND end2_id
-        )
-      GROUP BY server_id, queryid
-      ) queryid_first
-      JOIN sample_statements q_version USING (server_id, sample_id, queryid)
-      JOIN stmt_list USING (server_id, queryid_md5);
+      queryid,
+      row_number() OVER (PARTITION BY queryid
+        ORDER BY
+          last_sample_id DESC NULLS FIRST,
+          queryid_md5 DESC NULLS FIRST
+        ) ord,
+      -- Calculate a value for statement rowspan atribute
+      least(count(*) OVER (PARTITION BY queryid),3) row_span,
+      query
+      FROM (
+        SELECT DISTINCT
+          server_id,
+          queryid,
+          queryid_md5
+        FROM
+          queries_list ql
+          JOIN sample_statements ss USING (datid, userid, queryid)
+        WHERE
+          ss.server_id = sserver_id
+          AND (
+            sample_id BETWEEN start1_id AND end1_id
+            OR sample_id BETWEEN start2_id AND end2_id
+          )
+      ) queryids
+      JOIN stmt_list USING (server_id, queryid_md5)
+    ) ord_stmt_v
+    WHERE ord <= 3
+    ORDER BY
+      queryid ASC,
+      ord ASC;
 
     qr_result   RECORD;
     report      text := '';
@@ -3032,22 +3347,42 @@ BEGIN
         '</table>',
       'stmt_tpl',
         '<tr>'
-          '<td class="mono hdr" id="%1$s">%1$s</td>'
+          '<td class="mono hdr" id="%1$s" rowspan="%3$s">%1$s</td>'
           '<td {mono}>%2$s</td>'
-        '</tr>');
+        '</tr>',
+      'substmt_tpl',
+        '<tr>'
+          '<td {mono}>%1$s</td>'
+        '</tr>'
+      );
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
 
-    qlen_limit := (jreportset #>> '{report_properties,max_query_length}')::integer;
+    qlen_limit := (report_context #>> '{report_properties,max_query_length}')::integer;
 
-    FOR qr_result IN c_queries LOOP
+    FOR qr_result IN c_queries(
+        (report_context #>> '{report_properties,start1_id}')::integer,
+        (report_context #>> '{report_properties,end1_id}')::integer,
+        (report_context #>> '{report_properties,start2_id}')::integer,
+        (report_context #>> '{report_properties,end2_id}')::integer,
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         query_text := replace(qr_result.query,'<','&lt;');
         query_text := replace(query_text,'>','&gt;');
-        report := report||format(
-            jtab_tpl #>> ARRAY['stmt_tpl'],
-            qr_result.queryid_pgc,
-            left(query_text,qlen_limit)
-        );
+        IF qr_result.ord = 1 THEN
+          report := report||format(
+              jtab_tpl #>> ARRAY['stmt_tpl'],
+              to_hex(qr_result.queryid),
+              left(query_text,qlen_limit),
+              qr_result.row_span
+          );
+        ELSE
+          report := report||format(
+              jtab_tpl #>> ARRAY['substmt_tpl'],
+              left(query_text,qlen_limit)
+          );
+        END IF;
     END LOOP;
 
     IF report != '' THEN

@@ -1,4 +1,4 @@
-CREATE FUNCTION tbl_top_dead_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION tbl_top_dead_htbl(IN report_context jsonb, IN sserver_id integer) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
@@ -57,9 +57,12 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting vacuum stats
-    FOR r_result IN c_tbl_stats(sserver_id, end_id, topn) LOOP
+    FOR r_result IN c_tbl_stats(sserver_id,
+      (report_context #>> '{report_properties,end1_id}')::integer,
+      (report_context #>> '{report_properties,topn}')::integer)
+    LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['row_tpl'],
             r_result.dbname,
@@ -81,13 +84,15 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION tbl_top_mods_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION tbl_top_mods_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
     jtab_tpl    jsonb;
 
     --Cursor for tables stats
-    c_tbl_stats CURSOR (n_id integer, e_id integer, cnt integer) FOR
+    c_tbl_stats CURSOR (n_id integer, e_id integer, cnt integer)
+    FOR
     SELECT
         sample_db.datname AS dbname,
         schemaname,
@@ -145,9 +150,12 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting vacuum stats
-    FOR r_result IN c_tbl_stats(sserver_id, end_id, topn) LOOP
+    FOR r_result IN c_tbl_stats(sserver_id,
+      (report_context #>> '{report_properties,end1_id}')::integer,
+      (report_context #>> '{report_properties,topn}')::integer)
+    LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['row_tpl'],
             r_result.dbname,

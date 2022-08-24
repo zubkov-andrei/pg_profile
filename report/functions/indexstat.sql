@@ -18,7 +18,9 @@ RETURNS TABLE(
     tbl_n_tup_upd       bigint,
     tbl_n_tup_del       bigint,
     tbl_n_tup_hot_upd   bigint,
-    relpagegrowth_bytes bigint
+    relpagegrowth_bytes bigint,
+    idx_blks_read       bigint,
+    idx_blks_fetch      bigint
 )
 SET search_path=@extschema@ AS $$
     SELECT
@@ -38,7 +40,9 @@ SET search_path=@extschema@ AS $$
         sum(tbl.n_tup_upd)::bigint as tbl_n_tup_upd,
         sum(tbl.n_tup_del)::bigint as tbl_n_tup_del,
         sum(tbl.n_tup_hot_upd)::bigint as tbl_n_tup_hot_upd,
-        sum(st.relpages_bytes_diff)::bigint AS relpagegrowth_bytes
+        sum(st.relpages_bytes_diff)::bigint as relpagegrowth_bytes,
+        sum(st.idx_blks_read)::bigint as idx_blks_read,
+        sum(st.idx_blks_hit)::bigint + sum(st.idx_blks_read)::bigint as idx_blks_fetch
     FROM v_sample_stat_indexes st JOIN sample_stat_tables tbl USING (server_id, sample_id, datid, relid)
         -- Database name
         JOIN sample_stat_database sample_db USING (server_id, sample_id, datid)
@@ -52,8 +56,8 @@ SET search_path=@extschema@ AS $$
       COALESCE(mtbl.schemaname,st.schemaname),COALESCE(mtbl.relname||'(TOAST)',st.relname), tablespaces_list.tablespacename,st.indexrelname
 $$ LANGUAGE sql;
 
-CREATE FUNCTION top_growth_indexes_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer,
-  IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_growth_indexes_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
 
@@ -61,7 +65,7 @@ DECLARE
     jtab_tpl    jsonb;
 
     --Cursor for indexes stats
-    c_ix_stats CURSOR FOR
+    c_ix_stats CURSOR(end1_id integer, topn integer) FOR
     SELECT
         st.dbname,
         st.tablespacename,
@@ -75,9 +79,9 @@ DECLARE
         NULLIF(tbl_n_tup_upd - COALESCE(tbl_n_tup_hot_upd,0), 0) as tbl_n_tup_upd,
         NULLIF(tbl_n_tup_del, 0) as tbl_n_tup_del,
         st.relsize_growth_avail
-    FROM top_indexes st
+    FROM top_indexes1 st
         JOIN sample_stat_indexes st_last USING (server_id,datid,indexrelid)
-    WHERE st_last.sample_id = end_id
+    WHERE st_last.sample_id = end1_id
       AND st.best_growth > 0
     ORDER BY st.best_growth DESC,
       COALESCE(tbl_n_tup_ins,0) + COALESCE(tbl_n_tup_upd,0) + COALESCE(tbl_n_tup_del,0) DESC,
@@ -123,9 +127,13 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting table stats
-    FOR r_result IN c_ix_stats LOOP
+    FOR r_result IN c_ix_stats(
+        (report_context #>> '{report_properties,end1_id}')::integer,
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['row_tpl'],
             r_result.dbname,
@@ -155,8 +163,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION top_growth_indexes_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-    IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_growth_indexes_diff_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
 
@@ -164,7 +172,7 @@ DECLARE
     jtab_tpl    jsonb;
 
     --Cursor for indexes stats
-    c_ix_stats CURSOR FOR
+    c_ix_stats CURSOR(end1_id integer, end2_id integer, topn integer) FOR
     SELECT * FROM (SELECT
         COALESCE(ix1.dbname,ix2.dbname) as dbname,
         COALESCE(ix1.tablespacename,ix2.tablespacename) as tablespacename,
@@ -257,9 +265,14 @@ BEGIN
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting table stats
-    FOR r_result IN c_ix_stats LOOP
+    FOR r_result IN c_ix_stats(
+        (report_context #>> '{report_properties,end1_id}')::integer,
+        (report_context #>> '{report_properties,end2_id}')::integer,
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['row_tpl'],
             r_result.dbname,
@@ -300,14 +313,15 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION ix_unused_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION ix_unused_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
 
     jtab_tpl    jsonb;
 
     --Cursor for indexes stats
-    c_ix_stats CURSOR FOR
+    c_ix_stats CURSOR(end1_id integer, topn integer) FOR
     SELECT
         st.dbname,
         st.tablespacename,
@@ -321,9 +335,10 @@ DECLARE
         NULLIF(tbl_n_tup_upd - COALESCE(tbl_n_tup_hot_upd,0), 0) as tbl_n_ind_upd,
         NULLIF(tbl_n_tup_del, 0) as tbl_n_tup_del,
         st.relsize_growth_avail
-    FROM top_indexes st
+    FROM top_indexes1 st
         JOIN sample_stat_indexes st_last using (server_id,datid,indexrelid)
-    WHERE st_last.sample_id=end_id AND COALESCE(st.idx_scan, 0) = 0 AND NOT st.indisunique
+    WHERE st_last.sample_id=end1_id
+      AND COALESCE(st.idx_scan, 0) = 0 AND NOT st.indisunique
       AND COALESCE(tbl_n_tup_ins, 0) + COALESCE(tbl_n_tup_upd, 0) + COALESCE(tbl_n_tup_del, 0) > 0
     ORDER BY
       COALESCE(tbl_n_tup_ins, 0) + COALESCE(tbl_n_tup_upd, 0) + COALESCE(tbl_n_tup_del, 0) DESC,
@@ -369,9 +384,13 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting on top queries by elapsed time
-    FOR r_result IN c_ix_stats LOOP
+    FOR r_result IN c_ix_stats(
+        (report_context #>> '{report_properties,end1_id}')::integer,
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['row_tpl'],
             r_result.dbname,
@@ -402,8 +421,8 @@ END;
 $$ LANGUAGE plpgsql;
 
 
-CREATE FUNCTION top_vacuumed_indexes_htbl(IN jreportset jsonb, IN sserver_id integer, IN start_id integer,
-  IN end_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_vacuumed_indexes_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
 
@@ -411,7 +430,7 @@ DECLARE
     jtab_tpl    jsonb;
 
     --Cursor for indexes stats
-    c_ix_stats CURSOR FOR
+    c_ix_stats CURSOR(start1_id integer, end1_id integer, topn integer) FOR
     SELECT
         st.dbname,
         st.tablespacename,
@@ -427,7 +446,7 @@ DECLARE
         NULLIF(vac.avg_indexrelpages_bytes, 0) as avg_indexrelpages_bytes,
         NULLIF(vac.avg_relpages_bytes, 0) as avg_relpages_bytes,
         vac.relsize_collected as relsize_collected
-    FROM top_indexes st
+    FROM top_indexes1 st
       JOIN (
         SELECT
           server_id,
@@ -461,7 +480,7 @@ DECLARE
         (server_id, sample_id, datid, relid)
         WHERE
           server_id = sserver_id AND
-          sample_id BETWEEN start_id + 1 AND end_id
+          sample_id BETWEEN start1_id + 1 AND end1_id
         GROUP BY
           server_id, datid, indexrelid
       ) vac USING (server_id, datid, indexrelid)
@@ -505,9 +524,14 @@ BEGIN
           '<td {value}>%s</td>'
         '</tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting table stats
-    FOR r_result IN c_ix_stats LOOP
+    FOR r_result IN c_ix_stats(
+        (report_context #>> '{report_properties,start1_id}')::integer,
+        (report_context #>> '{report_properties,end1_id}')::integer,
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['row_tpl'],
             r_result.dbname,
@@ -543,8 +567,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION top_vacuumed_indexes_diff_htbl(IN jreportset jsonb, IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-    IN start2_id integer, IN end2_id integer, IN topn integer) RETURNS text SET search_path=@extschema@ AS $$
+CREATE FUNCTION top_vacuumed_indexes_diff_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report text := '';
 
@@ -552,7 +576,9 @@ DECLARE
     jtab_tpl    jsonb;
 
     --Cursor for indexes stats
-    c_ix_stats CURSOR FOR
+    c_ix_stats CURSOR(start1_id integer, end1_id integer,
+      start2_id integer, end2_id integer, topn integer)
+    FOR
     SELECT * FROM (SELECT
         COALESCE(ix1.dbname,ix2.dbname) as dbname,
         COALESCE(ix1.tablespacename,ix2.tablespacename) as tablespacename,
@@ -714,9 +740,16 @@ BEGIN
         '</tr>'
         '<tr style="visibility:collapse"></tr>');
     -- apply settings to templates
-    jtab_tpl := jsonb_replace(jreportset, jtab_tpl);
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting table stats
-    FOR r_result IN c_ix_stats LOOP
+    FOR r_result IN c_ix_stats(
+        (report_context #>> '{report_properties,start1_id}')::integer,
+        (report_context #>> '{report_properties,end1_id}')::integer,
+        (report_context #>> '{report_properties,start2_id}')::integer,
+        (report_context #>> '{report_properties,end2_id}')::integer,
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
         report := report||format(
             jtab_tpl #>> ARRAY['row_tpl'],
             r_result.dbname,
