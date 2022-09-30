@@ -49,6 +49,7 @@ FROM generate_series(1,20);
 SELECT * FROM profile.dummy_func();
 /* Taking next sample */
 -- (sample 2)
+SELECT pg_sleep(1);
 SELECT server,result FROM profile.take_sample();
 
 /* Check collected data */

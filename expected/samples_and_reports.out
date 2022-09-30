@@ -54,6 +54,12 @@ SELECT * FROM profile.dummy_func();
 
 /* Taking next sample */
 -- (sample 2)
+SELECT pg_sleep(1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
 SELECT server,result FROM profile.take_sample();
  server | result 
 --------+--------

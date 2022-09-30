@@ -79,7 +79,15 @@ BEGIN
           'st.blk_write_time,'
           'NULL as wal_records,'
           'NULL as wal_fpi,'
-          'NULL as wal_bytes '
+          'NULL as wal_bytes, '
+          'NULL as jit_functions, '
+          'NULL as jit_generation_time, '
+          'NULL as jit_inlining_count, '
+          'NULL as jit_inlining_time, '
+          'NULL as jit_optimization_count, '
+          'NULL as jit_optimization_time, '
+          'NULL as jit_emission_count, '
+          'NULL as jit_emission_time '
         );
       WHEN '1.8' THEN
         st_query := replace(st_query, '{statements_fields}',
@@ -111,7 +119,15 @@ BEGIN
           'st.blk_write_time,'
           'st.wal_records,'
           'st.wal_fpi,'
-          'st.wal_bytes '
+          'st.wal_bytes, '
+          'NULL as jit_functions, '
+          'NULL as jit_generation_time, '
+          'NULL as jit_inlining_count, '
+          'NULL as jit_inlining_time, '
+          'NULL as jit_optimization_count, '
+          'NULL as jit_optimization_time, '
+          'NULL as jit_emission_count, '
+          'NULL as jit_emission_time '
         );
       WHEN '1.9' THEN
         st_query := replace(st_query, '{statements_fields}',
@@ -143,7 +159,55 @@ BEGIN
           'st.blk_write_time,'
           'st.wal_records,'
           'st.wal_fpi,'
-          'st.wal_bytes '
+          'st.wal_bytes, '
+          'NULL as jit_functions, '
+          'NULL as jit_generation_time, '
+          'NULL as jit_inlining_count, '
+          'NULL as jit_inlining_time, '
+          'NULL as jit_optimization_count, '
+          'NULL as jit_optimization_time, '
+          'NULL as jit_emission_count, '
+          'NULL as jit_emission_time '
+        );
+      WHEN '1.10' THEN
+        st_query := replace(st_query, '{statements_fields}',
+          'st.toplevel,'
+          'st.plans,'
+          'st.total_plan_time,'
+          'st.min_plan_time,'
+          'st.max_plan_time,'
+          'st.mean_plan_time,'
+          'st.stddev_plan_time,'
+          'st.calls,'
+          'st.total_exec_time,'
+          'st.min_exec_time,'
+          'st.max_exec_time,'
+          'st.mean_exec_time,'
+          'st.stddev_exec_time,'
+          'st.rows,'
+          'st.shared_blks_hit,'
+          'st.shared_blks_read,'
+          'st.shared_blks_dirtied,'
+          'st.shared_blks_written,'
+          'st.local_blks_hit,'
+          'st.local_blks_read,'
+          'st.local_blks_dirtied,'
+          'st.local_blks_written,'
+          'st.temp_blks_read,'
+          'st.temp_blks_written,'
+          'st.blk_read_time,'
+          'st.blk_write_time,'
+          'st.wal_records,'
+          'st.wal_fpi,'
+          'st.wal_bytes, '
+          'st.jit_functions, '
+          'st.jit_generation_time, '
+          'st.jit_inlining_count, '
+          'st.jit_inlining_time, '
+          'st.jit_optimization_count, '
+          'st.jit_optimization_time, '
+          'st.jit_emission_count, '
+          'st.jit_emission_time '
         );
       ELSE
         RAISE 'Unsupported pg_stat_statements extension version.';
@@ -186,7 +250,15 @@ BEGIN
         wal_fpi,
         wal_bytes,
         toplevel,
-        in_sample
+        in_sample,
+        jit_functions,
+        jit_generation_time,
+        jit_inlining_count,
+        jit_inlining_time,
+        jit_optimization_count,
+        jit_optimization_time,
+        jit_emission_count,
+        jit_emission_time
       )
     SELECT
       sserver_id,
@@ -224,7 +296,15 @@ BEGIN
       dbl.wal_fpi,
       dbl.wal_bytes,
       dbl.toplevel,
-      false
+      false,
+      dbl.jit_functions,
+      dbl.jit_generation_time,
+      dbl.jit_inlining_count,
+      dbl.jit_inlining_time,
+      dbl.jit_optimization_count,
+      dbl.jit_optimization_time,
+      dbl.jit_emission_count,
+      dbl.jit_emission_time
     FROM dblink('server_connection',st_query)
     AS dbl (
       -- pg_stat_statements fields
@@ -260,9 +340,18 @@ BEGIN
         blk_write_time      double precision,
         wal_records         bigint,
         wal_fpi             bigint,
-        wal_bytes           numeric
+        wal_bytes           numeric,
+        jit_functions       bigint,
+        jit_generation_time double precision,
+        jit_inlining_count  bigint,
+        jit_inlining_time   double precision,
+        jit_optimization_count  bigint,
+        jit_optimization_time   double precision,
+        jit_emission_count  bigint,
+        jit_emission_time   double precision
       );
-    ANALYZE last_stat_statements;
+    EXECUTE format('ANALYZE last_stat_statements_srv%1$s',
+      sserver_id);
 
     -- Rusage data collection when available
     IF
@@ -459,7 +548,8 @@ BEGIN
         ) JOIN last_stat_statements lss USING (userid, datid, queryid, toplevel)
         WHERE
           (lss.server_id, lss.sample_id) = (sserver_id, s_id);
-        ANALYZE last_stat_kcache;
+        EXECUTE format('ANALYZE last_stat_kcache_srv%1$s',
+          sserver_id);
       END IF; -- st_query is not null
     END IF; -- pg_stat_kcache extension is available
 
@@ -478,7 +568,7 @@ BEGIN
           $o$regexp_replace(query,$i$\s+$i$,$i$ $i$,$i$g$i$) AS query $o$ ||
           'FROM %1$I.pg_stat_statements(true) '
           'WHERE queryid IN (%s)';
-      WHEN '1.9' THEN
+      WHEN '1.9', '1.10' THEN
         st_query :=
           'SELECT userid, dbid, toplevel, queryid, '||
           $o$regexp_replace(query,$i$\s+$i$,$i$ $i$,$i$g$i$) AS query $o$ ||
@@ -552,8 +642,6 @@ BEGIN
         (sserver_id, s_id, qres.userid, qres.datid, qres.toplevel, qres.queryid);
     END LOOP; -- over sample statements
 
-    PERFORM save_pg_stat_statements(sserver_id, s_id);
-
     -- Flushing pg_stat_kcache
     CASE (
         SELECT extversion FROM jsonb_to_recordset(properties #> '{extensions}')
@@ -582,7 +670,7 @@ BEGIN
         WHERE extname = 'pg_stat_statements'
       )
       -- pg_stat_statements v 1.3-1.8
-      WHEN '1.3','1.4','1.5','1.6','1.7','1.8','1.9' THEN
+      WHEN '1.3','1.4','1.5','1.6','1.7','1.8','1.9','1.10' THEN
         SELECT * INTO qres FROM dblink('server_connection',
           format('SELECT %1$I.pg_stat_statements_reset()',
             (
@@ -595,6 +683,12 @@ BEGIN
       ELSE
         RAISE 'Unsupported pg_stat_statements version.';
     END CASE;
+
+    -- Save the diffs in a sample
+    PERFORM save_pg_stat_statements(sserver_id, s_id);
+    -- Delete obsolete last_* data
+    DELETE FROM last_stat_kcache WHERE server_id = sserver_id AND sample_id < s_id;
+    DELETE FROM last_stat_statements WHERE server_id = sserver_id AND sample_id < s_id;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -754,7 +848,15 @@ SET search_path=@extschema@ AS $$
     blk_write_time,
     wal_records,
     wal_fpi,
-    wal_bytes
+    wal_bytes,
+    jit_functions,
+    jit_generation_time,
+    jit_inlining_count,
+    jit_inlining_time,
+    jit_optimization_count,
+    jit_optimization_time,
+    jit_emission_count,
+    jit_emission_time
   )
   SELECT
     sserver_id,
@@ -791,7 +893,15 @@ SET search_path=@extschema@ AS $$
     blk_write_time,
     wal_records,
     wal_fpi,
-    wal_bytes
+    wal_bytes,
+    jit_functions,
+    jit_generation_time,
+    jit_inlining_count,
+    jit_inlining_time,
+    jit_optimization_count,
+    jit_optimization_time,
+    jit_emission_count,
+    jit_emission_time
   FROM
     last_stat_statements JOIN stmt_list USING (server_id, queryid_md5)
   WHERE
@@ -824,7 +934,15 @@ SET search_path=@extschema@ AS $$
     wal_records,
     wal_fpi,
     wal_bytes,
-    statements
+    statements,
+    jit_functions,
+    jit_generation_time,
+    jit_inlining_count,
+    jit_inlining_time,
+    jit_optimization_count,
+    jit_optimization_time,
+    jit_emission_count,
+    jit_emission_time
   )
   SELECT
     server_id,
@@ -850,7 +968,15 @@ SET search_path=@extschema@ AS $$
     sum(lss.wal_records),
     sum(lss.wal_fpi),
     sum(lss.wal_bytes),
-    count(*)
+    count(*),
+    sum(lss.jit_functions),
+    sum(lss.jit_generation_time),
+    sum(lss.jit_inlining_count),
+    sum(lss.jit_inlining_time),
+    sum(lss.jit_optimization_count),
+    sum(lss.jit_optimization_time),
+    sum(lss.jit_emission_count),
+    sum(lss.jit_emission_time)
   FROM
     last_stat_statements lss
     -- In case of already dropped database

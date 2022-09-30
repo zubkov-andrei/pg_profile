@@ -107,6 +107,7 @@ VALUES
 (1, 'dbstat3', 'srvstat', 300, NULL, NULL, NULL, 'dbstats_htbl', NULL, NULL),
 (1, 'sesstat', 'srvstat', 400, 'Session statistics by database', 'Session statistics by database', 'sess_stats', 'dbstats_sessions_htbl', 'db_stat_sessions', NULL),
 (1, 'stmtstat', 'srvstat', 500, 'Statement statistics by database', 'Statement statistics by database', 'statstatements', 'statements_stats_htbl', 'st_stat', NULL),
+(1, 'dbjitstat', 'srvstat', 550, 'JIT statistics by database', 'JIT statistics by database', 'statements_jit_stats', 'dbagg_jit_stats_htbl', 'dbagg_jit_stat', NULL),
 (1, 'div1', 'srvstat', 600, NULL, NULL, NULL, NULL, NULL, '<div>'),
 (1, 'clusthdr', 'srvstat', 700, 'Cluster statistics', 'Cluster statistics', NULL, NULL, 'clu_stat',
   '<div style="display:inline-block; margin-right:2em;">{header}'),
@@ -145,6 +146,7 @@ VALUES
 (1, 'sqlshwr', 'sqlsthdr', 900, 'Top SQL by shared blocks written', 'Top SQL by shared blocks written', NULL, 'top_shared_written_htbl', 'top_shared_written', NULL),
 (1, 'sqlwalsz', 'sqlsthdr', 1000, 'Top SQL by WAL size', 'Top SQL by WAL size', 'statement_wal_bytes', 'top_wal_size_htbl', 'top_wal_bytes', NULL),
 (1, 'sqltmp', 'sqlsthdr', 1100, 'Top SQL by temp usage', 'Top SQL by temp usage', NULL, 'top_temp_htbl', 'top_temp', NULL),
+(1, 'sqljit', 'sqlsthdr', 1150, 'Top SQL by JIT elapsed time', 'Top SQL by JIT elapsed time', 'statements_jit_stats', 'top_jit_htbl', 'top_jit', NULL),
 (1, 'sqlkcachehdr', 'sqlsthdr', 1200, 'rusage statistics', 'rusage statistics', 'kcachestatements', NULL, 'kcache_stat', NULL),
 (1, 'sqllist', 'sqlsthdr', 1300, 'Complete list of SQL texts', 'Complete list of SQL texts', NULL, 'report_queries', 'sql_list', NULL)
 ;
@@ -234,6 +236,7 @@ VALUES
 (2, 'dbstat3', 'srvstat', 300, NULL, NULL, NULL, 'dbstats_diff_htbl', NULL, NULL),
 (2, 'sesstat', 'srvstat', 400, 'Session statistics by database', 'Session statistics by database', 'sess_stats', 'dbstats_sessions_diff_htbl', 'db_stat_sessions', NULL),
 (2, 'stmtstat', 'srvstat', 500, 'Statement statistics by database', 'Statement statistics by database', 'statstatements', 'statements_stats_diff_htbl', 'st_stat', NULL),
+(2, 'dbjitstat', 'srvstat', 550, 'JIT statistics by database', 'JIT statistics by database', 'statements_jit_stats', 'dbagg_jit_stats_diff_htbl', 'dbagg_jit_stat', NULL),
 (2, 'div1', 'srvstat', 600, NULL, NULL, NULL, NULL, NULL, '<div>'),
 (2, 'clusthdr', 'srvstat', 700, 'Cluster statistics', 'Cluster statistics', NULL, NULL, 'clu_stat',
   '<div style="display:inline-block; margin-right:2em;">{header}'),
@@ -272,6 +275,7 @@ VALUES
 (2, 'sqlshwr', 'sqlsthdr', 900, 'Top SQL by shared blocks written', 'Top SQL by shared blocks written', NULL, 'top_shared_written_diff_htbl', 'top_shared_written', NULL),
 (2, 'sqlwalsz', 'sqlsthdr', 1000, 'Top SQL by WAL size', 'Top SQL by WAL size', 'statement_wal_bytes', 'top_wal_size_diff_htbl', 'top_wal_bytes', NULL),
 (2, 'sqltmp', 'sqlsthdr', 1100, 'Top SQL by temp usage', 'Top SQL by temp usage', NULL, 'top_temp_diff_htbl', 'top_temp', NULL),
+(2, 'sqljit', 'sqlsthdr', 1150, 'Top SQL by JIT elapsed time', 'Top SQL by JIT elapsed time', 'statements_jit_stats', 'top_jit_diff_htbl', 'top_jit', NULL),
 (2, 'sqlkcachehdr', 'sqlsthdr', 1200, 'rusage statistics', 'rusage statistics', 'kcachestatements', NULL, 'kcache_stat', NULL),
 (2, 'sqllist', 'sqlsthdr', 1300, 'Complete list of SQL texts', 'Complete list of SQL texts', NULL, 'report_queries', 'sql_list', NULL)
 ;

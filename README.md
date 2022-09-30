@@ -48,10 +48,12 @@ If CPU and filesystem statistics is needed, consider installing *pg_stat_kcache*
 
 ## Supported versions
 ## PostgreSQL
+* **15** supported since version 4.1
 * **14** supported since version 0.3.4
 * **13** supported since version 0.1.3
 * **12** supported since version 0.1.0
 ## _pg_stat_statements_ extension
+* **1.10** supported since version 4.1
 * **1.9** supported since version 4.0
 * **1.8** supported since version 0.1.2
 ## _pg_stat_kcache_ extension

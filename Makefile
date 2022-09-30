@@ -1,4 +1,4 @@
-PGPROFILE_VERSION = 4.0
+PGPROFILE_VERSION = 4.1
 EXTENSION = pg_profile
 
 TAR_pkg = $(EXTENSION)--$(PGPROFILE_VERSION).tar.gz $(EXTENSION)--$(PGPROFILE_VERSION)_manual.tar.gz
@@ -49,7 +49,8 @@ data = data/import_queries.sql \
 	data/report_templates.sql
 common = management/internal.sql
 adm_funcs = management/baseline.sql \
-	management/server.sql
+	management/server.sql \
+	management/local_server.sql
 export_funcs = \
 	management/export.sql
 sample = \

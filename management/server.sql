@@ -16,12 +16,156 @@ BEGIN
     VALUES (server,description,server_connstr,server_enabled,max_sample_age)
     RETURNING server_id INTO sserver_id;
 
+    /*
+    * We might create server sections to avoid concurrency on tables
+    */
+    PERFORM create_server_partitions(sserver_id);
+
     RETURN sserver_id;
 END;
 $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION create_server(IN server name, IN server_connstr text, IN server_enabled boolean,
 IN max_sample_age integer, IN description text) IS 'Create a new server';
+
+CREATE FUNCTION create_server_partitions(IN sserver_id integer) RETURNS integer SET search_path=@extschema@ AS $$
+DECLARE
+    in_extension      boolean;
+BEGIN
+    -- Create last_stat_statements table partition
+    EXECUTE format(
+      'CREATE TABLE last_stat_statements_srv%1$s PARTITION OF last_stat_statements '
+      'FOR VALUES IN (%1$s)',
+      sserver_id);
+    -- PK constraint for new partition
+    EXECUTE format(
+      'ALTER TABLE last_stat_statements_srv%1$s '
+      'ADD CONSTRAINT pk_last_stat_satements_srv%1$s PRIMARY KEY (server_id, sample_id, userid, datid, queryid, toplevel)',
+      sserver_id);
+    /*
+    * Check if partition is already in our extension. This happens when function
+    * is called during CREATE EXTENSION script execution
+    */
+    EXECUTE format('SELECT count(*) = 1 '
+      'FROM pg_depend dep '
+        'JOIN pg_extension ext ON (dep.refobjid = ext.oid) '
+        'JOIN pg_class rel ON (rel.oid = dep.objid AND rel.relkind= ''r'') '
+      'WHERE ext.extname= ''{pg_profile}'' AND rel.relname = ''last_stat_statements_srv%1$s''',
+      sserver_id) INTO in_extension;
+    -- Add partition to extension
+    IF NOT in_extension THEN
+      EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_statements_srv%1$s',
+        sserver_id);
+    END IF;
+    -- Create last_stat_kcache table partition
+    EXECUTE format(
+      'CREATE TABLE last_stat_kcache_srv%1$s PARTITION OF last_stat_kcache '
+      'FOR VALUES IN (%1$s)',
+      sserver_id);
+    EXECUTE format(
+      'ALTER TABLE last_stat_kcache_srv%1$s '
+      'ADD CONSTRAINT pk_last_stat_kcache_srv%1$s PRIMARY KEY (server_id, sample_id, datid, userid, queryid, toplevel), '
+      'ADD CONSTRAINT fk_last_kcache_stmts_srv%1$s FOREIGN KEY '
+        '(server_id, sample_id, datid, userid, queryid, toplevel) REFERENCES '
+        'last_stat_statements_srv%1$s(server_id, sample_id, datid, userid, queryid, toplevel) '
+        'ON DELETE CASCADE',
+      sserver_id);
+    IF NOT in_extension THEN
+      EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_kcache_srv%1$s',
+        sserver_id);
+    END IF;
+
+    -- Create last_stat_database table partition
+    EXECUTE format(
+      'CREATE TABLE last_stat_database_srv%1$s PARTITION OF last_stat_database '
+      'FOR VALUES IN (%1$s)',
+      sserver_id);
+    EXECUTE format(
+      'ALTER TABLE last_stat_database_srv%1$s '
+        'ADD CONSTRAINT pk_last_stat_database_srv%1$s PRIMARY KEY (server_id, sample_id, datid), '
+        'ADD CONSTRAINT fk_last_stat_database_samples_srv%1$s '
+          'FOREIGN KEY (server_id, sample_id) '
+          'REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT',
+        sserver_id);
+    IF NOT in_extension THEN
+      EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_database_srv%1$s',
+        sserver_id);
+    END IF;
+
+    -- Create last_stat_tablespaces table partition
+    EXECUTE format(
+      'CREATE TABLE last_stat_tablespaces_srv%1$s PARTITION OF last_stat_tablespaces '
+      'FOR VALUES IN (%1$s)',
+      sserver_id);
+    EXECUTE format(
+      'ALTER TABLE last_stat_tablespaces_srv%1$s '
+        'ADD CONSTRAINT pk_last_stat_tablespaces_srv%1$s PRIMARY KEY (server_id, sample_id, tablespaceid), '
+        'ADD CONSTRAINT fk_last_stat_tablespaces_samples_srv%1$s '
+          'FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) '
+          'ON DELETE RESTRICT',
+        sserver_id);
+    IF NOT in_extension THEN
+      EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_tablespaces_srv%1$s',
+        sserver_id);
+    END IF;
+
+    -- Create last_stat_tables table partition
+    EXECUTE format(
+      'CREATE TABLE last_stat_tables_srv%1$s PARTITION OF last_stat_tables '
+      'FOR VALUES IN (%1$s)',
+      sserver_id);
+    EXECUTE format(
+      'ALTER TABLE last_stat_tables_srv%1$s '
+        'ADD CONSTRAINT pk_last_stat_tables_srv%1$s '
+          'PRIMARY KEY (server_id, sample_id, datid, relid), '
+        'ADD CONSTRAINT fk_last_stat_tables_dat_srv%1$s '
+          'FOREIGN KEY (server_id, sample_id, datid) '
+          'REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE RESTRICT',
+        sserver_id);
+    IF NOT in_extension THEN
+      EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_tables_srv%1$s',
+        sserver_id);
+    END IF;
+
+    -- Create last_stat_indexes table partition
+    EXECUTE format(
+      'CREATE TABLE last_stat_indexes_srv%1$s PARTITION OF last_stat_indexes '
+      'FOR VALUES IN (%1$s)',
+      sserver_id);
+    EXECUTE format(
+      'ALTER TABLE last_stat_indexes_srv%1$s '
+        'ADD CONSTRAINT pk_last_stat_indexes_srv%1$s '
+          'PRIMARY KEY (server_id, sample_id, datid, indexrelid), '
+        'ADD CONSTRAINT fk_last_stat_indexes_dat_srv%1$s '
+        'FOREIGN KEY (server_id, sample_id, datid) '
+          'REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE RESTRICT',
+        sserver_id);
+    IF NOT in_extension THEN
+      EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_indexes_srv%1$s',
+        sserver_id);
+    END IF;
+
+    -- Create last_stat_user_functions table partition
+    EXECUTE format(
+      'CREATE TABLE last_stat_user_functions_srv%1$s PARTITION OF last_stat_user_functions '
+      'FOR VALUES IN (%1$s)',
+      sserver_id);
+    EXECUTE format(
+      'ALTER TABLE last_stat_user_functions_srv%1$s '
+      'ADD CONSTRAINT pk_last_stat_user_functions_srv%1$s '
+      'PRIMARY KEY (server_id, sample_id, datid, funcid), '
+      'ADD CONSTRAINT fk_last_stat_user_functions_dat_srv%1$s '
+        'FOREIGN KEY (server_id, sample_id, datid) '
+        'REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE RESTRICT',
+        sserver_id);
+    IF NOT in_extension THEN
+      EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_user_functions_srv%1$s',
+        sserver_id);
+    END IF;
+
+    RETURN sserver_id;
+END;
+$$ LANGUAGE plpgsql;
 
 CREATE FUNCTION drop_server(IN server name) RETURNS integer SET search_path=@extschema@ AS $$
 DECLARE
@@ -30,13 +174,43 @@ DECLARE
 BEGIN
     SELECT server_id INTO STRICT dserver_id FROM servers WHERE server_name = server;
     DELETE FROM bl_samples WHERE server_id = dserver_id;
+    EXECUTE format('ALTER EXTENSION {pg_profile} DROP TABLE last_stat_kcache_srv%1$s',
+      dserver_id);
+    EXECUTE format(
+      'DROP TABLE last_stat_kcache_srv%1$s',
+      dserver_id);
+    EXECUTE format('ALTER EXTENSION {pg_profile} DROP TABLE last_stat_statements_srv%1$s',
+      dserver_id);
+    EXECUTE format(
+      'DROP TABLE last_stat_statements_srv%1$s',
+      dserver_id);
+    EXECUTE format('ALTER EXTENSION {pg_profile} DROP TABLE last_stat_database_srv%1$s',
+      dserver_id);
+    EXECUTE format(
+      'DROP TABLE last_stat_database_srv%1$s',
+      dserver_id);
+    EXECUTE format('ALTER EXTENSION {pg_profile} DROP TABLE last_stat_tables_srv%1$s',
+      dserver_id);
+    EXECUTE format(
+      'DROP TABLE last_stat_tables_srv%1$s',
+      dserver_id);
+    EXECUTE format('ALTER EXTENSION {pg_profile} DROP TABLE last_stat_indexes_srv%1$s',
+      dserver_id);
+    EXECUTE format(
+      'DROP TABLE last_stat_indexes_srv%1$s',
+      dserver_id);
+    EXECUTE format('ALTER EXTENSION {pg_profile} DROP TABLE last_stat_tablespaces_srv%1$s',
+      dserver_id);
+    EXECUTE format(
+      'DROP TABLE last_stat_tablespaces_srv%1$s',
+      dserver_id);
+    EXECUTE format('ALTER EXTENSION {pg_profile} DROP TABLE last_stat_user_functions_srv%1$s',
+      dserver_id);
+    EXECUTE format(
+      'DROP TABLE last_stat_user_functions_srv%1$s',
+      dserver_id);
     DELETE FROM last_stat_cluster WHERE server_id = dserver_id;
     DELETE FROM last_stat_wal WHERE server_id = dserver_id;
-    DELETE FROM last_stat_tables WHERE server_id = dserver_id;
-    DELETE FROM last_stat_indexes WHERE server_id = dserver_id;
-    DELETE FROM last_stat_user_functions WHERE server_id = dserver_id;
-    DELETE FROM last_stat_database WHERE server_id = dserver_id;
-    DELETE FROM last_stat_tablespaces WHERE server_id = dserver_id;
     DELETE FROM last_stat_archiver WHERE server_id = dserver_id;
     DELETE FROM sample_stat_tablespaces WHERE server_id = dserver_id;
     DELETE FROM tablespaces_list WHERE server_id = dserver_id;
@@ -49,8 +223,11 @@ BEGIN
         fk_toast_table,
         fk_st_tablespaces_tablespaces,
         fk_st_tables_tables,
+        fk_indexes_tables,
         fk_user_functions_functions,
-        fk_stmt_list
+        fk_stmt_list,
+        fk_kcache_stmt_list,
+        fk_statements_roles
       DEFERRED;
     DELETE FROM samples WHERE server_id = dserver_id;
     SET CONSTRAINTS
@@ -58,8 +235,11 @@ BEGIN
         fk_toast_table,
         fk_st_tablespaces_tablespaces,
         fk_st_tables_tables,
+        fk_indexes_tables,
         fk_user_functions_functions,
-        fk_stmt_list
+        fk_stmt_list,
+        fk_kcache_stmt_list,
+        fk_statements_roles
       IMMEDIATE;
     DELETE FROM servers WHERE server_id = dserver_id;
     GET DIAGNOSTICS del_rows = ROW_COUNT;
@@ -353,8 +533,11 @@ BEGIN
       fk_toast_table,
       fk_st_tablespaces_tablespaces,
       fk_st_tables_tables,
+      fk_indexes_tables,
       fk_user_functions_functions,
-      fk_stmt_list
+      fk_stmt_list,
+      fk_kcache_stmt_list,
+      fk_statements_roles
     DEFERRED;
   DELETE FROM samples dsmp
   USING
@@ -377,8 +560,11 @@ BEGIN
       fk_toast_table,
       fk_st_tablespaces_tablespaces,
       fk_st_tables_tables,
+      fk_indexes_tables,
       fk_user_functions_functions,
-      fk_stmt_list
+      fk_stmt_list,
+      fk_kcache_stmt_list,
+      fk_statements_roles
     IMMEDIATE;
 
   IF smp_delcount > 0 THEN

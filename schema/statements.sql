@@ -47,6 +47,14 @@ CREATE TABLE sample_statements (
     wal_fpi             bigint,
     wal_bytes           numeric,
     toplevel            boolean,
+    jit_functions       bigint,
+    jit_generation_time double precision,
+    jit_inlining_count  bigint,
+    jit_inlining_time   double precision,
+    jit_optimization_count  bigint,
+    jit_optimization_time   double precision,
+    jit_emission_count  bigint,
+    jit_emission_time   double precision,
     CONSTRAINT pk_sample_statements_n PRIMARY KEY (server_id, sample_id, datid, userid, queryid, toplevel),
     CONSTRAINT fk_stmt_list FOREIGN KEY (server_id,queryid_md5)
       REFERENCES stmt_list (server_id,queryid_md5)
@@ -56,6 +64,8 @@ CREATE TABLE sample_statements (
       REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE CASCADE,
     CONSTRAINT fk_statements_roles FOREIGN KEY (server_id, userid)
       REFERENCES roles_list (server_id, userid)
+      ON DELETE NO ACTION ON UPDATE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE
 );
 CREATE INDEX ix_sample_stmts_qid ON sample_statements (server_id,queryid_md5);
 CREATE INDEX ix_sample_stmts_rol ON sample_statements (server_id, userid);
@@ -99,8 +109,16 @@ CREATE TABLE last_stat_statements (
     wal_bytes           numeric,
     toplevel            boolean,
     in_sample           boolean DEFAULT false,
-    CONSTRAINT pk_last_stat_satements PRIMARY KEY (server_id, sample_id, userid, datid, queryid, toplevel)
-);
+    jit_functions       bigint,
+    jit_generation_time double precision,
+    jit_inlining_count  bigint,
+    jit_inlining_time   double precision,
+    jit_optimization_count  bigint,
+    jit_optimization_time   double precision,
+    jit_emission_count  bigint,
+    jit_emission_time   double precision
+)
+PARTITION BY LIST (server_id);
 
 CREATE TABLE sample_statements_total (
     server_id           integer,
@@ -127,6 +145,14 @@ CREATE TABLE sample_statements_total (
     wal_fpi             bigint,
     wal_bytes           numeric,
     statements          bigint,
+    jit_functions       bigint,
+    jit_generation_time double precision,
+    jit_inlining_count  bigint,
+    jit_inlining_time   double precision,
+    jit_optimization_count  bigint,
+    jit_optimization_time   double precision,
+    jit_emission_count  bigint,
+    jit_emission_time   double precision,
     CONSTRAINT pk_sample_statements_total PRIMARY KEY (server_id, sample_id, datid),
     CONSTRAINT fk_statments_t_dat FOREIGN KEY (server_id, sample_id, datid)
       REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE CASCADE

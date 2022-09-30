@@ -162,12 +162,8 @@ CREATE TABLE last_stat_tables(
     in_sample           boolean NOT NULL DEFAULT false,
     relpages_bytes      bigint,
     relpages_bytes_diff bigint
-);
-ALTER TABLE last_stat_tables ADD CONSTRAINT pk_last_stat_tables
-  PRIMARY KEY (server_id, sample_id, datid, relid);
-ALTER TABLE last_stat_tables ADD CONSTRAINT fk_last_stat_tables_dat
-  FOREIGN KEY (server_id, sample_id, datid)
-  REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE RESTRICT;
+)
+PARTITION BY LIST (server_id);
 COMMENT ON TABLE last_stat_tables IS 'Last sample data for calculating diffs in next sample';
 
 CREATE TABLE sample_stat_tables_total (

@@ -521,6 +521,9 @@ BEGIN
         datistemplate boolean
         );
 
+    EXECUTE format('ANALYZE last_stat_database_srv%1$s',
+      sserver_id);
+
     IF (server_properties #>> '{collect_timings}')::boolean THEN
       server_properties := jsonb_set(server_properties,'{timings,collect database stats,end}',to_jsonb(clock_timestamp()));
       server_properties := jsonb_set(server_properties,'{timings,calculate database stats}',jsonb_build_object('start',clock_timestamp()));
@@ -660,7 +663,8 @@ BEGIN
         size_delta              bigint
     );
 
-    ANALYZE last_stat_tablespaces;
+    EXECUTE format('ANALYZE last_stat_tablespaces_srv%1$s',
+      sserver_id);
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
       server_properties := jsonb_set(server_properties,'{timings,collect tablespace stats,end}',to_jsonb(clock_timestamp()));
@@ -1666,7 +1670,8 @@ BEGIN
           relpages_bytes_diff   bigint
       );
 
-      ANALYZE last_stat_tables;
+      EXECUTE format('ANALYZE last_stat_tables_srv%1$s',
+        sserver_id);
 
       IF (result #>> '{collect_timings}')::boolean THEN
         result := jsonb_set(result,ARRAY['timings',format('db:%s collect tables stats',qres.datname),'end'],to_jsonb(clock_timestamp()));
@@ -1769,7 +1774,8 @@ BEGIN
          relpages_bytes_diff  bigint
       );
 
-      ANALYZE last_stat_indexes;
+      EXECUTE format('ANALYZE last_stat_indexes_srv%1$s',
+        sserver_id);
 
       IF (result #>> '{collect_timings}')::boolean THEN
         result := jsonb_set(result,ARRAY['timings',format('db:%s collect indexes stats',qres.datname),'end'],to_jsonb(clock_timestamp()));
@@ -1826,7 +1832,8 @@ BEGIN
          trg_fn       boolean
       );
 
-      ANALYZE last_stat_user_functions;
+      EXECUTE format('ANALYZE last_stat_user_functions_srv%1$s',
+        sserver_id);
 
       PERFORM dblink('server_db_connection', 'COMMIT');
       PERFORM dblink_disconnect('server_db_connection');

@@ -40,11 +40,12 @@ BEGIN
         SELECT rel.oid, rel.relname, array_agg(rel.oid) OVER()
           FROM pg_depend dep
             JOIN pg_extension ext ON (dep.refobjid = ext.oid)
-            JOIN pg_class rel ON (rel.oid = dep.objid AND rel.relkind= 'r')
+            JOIN pg_class rel ON (rel.oid = dep.objid AND rel.relkind IN ('r','p'))
             LEFT OUTER JOIN fkdeps con ON (con.reloid = dep.objid)
           WHERE ext.extname = $1 AND rel.relname NOT IN
               ('import_queries', 'import_queries_version_order',
               'report', 'report_static', 'report_struct')
+            AND NOT rel.relispartition
             AND con.reloid IS NULL
       UNION
       -- and add all tables that have resolved dependencies by previously added tables
@@ -60,11 +61,12 @@ BEGIN
       SELECT rel.oid as reloid, rel.relname, array_agg(con.confrelid), array_agg(rel.oid) OVER()
       FROM pg_depend dep
         JOIN pg_extension ext ON (dep.refobjid = ext.oid)
-        JOIN pg_class rel ON (rel.oid = dep.objid AND rel.relkind= 'r')
+        JOIN pg_class rel ON (rel.oid = dep.objid AND rel.relkind IN ('r','p'))
         JOIN pg_constraint con ON (con.conrelid = dep.objid AND con.contype = 'f')
       WHERE ext.extname = $1 AND rel.relname NOT IN
         ('import_queries', 'import_queries_version_order',
         'report', 'report_static', 'report_struct')
+        AND NOT rel.relispartition
       GROUP BY rel.oid, rel.relname
     )
     SELECT json_agg(row_to_json(tl)) FROM
@@ -192,6 +194,7 @@ DECLARE
   row_proc        bigint;
   rows_processed  bigint = 0;
   new_server_id   integer = null;
+  import_stage    integer = 0;
 
   r_result        RECORD;
 BEGIN
@@ -361,65 +364,82 @@ BEGIN
       RETURNING server_id INTO new_server_id;
       INSERT INTO tmp_srv_map (imp_srv_id,local_srv_id) VALUES
         (r_result.imp_server_id,new_server_id);
+      PERFORM create_server_partitions(new_server_id);
     ELSE
       /* This shouldn't ever happen */
       RAISE 'Import and local servers matching exception';
     END IF;
   END LOOP;
   ANALYZE tmp_srv_map;
-  -- Load tables data
-  FOR r_result IN (
-    -- get most recent versions of queries for importing tables
-    WITH RECURSIVE ver_order (extension,version,level) AS (
+
+  /* Import tables data
+  * We have three stages here:
+  * 1) Common stage for non-partitioned tables
+  * 2) Import independent last_* tables data
+  * 3) Import last_stat_kcache data as it depends on last_stat_statements
+  */
+  import_stage = 0;
+  WHILE import_stage < 3 LOOP
+    FOR r_result IN (
+      -- get most recent versions of queries for importing tables
+      WITH RECURSIVE ver_order (extension,version,level) AS (
+        SELECT
+          extension,
+          version,
+          1 as level
+        FROM import_queries_version_order
+        WHERE extension = import_meta ->> 'extension'
+          AND version = import_meta ->> 'version'
+        UNION ALL
+        SELECT
+          vo.parent_extension,
+          vo.parent_version,
+          vor.level + 1 as level
+        FROM import_queries_version_order vo
+          JOIN ver_order vor ON
+            ((vo.extension, vo.version) = (vor.extension, vor.version))
+        WHERE vo.parent_version IS NOT NULL
+      )
       SELECT
-        extension,
-        version,
-        1 as level
-      FROM import_queries_version_order
-      WHERE extension = import_meta ->> 'extension'
-        AND version = import_meta ->> 'version'
-      UNION ALL
-      SELECT
-        vo.parent_extension,
-        vo.parent_version,
-        vor.level + 1 as level
-      FROM import_queries_version_order vo
-        JOIN ver_order vor ON
-          ((vo.extension, vo.version) = (vor.extension, vor.version))
-      WHERE vo.parent_version IS NOT NULL
+        q.query,
+        q.exec_order,
+        tbllist.section_id as section_id,
+        tbllist.relname
+      FROM
+        ver_order vo JOIN
+        (SELECT min(o.level) as level,vq.extension, vq.relname FROM ver_order o
+        JOIN import_queries vq ON (o.extension, o.version) = (vq.extension, vq.from_version)
+        GROUP BY vq.extension, vq.relname) as min_level ON
+          (vo.extension,vo.level) = (min_level.extension,min_level.level)
+        JOIN import_queries q ON
+          (q.extension,q.from_version,q.relname) = (vo.extension,vo.version,min_level.relname)
+        RIGHT OUTER JOIN jsonb_to_recordset(tables_list) as tbllist(section_id integer, relname text) ON
+          (tbllist.relname = q.relname)
+      WHERE tbllist.relname NOT IN ('servers')
+      ORDER BY tbllist.section_id ASC, q.exec_order ASC
     )
-    SELECT
-      q.query,
-      q.exec_order,
-      tbllist.section_id as section_id,
-      tbllist.relname
-    FROM
-      ver_order vo JOIN
-      (SELECT min(o.level) as level,vq.extension, vq.relname FROM ver_order o
-      JOIN import_queries vq ON (o.extension, o.version) = (vq.extension, vq.from_version)
-      GROUP BY vq.extension, vq.relname) as min_level ON
-        (vo.extension,vo.level) = (min_level.extension,min_level.level)
-      JOIN import_queries q ON
-        (q.extension,q.from_version,q.relname) = (vo.extension,vo.version,min_level.relname)
-      RIGHT OUTER JOIN jsonb_to_recordset(tables_list) as tbllist(section_id integer, relname text) ON
-        (tbllist.relname = q.relname)
-    WHERE tbllist.relname NOT IN ('servers')
-    ORDER BY tbllist.section_id ASC, q.exec_order ASC
-  )
-  LOOP
-    -- Forgotten query for table check
-    IF r_result.query IS NULL THEN
-      RAISE 'There is no import query for relation %', r_result.relname;
-    END IF;
-    -- execute load query for each import relation
-    EXECUTE
-      format(r_result.query,
-        data)
-    USING
-      r_result.section_id;
-    GET DIAGNOSTICS row_proc = ROW_COUNT;
-    rows_processed := rows_processed + row_proc;
-  END LOOP;
+    LOOP
+      CASE import_stage
+        WHEN 0 THEN CONTINUE WHEN r_result.relname LIKE 'last_%';
+        WHEN 1 THEN CONTINUE WHEN r_result.relname NOT LIKE 'last_%' OR
+          r_result.relname = 'last_stat_kcache';
+        WHEN 2 THEN CONTINUE WHEN r_result.relname != 'last_stat_kcache';
+      END CASE;
+      -- Forgotten query for table check
+      IF r_result.query IS NULL THEN
+        RAISE 'There is no import query for relation %', r_result.relname;
+      END IF;
+      -- execute load query for each import relation
+      EXECUTE
+        format(r_result.query,
+          data)
+      USING
+        r_result.section_id;
+      GET DIAGNOSTICS row_proc = ROW_COUNT;
+      rows_processed := rows_processed + row_proc;
+    END LOOP; -- over importing tables
+    import_stage := import_stage + 1; -- next import stage
+  END LOOP; -- over import_stages
 
   RETURN rows_processed;
 END;

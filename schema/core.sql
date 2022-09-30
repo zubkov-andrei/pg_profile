@@ -16,8 +16,6 @@ CREATE TABLE servers (
 );
 COMMENT ON TABLE servers IS 'Monitored servers (Postgres clusters) list';
 
-INSERT INTO servers (server_name,enabled,connstr) VALUES ('local',true,'dbname='||current_database()||' port='||current_setting('port'));
-
 CREATE TABLE samples (
     server_id integer NOT NULL REFERENCES servers(server_id) ON DELETE CASCADE,
     sample_id integer NOT NULL,

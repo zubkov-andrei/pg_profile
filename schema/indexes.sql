@@ -9,7 +9,9 @@ CREATE TABLE indexes_list(
     last_sample_id  integer,
     CONSTRAINT pk_indexes_list PRIMARY KEY (server_id, datid, indexrelid),
     CONSTRAINT fk_indexes_tables FOREIGN KEY (server_id, datid, relid)
-      REFERENCES tables_list(server_id, datid, relid),
+      REFERENCES tables_list(server_id, datid, relid)
+        ON DELETE NO ACTION ON UPDATE CASCADE
+        DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT fk_indexes_list_samples FOREIGN KEY (server_id, last_sample_id)
       REFERENCES samples (server_id, sample_id) ON DELETE CASCADE
 );
@@ -98,11 +100,8 @@ CREATE TABLE last_stat_indexes (
     in_sample           boolean NOT NULL DEFAULT false,
     relpages_bytes      bigint,
     relpages_bytes_diff bigint
-);
-ALTER TABLE last_stat_indexes ADD CONSTRAINT pk_last_stat_indexes PRIMARY KEY (server_id, sample_id, datid, indexrelid);
-ALTER TABLE last_stat_indexes ADD CONSTRAINT fk_last_stat_indexes_dat FOREIGN KEY (server_id, sample_id, datid)
--- Restrict deleting last data sample
-  REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE RESTRICT;
+)
+PARTITION BY LIST (server_id);
 COMMENT ON TABLE last_stat_indexes IS 'Last sample data for calculating diffs in next sample';
 
 CREATE TABLE sample_stat_indexes_total (

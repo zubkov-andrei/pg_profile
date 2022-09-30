@@ -63,7 +63,15 @@ RETURNS TABLE(
     user_time               double precision,
     system_time             double precision,
     reads                   bigint,
-    writes                  bigint
+    writes                  bigint,
+    jit_functions           bigint,
+    jit_generation_time     double precision,
+    jit_inlining_count      bigint,
+    jit_inlining_time       double precision,
+    jit_optimization_count  bigint,
+    jit_optimization_time   double precision,
+    jit_emission_count      bigint,
+    jit_emission_time       double precision
 ) SET search_path=@extschema@ AS $$
     WITH
       tot AS (
@@ -105,9 +113,9 @@ RETURNS TABLE(
         (sum(st.calls)*100/NULLIF(min(tot.calls), 0))::float as calls_pct,
         (sum(st.total_exec_time) + COALESCE(sum(st.total_plan_time), 0.0))/1000 as total_time,
         (sum(st.total_exec_time) + COALESCE(sum(st.total_plan_time), 0.0))*100/NULLIF(min(tot.total_time), 0) as total_time_pct,
-        sum(st.total_plan_time)/1000 as total_plan_time,
+        sum(st.total_plan_time)/1000::double precision as total_plan_time,
         sum(st.total_plan_time)*100/NULLIF(sum(st.total_exec_time) + COALESCE(sum(st.total_plan_time), 0.0), 0) as plan_time_pct,
-        sum(st.total_exec_time)/1000 as total_exec_time,
+        sum(st.total_exec_time)/1000::double precision as total_exec_time,
         sum(st.total_exec_time)*100/NULLIF(min(tot.total_time), 0) as total_exec_time_pct,
         sum(st.total_exec_time)*100/NULLIF(sum(st.total_exec_time) + COALESCE(sum(st.total_plan_time), 0.0), 0) as exec_time_pct,
         min(st.min_exec_time) as min_exec_time,
@@ -138,9 +146,9 @@ RETURNS TABLE(
         sum(st.local_blks_written)::bigint as local_blks_written,
         sum(st.temp_blks_read)::bigint as temp_blks_read,
         sum(st.temp_blks_written)::bigint as temp_blks_written,
-        sum(st.blk_read_time)/1000 as blk_read_time,
-        sum(st.blk_write_time)/1000 as blk_write_time,
-        (sum(st.blk_read_time) + sum(st.blk_write_time))/1000 as io_time,
+        sum(st.blk_read_time)/1000::double precision as blk_read_time,
+        sum(st.blk_write_time)/1000::double precision as blk_write_time,
+        (sum(st.blk_read_time) + sum(st.blk_write_time))/1000::double precision as io_time,
         (sum(st.blk_read_time) + sum(st.blk_write_time)) * 100 / NULLIF(min(tot.blk_read_time) + min(tot.blk_write_time),0) as io_time_pct,
         (sum(st.temp_blks_read) * 100 / NULLIF(min(tot.temp_blks_read), 0))::float as temp_read_total_pct,
         (sum(st.temp_blks_written) * 100 / NULLIF(min(tot.temp_blks_written), 0))::float as temp_write_total_pct,
@@ -154,7 +162,15 @@ RETURNS TABLE(
         COALESCE(sum(kc.exec_user_time), 0.0) + COALESCE(sum(kc.plan_user_time), 0.0) as user_time,
         COALESCE(sum(kc.exec_system_time), 0.0) + COALESCE(sum(kc.plan_system_time), 0.0) as system_time,
         (COALESCE(sum(kc.exec_reads), 0) + COALESCE(sum(kc.plan_reads), 0))::bigint as reads,
-        (COALESCE(sum(kc.exec_writes), 0) + COALESCE(sum(kc.plan_writes), 0))::bigint as writes
+        (COALESCE(sum(kc.exec_writes), 0) + COALESCE(sum(kc.plan_writes), 0))::bigint as writes,
+        sum(st.jit_functions)::bigint AS jit_functions,
+        sum(st.jit_generation_time)/1000::double precision AS jit_generation_time,
+        sum(st.jit_inlining_count)::bigint AS jit_inlining_count,
+        sum(st.jit_inlining_time)/1000::double precision AS jit_inlining_time,
+        sum(st.jit_optimization_count)::bigint AS jit_optimization_count,
+        sum(st.jit_optimization_time)/1000::double precision AS jit_optimization_time,
+        sum(st.jit_emission_count)::bigint AS jit_emission_count,
+        sum(st.jit_emission_time)/1000::double precision AS jit_emission_time
     FROM sample_statements st
         -- User name
         JOIN roles_list rl USING (server_id, userid)
@@ -176,6 +192,419 @@ RETURNS TABLE(
       st.toplevel
 $$ LANGUAGE sql;
 
+CREATE FUNCTION top_jit_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
+DECLARE
+    report      text := '';
+    tab_row     text := '';
+    jtab_tpl    jsonb;
+    r_result RECORD;
+
+    --Cursor for top(cnt) queries ordered by JIT total time
+    c_jit_time CURSOR(topn integer) FOR
+    SELECT * FROM (SELECT
+        st.datid,
+        st.dbname,
+        st.userid,
+        st.username,
+        st.queryid,
+        st.toplevel,
+        NULLIF(st.total_plan_time, 0) as total_plan_time,
+        NULLIF(st.total_exec_time, 0) as total_exec_time,
+        NULLIF(st.io_time, 0) as io_time,
+        NULLIF(st.blk_read_time, 0.0) as blk_read_time,
+        NULLIF(st.blk_write_time, 0.0) as blk_write_time,
+        NULLIF(st.jit_functions, 0) as jit_functions,
+        NULLIF(st.jit_generation_time, 0) as jit_generation_time,
+        NULLIF(st.jit_inlining_count, 0) as jit_inlining_count,
+        NULLIF(st.jit_inlining_time, 0) as jit_inlining_time,
+        NULLIF(st.jit_optimization_count, 0) as jit_optimization_count,
+        NULLIF(st.jit_optimization_time, 0) as jit_optimization_time,
+        NULLIF(st.jit_emission_count, 0) as jit_emission_count,
+        NULLIF(st.jit_emission_time, 0) as jit_emission_time,
+        st.jit_generation_time + st.jit_inlining_time + st.jit_optimization_time + st.jit_emission_time as jit_total_time,
+        row_number() over(order by st.total_exec_time DESC NULLS LAST) as num_exec_time,
+        row_number() over(order by st.total_time DESC NULLS LAST) as num_total_time
+    FROM top_statements1 st
+    ORDER BY (st.jit_generation_time + st.jit_inlining_time + st.jit_optimization_time + st.jit_emission_time) DESC NULLS LAST,
+      st.queryid ASC,
+      st.toplevel ASC,
+      st.datid ASC,
+      st.userid ASC,
+      st.dbname ASC,
+      st.username ASC
+      ) t1
+    WHERE jit_functions + jit_inlining_count + jit_optimization_count + jit_emission_count > 0
+      AND least(
+          num_exec_time,
+          num_total_time
+          ) <= topn;
+BEGIN
+    jtab_tpl := jsonb_build_object(
+      'tab_hdr',
+        '<table {stattbl}>'
+          '<tr>'
+            '<th rowspan="2">Query ID</th>'
+            '<th rowspan="2">Database</th>'
+            '<th rowspan="2">User</th>'
+            '<th rowspan="2" title="Total time spent on JIT in seconds">JIT total (s)</th>'
+            '<th colspan="2">Generation</th>'
+            '<th colspan="2">Inlining</th>'
+            '<th colspan="2">Optimization</th>'
+            '<th colspan="2">Emission</th>'
+            '<th colspan="{planning_times?planning_colspan}">Time (s)</th>'
+            '{io_times?iotime_hdr1}'
+          '</tr>'
+          '<tr>'
+            '<th title="Total number of functions JIT-compiled by the statement.">Count</th>'
+            '<th title="Total time spent by the statement on generating JIT code, in seconds.">Time (s)</th>'
+            '<th title="Number of times functions have been inlined.">Count</th>'
+            '<th title="Total time spent by the statement on inlining functions, in seconds.">Time (s)</th>'
+            '<th title="Number of times the statement has been optimized.">Count</th>'
+            '<th title="Total time spent by the statement on optimizing, in seconds.">Time (s)</th>'
+            '<th title="Number of times code has been emitted.">Count</th>'
+            '<th title="Total time spent by the statement on emitting code, in seconds.">Time (s)</th>'
+            '{planning_times?planning_hdr}'
+            '<th title="Time spent executing statement">Exec</th>'
+            '{io_times?iotime_hdr2}'
+          '</tr>'
+          '{rows}'
+        '</table>',
+      'stmt_tpl',
+        '<tr>'
+          '<td class="mono hdr" id="%20$s"><p><a HREF="#%2$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
+          '<td>%4$s</td>'
+          '<td>%5$s</td>'
+          '<td {value}>%6$s</td>'
+          '<td {value}>%12$s</td>'
+          '<td {value}>%13$s</td>'
+          '<td {value}>%14$s</td>'
+          '<td {value}>%15$s</td>'
+          '<td {value}>%16$s</td>'
+          '<td {value}>%17$s</td>'
+          '<td {value}>%18$s</td>'
+          '<td {value}>%19$s</td>'
+          '{planning_times?planning_row}'
+          '<td {value}>%9$s</td>'
+          '{io_times?iotime_row}'
+        '</tr>',
+      'nested_tpl',
+        ' <small title="Nested level">(N)</small>',
+      'planning_times?planning_colspan','2',
+      'planning_times?planning_hdr',
+        '<th title="Time spent planning statement">Plan</th>',
+      'planning_times?planning_row',
+        '<td {value}>%8$s</td>',
+      'io_times?iotime_hdr1',
+        '<th colspan="2">I/O time (s)</th>',
+      'io_times?iotime_hdr2',
+        '<th title="Time spent reading blocks by statement">Read</th>'
+        '<th title="Time spent writing blocks by statement">Write</th>',
+      'io_times?iotime_row',
+        '<td {value}>%10$s</td>'
+        '<td {value}>%11$s</td>'
+      );
+
+    -- apply settings to templates
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
+
+    -- Reporting on top queries
+    FOR r_result IN c_jit_time(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
+        tab_row := format(
+            jtab_tpl #>> ARRAY['stmt_tpl'],
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,  -- 1
+            to_hex(r_result.queryid), -- 2
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10), -- 3
+            r_result.dbname, -- 4
+            r_result.username, -- 5
+            round(CAST(r_result.jit_total_time AS numeric), 2), -- 6
+            round(CAST(r_result.total_plan_time + r_result.total_exec_time AS numeric),2), -- 7
+            round(CAST(r_result.total_plan_time AS numeric),2),  -- 8
+            round(CAST(r_result.total_exec_time AS numeric),2),  -- 9
+            round(CAST(r_result.blk_read_time AS numeric),2), -- 10
+            round(CAST(r_result.blk_write_time AS numeric),2), -- 11
+            r_result.jit_functions, -- 12
+            round(CAST(r_result.jit_generation_time AS numeric),2), -- 13
+            r_result.jit_inlining_count, -- 14
+            round(CAST(r_result.jit_inlining_time AS numeric),2), -- 15
+            r_result.jit_optimization_count, -- 16
+            round(CAST(r_result.jit_optimization_time AS numeric),2), -- 17
+            r_result.jit_emission_count, -- 18
+            round(CAST(r_result.jit_emission_time AS numeric),2), -- 19
+            format(
+                'jit_%s_%s_%s_%s',
+                to_hex(r_result.queryid),
+                r_result.datid::text,
+                r_result.userid::text,
+                r_result.toplevel::text)  -- 20
+        );
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid
+        );
+    END LOOP;
+
+    IF report != '' THEN
+        RETURN replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
+    ELSE
+        RETURN '';
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE FUNCTION top_jit_diff_htbl(IN report_context jsonb, IN sserver_id integer)
+RETURNS text SET search_path=@extschema@ AS $$
+DECLARE
+    report      text := '';
+    tab_row     text := '';
+    jtab_tpl    jsonb;
+
+    --Cursor for top(cnt) queries ordered by JIT total time
+    c_jit_time CURSOR(topn integer) FOR
+    SELECT * FROM (SELECT
+        COALESCE(st1.datid,st2.datid) as datid,
+        COALESCE(st1.dbname,st2.dbname) as dbname,
+        COALESCE(st1.userid,st2.userid) as userid,
+        COALESCE(st1.username,st2.username) as username,
+        COALESCE(st1.queryid,st2.queryid) as queryid,
+        COALESCE(st1.toplevel,st2.toplevel) as toplevel,
+
+        -- top_statements1
+        NULLIF(st1.total_plan_time, 0.0) as total_plan_time1,
+        NULLIF(st1.total_exec_time, 0.0) as total_exec_time1,
+        NULLIF(st1.jit_generation_time + st1.jit_inlining_time +
+          st1.jit_optimization_time + st1.jit_emission_time, 0) as total_jit_time1,
+        NULLIF(st1.jit_functions, 0) as jit_functions1,
+        NULLIF(st1.jit_generation_time, 0) as jit_generation_time1,
+        NULLIF(st1.jit_inlining_count, 0) as jit_inlining_count1,
+        NULLIF(st1.jit_inlining_time, 0) as jit_inlining_time1,
+        NULLIF(st1.jit_optimization_count, 0) as jit_optimization_count1,
+        NULLIF(st1.jit_optimization_time, 0) as jit_optimization_time1,
+        NULLIF(st1.jit_emission_count, 0) as jit_emission_count1,
+        NULLIF(st1.jit_emission_time, 0) as jit_emission_time1,
+        NULLIF(st1.blk_read_time, 0.0) as blk_read_time1,
+        NULLIF(st1.blk_write_time, 0.0) as blk_write_time1,
+
+        -- top_statements2
+        NULLIF(st2.total_time, 0.0) as total_time2,
+        NULLIF(st2.total_time_pct, 0.0) as total_time_pct2,
+        NULLIF(st2.total_plan_time, 0.0) as total_plan_time2,
+        NULLIF(st2.total_exec_time, 0.0) as total_exec_time2,
+        NULLIF(st2.jit_generation_time + st2.jit_inlining_time +
+          st2.jit_optimization_time + st2.jit_emission_time, 0) as total_jit_time2,
+        NULLIF(st2.jit_functions, 0) as jit_functions2,
+        NULLIF(st2.jit_generation_time, 0) as jit_generation_time2,
+        NULLIF(st2.jit_inlining_count, 0) as jit_inlining_count2,
+        NULLIF(st2.jit_inlining_time, 0) as jit_inlining_time2,
+        NULLIF(st2.jit_optimization_count, 0) as jit_optimization_count2,
+        NULLIF(st2.jit_optimization_time, 0) as jit_optimization_time2,
+        NULLIF(st2.jit_emission_count, 0) as jit_emission_count2,
+        NULLIF(st2.jit_emission_time, 0) as jit_emission_time2,
+        NULLIF(st2.blk_read_time, 0.0) as blk_read_time2,
+        NULLIF(st2.blk_write_time, 0.0) as blk_write_time2,
+
+        -- other
+        row_number() over (ORDER BY st1.total_exec_time DESC NULLS LAST) as num_exec_time1,
+        row_number() over (ORDER BY st2.total_exec_time DESC NULLS LAST) as num_exec_time2,
+        row_number() over (ORDER BY st1.total_time DESC NULLS LAST) as num_total_time1,
+        row_number() over (ORDER BY st2.total_time DESC NULLS LAST) as num_total_time2
+
+    FROM top_statements1 st1
+        FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid, toplevel)
+    ORDER BY
+        COALESCE(st1.jit_generation_time + st1.jit_inlining_time + st1.jit_optimization_time + st1.jit_emission_time, 0) +
+        COALESCE(st2.jit_generation_time + st2.jit_inlining_time + st2.jit_optimization_time + st2.jit_emission_time, 0) DESC,
+        COALESCE(st1.queryid,st2.queryid) ASC,
+        COALESCE(st1.datid,st2.datid) ASC,
+        COALESCE(st1.userid,st2.userid) ASC,
+        COALESCE(st1.toplevel,st2.toplevel) ASC
+    ) t1
+    WHERE
+        COALESCE(jit_functions1 + jit_inlining_count1 + jit_optimization_count1 + jit_emission_count1, 0) +
+        COALESCE(jit_functions2 + jit_inlining_count2 + jit_optimization_count2 + jit_emission_count2, 0) > 0
+      AND least(
+          num_exec_time1,
+          num_exec_time1,
+          num_total_time1,
+          num_total_time2
+          ) <= topn;
+
+BEGIN
+    jtab_tpl := jsonb_build_object(
+      'tab_hdr',
+        '<table {difftbl}>'
+          '<tr>'
+            '<th rowspan="2">Query ID</th>'
+            '<th rowspan="2">Database</th>'
+            '<th rowspan="2">User</th>'
+            '<th rowspan="2">I</th>'
+            '<th rowspan="2" title="Total time spent on JIT in seconds">JIT total (s)</th>'
+            '<th colspan="2">Generation</th>'
+            '<th colspan="2">Inlining</th>'
+            '<th colspan="2">Optimization</th>'
+            '<th colspan="2">Emission</th>'
+           '<th colspan="{planning_times?planning_colspan}">Time (s)</th>'
+            '{io_times?iotime_hdr1}'
+          '</tr>'
+          '<tr>'
+            '<th title="Total number of functions JIT-compiled by the statement.">Count</th>'
+            '<th title="Total time spent by the statement on generating JIT code, in seconds.">Time (s)</th>'
+            '<th title="Number of times functions have been inlined.">Count</th>'
+            '<th title="Total time spent by the statement on inlining functions, in seconds.">Time (s)</th>'
+            '<th title="Number of times the statement has been optimized.">Count</th>'
+            '<th title="Total time spent by the statement on optimizing, in seconds.">Time (s)</th>'
+            '<th title="Number of times code has been emitted.">Count</th>'
+            '<th title="Total time spent by the statement on emitting code, in seconds.">Time (s)</th>'
+            '{planning_times?planning_hdr}'
+            '<th title="Time spent executing statement">Exec</th>'
+            '{io_times?iotime_hdr2}'
+          '</tr>'
+          '{rows}'
+        '</table>',
+      'stmt_tpl',
+          '<tr {interval1}>'
+          '<td {rowtdspanhdr_mono} id="%34$s"><p><a HREF="#%2$s">%2$s</a></p>'
+          '<p><small>[%3$s]</small>%1$s</p></td>'
+          '<td {rowtdspanhdr}>%4$s</td>'
+          '<td {rowtdspanhdr}>%5$s</td>'
+          '<td {label} {title1}>1</td>'
+          '<td {value}>%6$s</td>'
+          '<td {value}>%7$s</td>'
+          '<td {value}>%8$s</td>'
+          '<td {value}>%9$s</td>'
+          '<td {value}>%10$s</td>'
+          '<td {value}>%11$s</td>'
+          '<td {value}>%12$s</td>'
+          '<td {value}>%13$s</td>'
+          '<td {value}>%14$s</td>'
+          '{planning_times?planning_row1}'
+          '<td {value}>%17$s</td>'
+          '{io_times?iotime_row1}'
+        '</tr>'
+        '<tr {interval2}>'
+          '<td {label} {title2}>2</td>'
+          '<td {value}>%20$s</td>'
+          '<td {value}>%21$s</td>'
+          '<td {value}>%22$s</td>'
+          '<td {value}>%23$s</td>'
+          '<td {value}>%24$s</td>'
+          '<td {value}>%25$s</td>'
+          '<td {value}>%26$s</td>'
+          '<td {value}>%27$s</td>'
+          '<td {value}>%28$s</td>'
+          '{planning_times?planning_row2}'
+          '<td {value}>%31$s</td>'
+          '{io_times?iotime_row2}'
+        '</tr>'
+        '<tr style="visibility:collapse"></tr>',
+      'nested_tpl',
+        '<small title="Nested level">(N)</small>',
+      'planning_times?planning_colspan', '2',
+      'planning_times?planning_hdr',
+        '<th title="Time spent planning statement">Plan</th>',
+      'planning_times?planning_row1',
+        '<td {value}>%16$s</td>',
+      'planning_times?planning_row2',
+        '<td {value}>%30$s</td>',
+      'io_times?iotime_hdr1',
+        '<th colspan="2">I/O time (s)</th>',
+      'io_times?iotime_hdr2',
+        '<th title="Time spent reading blocks by statement">Read</th>'
+        '<th title="Time spent writing blocks by statement">Write</th>',
+      'io_times?iotime_row1',
+        '<td {value}>%18$s</td>'
+        '<td {value}>%19$s</td>',
+      'io_times?iotime_row2',
+        '<td {value}>%32$s</td>'
+        '<td {value}>%33$s</td>'
+    );
+
+    -- apply settings to templates
+    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
+
+    -- Reporting on top queries
+    FOR r_result IN c_jit_time(
+        (report_context #>> '{report_properties,topn}')::integer
+      )
+    LOOP
+        tab_row := format(
+            jtab_tpl #>> ARRAY['stmt_tpl'],
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END, -- 1
+            to_hex(r_result.queryid), -- 2
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10), -- 3
+            r_result.dbname, -- 4
+            r_result.username, -- 5
+
+            -- Sample 1
+            -- JIT statistics
+            round(CAST(r_result.total_jit_time1 AS numeric),2), -- 6
+            r_result.jit_functions1, -- 7
+            round(CAST(r_result.jit_generation_time1 AS numeric),2), -- 8
+            r_result.jit_inlining_count1, -- 9
+            round(CAST(r_result.jit_inlining_time1 AS numeric),2), -- 10
+            r_result.jit_optimization_count1, -- 11
+            round(CAST(r_result.jit_optimization_time1 AS numeric),2), -- 12
+            r_result.jit_emission_count1, -- 13
+            round(CAST(r_result.jit_emission_time1 AS numeric),2), -- 14
+
+            -- Time
+            round(CAST(r_result.total_plan_time1 + r_result.total_exec_time1 AS numeric),2), -- 15
+            round(CAST(r_result.total_plan_time1 AS numeric),2),  -- 16
+            round(CAST(r_result.total_exec_time1 AS numeric),2),  -- 17
+
+            -- IO Time
+            round(CAST(r_result.blk_read_time1 AS numeric),2), -- 18
+            round(CAST(r_result.blk_write_time1 AS numeric),2), -- 19
+
+            -- Sample 2
+            -- JIT statistics
+            round(CAST(r_result.total_jit_time2 AS numeric),2), -- 20
+            r_result.jit_functions2, -- 21
+            round(CAST(r_result.jit_generation_time2 AS numeric),2), -- 22
+            r_result.jit_inlining_count2, -- 23
+            round(CAST(r_result.jit_inlining_time2 AS numeric),2), -- 24
+            r_result.jit_optimization_count2, -- 25
+            round(CAST(r_result.jit_optimization_time2 AS numeric),2), -- 26
+            r_result.jit_emission_count2, -- 27
+            round(CAST(r_result.jit_emission_time2 AS numeric),2), -- 28
+
+            -- Time
+            round(CAST(r_result.total_plan_time2 + r_result.total_exec_time1 AS numeric),2), -- 29
+            round(CAST(r_result.total_plan_time2 AS numeric),2),  -- 30
+            round(CAST(r_result.total_exec_time2 AS numeric),2),  -- 31
+
+            -- IO Time
+            round(CAST(r_result.blk_read_time2 AS numeric),2), -- 32
+            round(CAST(r_result.blk_write_time2 AS numeric),2), -- 33
+
+            -- JIT ID
+            format(
+                'jit_%s_%s_%s_%s',
+                to_hex(r_result.queryid),
+                r_result.datid::text,
+                r_result.userid::text,
+                r_result.toplevel::text)  -- 34
+        );
+
+        report := report || tab_row;
+        PERFORM collect_queries(
+            r_result.userid,r_result.datid,r_result.queryid
+        );
+    END LOOP;
+
+    IF report != '' THEN
+        RETURN replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
+    ELSE
+        RETURN '';
+    END IF;
+
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE FUNCTION top_elapsed_htbl(IN report_context jsonb, IN sserver_id integer)
 RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
@@ -196,12 +625,16 @@ DECLARE
         NULLIF(st.total_time, 0) as total_time,
         NULLIF(st.total_plan_time, 0) as total_plan_time,
         NULLIF(st.total_exec_time, 0) as total_exec_time,
+        NULLIF(st.jit_generation_time + st.jit_inlining_time +
+          st.jit_optimization_time + st.jit_emission_time, 0) as total_jit_time,
+        st.jit_functions + st.jit_inlining_count + st.jit_optimization_count + st.jit_emission_count > 0 as jit_avail,
         NULLIF(st.blk_read_time, 0.0) as blk_read_time,
         NULLIF(st.blk_write_time, 0.0) as blk_write_time,
         NULLIF(st.user_time, 0.0) as user_time,
         NULLIF(st.system_time, 0.0) as system_time,
         NULLIF(st.calls, 0) as calls,
         NULLIF(st.plans, 0) as plans
+
     FROM top_statements1 st
     ORDER BY st.total_time DESC,
       st.queryid ASC,
@@ -228,6 +661,7 @@ BEGIN
             '<th rowspan="2">User</th>'
             '<th rowspan="2" title="Elapsed time as a percentage of total cluster elapsed time">%Total</th>'
             '<th colspan="3">Time (s)</th>'
+            '{statements_jit_stats?jit_time_hdr}'
             '{io_times?iotime_hdr1}'
             '{kcachestatements?kcache_hdr1}'
             '<th rowspan="2" title="Number of times the statement was planned">Plans</th>'
@@ -252,6 +686,7 @@ BEGIN
           '<td {value}>%7$s</td>'
           '<td {value}>%8$s</td>'
           '<td {value}>%9$s</td>'
+          '{statements_jit_stats?jit_time_row}'
           '{io_times?iotime_row}'
           '{kcachestatements?kcache_row}'
           '<td {value}>%14$s</td>'
@@ -259,6 +694,10 @@ BEGIN
         '</tr>',
       'nested_tpl',
         ' <small title="Nested level">(N)</small>',
+      'statements_jit_stats?jit_time_hdr',
+        '<th rowspan="2">JIT<br>time (s)</th>',
+      'statements_jit_stats?jit_time_row',
+        '<td {value}>%16$s</td>',
       'io_times?iotime_hdr1',
         '<th colspan="2">I/O time (s)</th>',
       'io_times?iotime_hdr2',
@@ -299,7 +738,17 @@ BEGIN
             round(CAST(r_result.user_time AS numeric),2),
             round(CAST(r_result.system_time AS numeric),2),
             r_result.plans,
-            r_result.calls
+            r_result.calls,
+            CASE WHEN r_result.jit_avail
+                THEN format(
+                '<a HREF="#jit_%s_%s_%s_%s">%s</a>',
+                to_hex(r_result.queryid),
+                r_result.datid::text,
+                r_result.userid::text,
+                r_result.toplevel::text,
+                round(CAST(r_result.total_jit_time AS numeric),2)::text)
+                ELSE ''
+            END  -- 16
         );
 
         report := report || tab_row;
@@ -336,6 +785,8 @@ DECLARE
         NULLIF(st1.total_time_pct, 0.0) as total_time_pct1,
         NULLIF(st1.total_plan_time, 0.0) as total_plan_time1,
         NULLIF(st1.total_exec_time, 0.0) as total_exec_time1,
+        NULLIF(st1.jit_generation_time + st1.jit_inlining_time +
+          st1.jit_optimization_time + st1.jit_emission_time, 0) as total_jit_time1,
         NULLIF(st1.blk_read_time, 0.0) as blk_read_time1,
         NULLIF(st1.blk_write_time, 0.0) as blk_write_time1,
         NULLIF(st1.user_time, 0.0) as user_time1,
@@ -346,14 +797,19 @@ DECLARE
         NULLIF(st2.total_time_pct, 0.0) as total_time_pct2,
         NULLIF(st2.total_plan_time, 0.0) as total_plan_time2,
         NULLIF(st2.total_exec_time, 0.0) as total_exec_time2,
+        NULLIF(st2.jit_generation_time + st2.jit_inlining_time +
+          st2.jit_optimization_time + st2.jit_emission_time, 0) as total_jit_time2,
         NULLIF(st2.blk_read_time, 0.0) as blk_read_time2,
         NULLIF(st2.blk_write_time, 0.0) as blk_write_time2,
         NULLIF(st2.user_time, 0.0) as user_time2,
         NULLIF(st2.system_time, 0.0) as system_time2,
         NULLIF(st2.calls, 0) as calls2,
         NULLIF(st2.plans, 0) as plans2,
+        st1.jit_functions + st1.jit_inlining_count + st1.jit_optimization_count + st1.jit_emission_count > 0 OR
+        st2.jit_functions + st2.jit_inlining_count + st2.jit_optimization_count + st2.jit_emission_count > 0 as jit_avail,
         row_number() over (ORDER BY st1.total_time DESC NULLS LAST) as rn_time1,
-        row_number() over (ORDER BY st2.total_time DESC NULLS LAST) as rn_time2
+        row_number() over (ORDER BY st2.total_time DESC NULLS LAST) as rn_time2,
+        left(md5(COALESCE(st1.userid,st2.userid)::text || COALESCE(st1.datid,st2.datid)::text || COALESCE(st1.queryid,st2.queryid)::text), 10) as hashed_ids
     FROM top_statements1 st1
         FULL OUTER JOIN top_statements2 st2 USING (server_id, datid, userid, queryid, toplevel)
     ORDER BY COALESCE(st1.total_time,0) + COALESCE(st2.total_time,0) DESC,
@@ -385,6 +841,7 @@ BEGIN
             '<th rowspan="2">I</th>'
             '<th rowspan="2" title="Elapsed time as a percentage of total cluster elapsed time">%Total</th>'
             '<th colspan="3">Time (s)</th>'
+            '{statements_jit_stats?jit_time_hdr}'
             '{io_times?iotime_hdr1}'
             '{kcachestatements?kcache_hdr1}'
             '<th rowspan="2" title="Number of times the statement was planned">Plans</th>'
@@ -410,6 +867,7 @@ BEGIN
           '<td {value}>%7$s</td>'
           '<td {value}>%8$s</td>'
           '<td {value}>%9$s</td>'
+          '{statements_jit_stats?jit_time_row1}'
           '{io_times?iotime_row1}'
           '{kcachestatements?kcache_row1}'
           '<td {value}>%14$s</td>'
@@ -421,6 +879,7 @@ BEGIN
           '<td {value}>%17$s</td>'
           '<td {value}>%18$s</td>'
           '<td {value}>%19$s</td>'
+          '{statements_jit_stats?jit_time_row2}'
           '{io_times?iotime_row2}'
           '{kcachestatements?kcache_row2}'
           '<td {value}>%24$s</td>'
@@ -429,6 +888,12 @@ BEGIN
         '<tr style="visibility:collapse"></tr>',
       'nested_tpl',
         ' <small title="Nested level">(N)</small>',
+      'statements_jit_stats?jit_time_hdr',
+        '<th rowspan="2">JIT<br>time (s)</th>',
+      'statements_jit_stats?jit_time_row1',
+        '<td {value}>%26$s</td>',
+      'statements_jit_stats?jit_time_row2',
+        '<td {value}>%27$s</td>',
       'io_times?iotime_hdr1',
         '<th colspan="2">I/O time (s)</th>',
       'io_times?iotime_hdr2',
@@ -462,31 +927,51 @@ BEGIN
     LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
-            to_hex(r_result.queryid),
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
-            r_result.dbname,
-            r_result.username,
-            round(CAST(r_result.total_time_pct1 AS numeric),2),
-            round(CAST(r_result.total_time1 AS numeric),2),
-            round(CAST(r_result.total_plan_time1 AS numeric),2),
-            round(CAST(r_result.total_exec_time1 AS numeric),2),
-            round(CAST(r_result.blk_read_time1 AS numeric),2),
-            round(CAST(r_result.blk_write_time1 AS numeric),2),
-            round(CAST(r_result.user_time1 AS numeric),2),
-            round(CAST(r_result.system_time1 AS numeric),2),
-            r_result.plans1,
-            r_result.calls1,
-            round(CAST(r_result.total_time_pct2 AS numeric),2),
-            round(CAST(r_result.total_time2 AS numeric),2),
-            round(CAST(r_result.total_plan_time2 AS numeric),2),
-            round(CAST(r_result.total_exec_time2 AS numeric),2),
-            round(CAST(r_result.blk_read_time2 AS numeric),2),
-            round(CAST(r_result.blk_write_time2 AS numeric),2),
-            round(CAST(r_result.user_time2 AS numeric),2),
-            round(CAST(r_result.system_time2 AS numeric),2),
-            r_result.plans2,
-            r_result.calls2
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,  -- 1
+            to_hex(r_result.queryid),  -- 2
+            r_result.hashed_ids,  -- 3
+            r_result.dbname,  -- 4
+            r_result.username,  -- 5
+            round(CAST(r_result.total_time_pct1 AS numeric),2),  -- 6
+            round(CAST(r_result.total_time1 AS numeric),2),  -- 7
+            round(CAST(r_result.total_plan_time1 AS numeric),2),  -- 8
+            round(CAST(r_result.total_exec_time1 AS numeric),2),  -- 9
+            round(CAST(r_result.blk_read_time1 AS numeric),2),  -- 10
+            round(CAST(r_result.blk_write_time1 AS numeric),2),  -- 11
+            round(CAST(r_result.user_time1 AS numeric),2),  -- 12
+            round(CAST(r_result.system_time1 AS numeric),2),  -- 13
+            r_result.plans1,  -- 14
+            r_result.calls1,  -- 18
+            round(CAST(r_result.total_time_pct2 AS numeric),2),  -- 16
+            round(CAST(r_result.total_time2 AS numeric),2),  -- 17
+            round(CAST(r_result.total_plan_time2 AS numeric),2),  -- 18
+            round(CAST(r_result.total_exec_time2 AS numeric),2),  -- 19
+            round(CAST(r_result.blk_read_time2 AS numeric),2),  -- 20
+            round(CAST(r_result.blk_write_time2 AS numeric),2),  -- 21
+            round(CAST(r_result.user_time2 AS numeric),2),  -- 22
+            round(CAST(r_result.system_time2 AS numeric),2),  -- 23
+            r_result.plans2,  -- 24
+            r_result.calls2,  -- 25
+            CASE WHEN r_result.jit_avail
+                THEN format(
+                '<a HREF="#jit_%s_%s_%s_%s">%s</a>',
+                to_hex(r_result.queryid),
+                r_result.datid::text,
+                r_result.userid::text,
+                r_result.toplevel::text,
+                round(CAST(r_result.total_jit_time1 AS numeric),2)::text)
+                ELSE ''
+            END,  -- 26
+            CASE WHEN r_result.jit_avail
+                THEN format(
+                '<a HREF="#jit_%s_%s_%s_%s">%s</a>',
+                to_hex(r_result.queryid),
+                r_result.datid::text,
+                r_result.userid::text,
+                r_result.toplevel::text,
+                round(CAST(r_result.total_jit_time2 AS numeric),2)::text)
+                ELSE ''
+            END -- 27
         );
 
         report := report || tab_row;
@@ -512,7 +997,7 @@ DECLARE
     jtab_tpl    jsonb;
 
     --Cursor for queries ordered by planning time
-    c_elapsed_time CURSOR(topn integer) FOR
+    c_plan_time CURSOR(topn integer) FOR
     SELECT
         st.datid,
         st.dbname,
@@ -588,7 +1073,7 @@ BEGIN
     -- apply settings to templates
     jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting on top queries by elapsed time
-    FOR r_result IN c_elapsed_time(
+    FOR r_result IN c_plan_time(
         (report_context #>> '{report_properties,topn}')::integer
       )
     LOOP
@@ -631,7 +1116,7 @@ DECLARE
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) queries ordered by elapsed time
-    c_elapsed_time CURSOR(topn integer) FOR
+    c_plan_time CURSOR(topn integer) FOR
     SELECT * FROM (SELECT
         COALESCE(st1.datid,st2.datid) as datid,
         COALESCE(st1.dbname,st2.dbname) as dbname,
@@ -731,7 +1216,7 @@ BEGIN
     jtab_tpl := jsonb_replace(report_context, jtab_tpl);
 
     -- Reporting on top queries by elapsed time
-    FOR r_result IN c_elapsed_time(
+    FOR r_result IN c_plan_time(
         (report_context #>> '{report_properties,topn}')::integer
       )
     LOOP
@@ -782,7 +1267,7 @@ DECLARE
     jtab_tpl    jsonb;
 
     --Cursor for queries ordered by execution time
-    c_elapsed_time CURSOR(topn integer) FOR
+    c_exec_time CURSOR(topn integer) FOR
     SELECT
         st.datid,
         st.dbname,
@@ -794,6 +1279,9 @@ DECLARE
         NULLIF(st.total_exec_time, 0.0) as total_exec_time,
         NULLIF(st.total_exec_time_pct, 0.0) as total_exec_time_pct,
         NULLIF(st.exec_time_pct, 0.0) as exec_time_pct,
+        NULLIF(st.jit_generation_time + st.jit_inlining_time +
+          st.jit_optimization_time + st.jit_emission_time, 0) as total_jit_time,
+        st.jit_functions + st.jit_inlining_count + st.jit_optimization_count + st.jit_emission_count > 0 as jit_avail,
         NULLIF(st.blk_read_time, 0.0) as blk_read_time,
         NULLIF(st.blk_write_time, 0.0) as blk_write_time,
         NULLIF(st.min_exec_time, 0.0) as min_exec_time,
@@ -826,6 +1314,7 @@ BEGIN
             '<th rowspan="2" title="Time spent executing statement">Exec (s)</th>'
             '{planning_times?elapsed_pct_hdr}'
             '<th rowspan="2" title="Exec time as a percentage of total cluster elapsed time">%Total</th>'
+            '{statements_jit_stats?jit_time_hdr}'
             '{io_times?iotime_hdr1}'
             '{kcachestatements?kcache_hdr1}'
             '<th rowspan="2" title="Total number of rows retrieved or affected by the statement">Rows</th>'
@@ -851,6 +1340,7 @@ BEGIN
           '<td {value}>%6$s</td>'
           '{planning_times?elapsed_pct_row}'
           '<td {value}>%7$s</td>'
+          '{statements_jit_stats?jit_time_row}'
           '{io_times?iotime_row}'
           '{kcachestatements?kcache_row}'
           '<td {value}>%12$s</td>'
@@ -874,6 +1364,10 @@ BEGIN
         '<th rowspan="2" title="Exec time as a percentage of statement elapsed time">%Elapsed</th>',
       'planning_times?elapsed_pct_row',
         '<td {value}>%18$s</td>',
+      'statements_jit_stats?jit_time_hdr',
+        '<th rowspan="2">JIT<br>time (s)</th>',
+      'statements_jit_stats?jit_time_row',
+        '<td {value}>%19$s</td>',
       'kcachestatements?kcache_hdr1',
         '<th colspan="2">CPU time (s)</th>',
       'kcachestatements?kcache_hdr2',
@@ -886,30 +1380,40 @@ BEGIN
     -- apply settings to templates
     jtab_tpl := jsonb_replace(report_context, jtab_tpl);
     -- Reporting on top queries by elapsed time
-    FOR r_result IN c_elapsed_time(
+    FOR r_result IN c_exec_time(
         (report_context #>> '{report_properties,topn}')::integer
       )
     LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
-            to_hex(r_result.queryid),
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
-            r_result.dbname,
-            r_result.username,
-            round(CAST(r_result.total_exec_time AS numeric),2),
-            round(CAST(r_result.total_exec_time_pct AS numeric),2),
-            round(CAST(r_result.blk_read_time AS numeric),2),
-            round(CAST(r_result.blk_write_time AS numeric),2),
-            round(CAST(r_result.user_time AS numeric),2),
-            round(CAST(r_result.system_time AS numeric),2),
-            r_result.rows,
-            round(CAST(r_result.mean_exec_time AS numeric),3),
-            round(CAST(r_result.min_exec_time AS numeric),3),
-            round(CAST(r_result.max_exec_time AS numeric),3),
-            round(CAST(r_result.stddev_exec_time AS numeric),3),
-            r_result.calls,
-            round(CAST(r_result.exec_time_pct AS numeric),2)
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,  -- 1
+            to_hex(r_result.queryid),  -- 2
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),  -- 3
+            r_result.dbname,  -- 4
+            r_result.username,  -- 5
+            round(CAST(r_result.total_exec_time AS numeric),2),  -- 6
+            round(CAST(r_result.total_exec_time_pct AS numeric),2),  -- 7
+            round(CAST(r_result.blk_read_time AS numeric),2),  -- 8
+            round(CAST(r_result.blk_write_time AS numeric),2),  -- 9
+            round(CAST(r_result.user_time AS numeric),2),  -- 10
+            round(CAST(r_result.system_time AS numeric),2),  -- 11
+            r_result.rows,  -- 12
+            round(CAST(r_result.mean_exec_time AS numeric),3),  -- 13
+            round(CAST(r_result.min_exec_time AS numeric),3),  -- 14
+            round(CAST(r_result.max_exec_time AS numeric),3),  -- 15
+            round(CAST(r_result.stddev_exec_time AS numeric),3),  -- 16
+            r_result.calls,  -- 17
+            round(CAST(r_result.exec_time_pct AS numeric),2),  -- 18
+            CASE WHEN r_result.jit_avail
+                THEN format(
+                '<a HREF="#jit_%s_%s_%s_%s">%s</a>',
+                to_hex(r_result.queryid),
+                r_result.datid::text,
+                r_result.userid::text,
+                r_result.toplevel::text,
+                round(CAST(r_result.total_jit_time AS numeric),2)::text)
+                ELSE ''
+            END  -- 19
         );
 
         report := report || tab_row;
@@ -934,7 +1438,7 @@ DECLARE
     jtab_tpl    jsonb;
 
     --Cursor for top(cnt) queries ordered by elapsed time
-    c_elapsed_time CURSOR(topn integer) FOR
+    c_exec_time CURSOR(topn integer) FOR
     SELECT * FROM (SELECT
         COALESCE(st1.datid,st2.datid) as datid,
         COALESCE(st1.dbname,st2.dbname) as dbname,
@@ -946,6 +1450,8 @@ DECLARE
         NULLIF(st1.total_exec_time, 0.0) as total_exec_time1,
         NULLIF(st1.total_exec_time_pct, 0.0) as total_exec_time_pct1,
         NULLIF(st1.exec_time_pct, 0.0) as exec_time_pct1,
+        NULLIF(st1.jit_generation_time + st1.jit_inlining_time +
+          st1.jit_optimization_time + st1.jit_emission_time, 0) as total_jit_time1,
         NULLIF(st1.blk_read_time, 0.0) as blk_read_time1,
         NULLIF(st1.blk_write_time, 0.0) as blk_write_time1,
         NULLIF(st1.min_exec_time, 0.0) as min_exec_time1,
@@ -959,6 +1465,8 @@ DECLARE
         NULLIF(st2.total_exec_time, 0.0) as total_exec_time2,
         NULLIF(st2.total_exec_time_pct, 0.0) as total_exec_time_pct2,
         NULLIF(st2.exec_time_pct, 0.0) as exec_time_pct2,
+        NULLIF(st2.jit_generation_time + st2.jit_inlining_time +
+          st2.jit_optimization_time + st2.jit_emission_time, 0) as total_jit_time2,
         NULLIF(st2.blk_read_time, 0.0) as blk_read_time2,
         NULLIF(st2.blk_write_time, 0.0) as blk_write_time2,
         NULLIF(st2.min_exec_time, 0.0) as min_exec_time2,
@@ -968,6 +1476,8 @@ DECLARE
         NULLIF(st2.rows, 0) as rows2,
         NULLIF(st2.user_time, 0.0) as user_time2,
         NULLIF(st2.system_time, 0.0) as system_time2,
+        st1.jit_functions + st1.jit_inlining_count + st1.jit_optimization_count + st1.jit_emission_count > 0 OR
+        st2.jit_functions + st2.jit_inlining_count + st2.jit_optimization_count + st2.jit_emission_count > 0 as jit_avail,
         row_number() over (ORDER BY st1.total_exec_time DESC NULLS LAST) as rn_time1,
         row_number() over (ORDER BY st2.total_exec_time DESC NULLS LAST) as rn_time2
     FROM top_statements1 st1
@@ -998,6 +1508,7 @@ BEGIN
             '<th rowspan="2" title="Time spent executing statement">Exec (s)</th>'
             '{planning_times?elapsed_pct_hdr}'
             '<th rowspan="2" title="Exec time as a percentage of total cluster elapsed time">%Total</th>'
+            '{statements_jit_stats?jit_time_hdr}'
             '{io_times?iotime_hdr1}'
             '{kcachestatements?kcache_hdr1}'
             '<th rowspan="2" title="Total number of rows retrieved or affected by the statement">Rows</th>'
@@ -1024,6 +1535,7 @@ BEGIN
           '<td {value}>%6$s</td>'
           '{planning_times?elapsed_pct_row1}'
           '<td {value}>%7$s</td>'
+          '{statements_jit_stats?jit_time_row1}'
           '{io_times?iotime_row1}'
           '{kcachestatements?kcache_row1}'
           '<td {value}>%12$s</td>'
@@ -1038,6 +1550,7 @@ BEGIN
           '<td {value}>%18$s</td>'
           '{planning_times?elapsed_pct_row2}'
           '<td {value}>%19$s</td>'
+          '{statements_jit_stats?jit_time_row2}'
           '{io_times?iotime_row2}'
           '{kcachestatements?kcache_row2}'
           '<td {value}>%24$s</td>'
@@ -1067,6 +1580,12 @@ BEGIN
         '<td {value}>%30$s</td>',
       'planning_times?elapsed_pct_row2',
         '<td {value}>%31$s</td>',
+      'statements_jit_stats?jit_time_hdr',
+        '<th rowspan="2">JIT<br>time (s)</th>',
+      'statements_jit_stats?jit_time_row1',
+        '<td {value}>%32$s</td>',
+      'statements_jit_stats?jit_time_row2',
+        '<td {value}>%33$s</td>',
       'kcachestatements?kcache_hdr1',
         '<th colspan="2">CPU time (s)</th>',
       'kcachestatements?kcache_hdr2',
@@ -1083,43 +1602,63 @@ BEGIN
     jtab_tpl := jsonb_replace(report_context, jtab_tpl);
 
     -- Reporting on top queries by elapsed time
-    FOR r_result IN c_elapsed_time(
+    FOR r_result IN c_exec_time(
         (report_context #>> '{report_properties,topn}')::integer
       )
     LOOP
         tab_row := format(
             jtab_tpl #>> ARRAY['stmt_tpl'],
-            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
-            to_hex(r_result.queryid),
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
-            r_result.dbname,
-            r_result.username,
-            round(CAST(r_result.total_exec_time1 AS numeric),2),
-            round(CAST(r_result.total_exec_time_pct1 AS numeric),2),
-            round(CAST(r_result.blk_read_time1 AS numeric),2),
-            round(CAST(r_result.blk_write_time1 AS numeric),2),
-            round(CAST(r_result.user_time1 AS numeric),2),
-            round(CAST(r_result.system_time1 AS numeric),2),
-            r_result.rows1,
-            round(CAST(r_result.mean_exec_time1 AS numeric),3),
-            round(CAST(r_result.min_exec_time1 AS numeric),3),
-            round(CAST(r_result.max_exec_time1 AS numeric),3),
-            round(CAST(r_result.stddev_exec_time1 AS numeric),3),
-            r_result.calls1,
-            round(CAST(r_result.total_exec_time2 AS numeric),2),
-            round(CAST(r_result.total_exec_time_pct2 AS numeric),2),
-            round(CAST(r_result.blk_read_time2 AS numeric),2),
-            round(CAST(r_result.blk_write_time2 AS numeric),2),
-            round(CAST(r_result.user_time2 AS numeric),2),
-            round(CAST(r_result.system_time2 AS numeric),2),
-            r_result.rows2,
-            round(CAST(r_result.mean_exec_time2 AS numeric),3),
-            round(CAST(r_result.min_exec_time2 AS numeric),3),
-            round(CAST(r_result.max_exec_time2 AS numeric),3),
-            round(CAST(r_result.stddev_exec_time2 AS numeric),3),
-            r_result.calls2,
-            round(CAST(r_result.exec_time_pct1 AS numeric),2),
-            round(CAST(r_result.exec_time_pct2 AS numeric),2)
+            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,  -- 1
+            to_hex(r_result.queryid),  -- 2
+            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),  -- 3
+            r_result.dbname,  -- 4
+            r_result.username,  -- 5
+            round(CAST(r_result.total_exec_time1 AS numeric),2),  -- 6
+            round(CAST(r_result.total_exec_time_pct1 AS numeric),2),  -- 7
+            round(CAST(r_result.blk_read_time1 AS numeric),2),  -- 8
+            round(CAST(r_result.blk_write_time1 AS numeric),2),  -- 9
+            round(CAST(r_result.user_time1 AS numeric),2),  -- 10
+            round(CAST(r_result.system_time1 AS numeric),2),  -- 11
+            r_result.rows1,  -- 12
+            round(CAST(r_result.mean_exec_time1 AS numeric),3),  -- 13
+            round(CAST(r_result.min_exec_time1 AS numeric),3),  -- 14
+            round(CAST(r_result.max_exec_time1 AS numeric),3),  -- 15
+            round(CAST(r_result.stddev_exec_time1 AS numeric),3),  -- 16
+            r_result.calls1,  -- 17
+            round(CAST(r_result.total_exec_time2 AS numeric),2),  -- 18
+            round(CAST(r_result.total_exec_time_pct2 AS numeric),2),  -- 19
+            round(CAST(r_result.blk_read_time2 AS numeric),2),  -- 20
+            round(CAST(r_result.blk_write_time2 AS numeric),2),  -- 21
+            round(CAST(r_result.user_time2 AS numeric),2),  -- 22
+            round(CAST(r_result.system_time2 AS numeric),2),  -- 23
+            r_result.rows2,  -- 24
+            round(CAST(r_result.mean_exec_time2 AS numeric),3),  -- 25
+            round(CAST(r_result.min_exec_time2 AS numeric),3),  -- 26
+            round(CAST(r_result.max_exec_time2 AS numeric),3),  -- 27
+            round(CAST(r_result.stddev_exec_time2 AS numeric),3),  -- 28
+            r_result.calls2,  -- 29
+            round(CAST(r_result.exec_time_pct1 AS numeric),2),  -- 30
+            round(CAST(r_result.exec_time_pct2 AS numeric),2),  -- 31
+            CASE WHEN r_result.jit_avail
+                THEN format(
+                '<a HREF="#jit_%s_%s_%s_%s">%s</a>',
+                to_hex(r_result.queryid),
+                r_result.datid::text,
+                r_result.userid::text,
+                r_result.toplevel::text,
+                round(CAST(r_result.total_jit_time1 AS numeric),2)::text)
+                ELSE ''
+            END,  -- 34
+            CASE WHEN r_result.jit_avail
+                THEN format(
+                '<a HREF="#jit_%s_%s_%s_%s">%s</a>',
+                to_hex(r_result.queryid),
+                r_result.datid::text,
+                r_result.userid::text,
+                r_result.toplevel::text,
+                round(CAST(r_result.total_jit_time2 AS numeric),2)::text)
+                ELSE ''
+            END  -- 35
         );
 
         report := report || tab_row;

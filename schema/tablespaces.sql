@@ -43,8 +43,6 @@ CREATE VIEW v_sample_stat_tablespaces AS
     FROM sample_stat_tablespaces JOIN tablespaces_list USING (server_id, tablespaceid);
 COMMENT ON VIEW v_sample_stat_tablespaces IS 'Tablespaces stats view with tablespace names';
 
-CREATE TABLE last_stat_tablespaces AS SELECT * FROM v_sample_stat_tablespaces WHERE 0=1;
-ALTER TABLE last_stat_tablespaces ADD CONSTRAINT pk_last_stat_tablespaces PRIMARY KEY (server_id, sample_id, tablespaceid);
-ALTER TABLE last_stat_tablespaces ADD CONSTRAINT fk_last_stat_tablespaces_samples
-  FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT;
+CREATE TABLE last_stat_tablespaces (LIKE v_sample_stat_tablespaces)
+PARTITION BY LIST (server_id);
 COMMENT ON TABLE last_stat_tablespaces IS 'Last sample data for calculating diffs in next sample';

@@ -40,8 +40,6 @@ CREATE TABLE sample_stat_database
 );
 COMMENT ON TABLE sample_stat_database IS 'Sample database statistics table (fields from pg_stat_database)';
 
-CREATE TABLE last_stat_database AS SELECT * FROM sample_stat_database WHERE 0=1;
-ALTER TABLE last_stat_database  ADD CONSTRAINT pk_last_stat_database PRIMARY KEY (server_id, sample_id, datid);
-ALTER TABLE last_stat_database ADD CONSTRAINT fk_last_stat_database_samples
-  FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT;
+CREATE TABLE last_stat_database (LIKE sample_stat_database)
+PARTITION BY LIST (server_id);
 COMMENT ON TABLE last_stat_database IS 'Last sample data for calculating diffs in next sample';

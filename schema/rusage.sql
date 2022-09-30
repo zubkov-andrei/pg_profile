@@ -33,7 +33,9 @@ CREATE TABLE sample_kcache (
     toplevel            boolean,
     CONSTRAINT pk_sample_kcache_n PRIMARY KEY (server_id, sample_id, datid, userid, queryid, toplevel),
     CONSTRAINT fk_kcache_stmt_list FOREIGN KEY (server_id,queryid_md5)
-      REFERENCES stmt_list (server_id,queryid_md5) ON DELETE CASCADE ON UPDATE CASCADE,
+      REFERENCES stmt_list (server_id,queryid_md5)
+      ON DELETE NO ACTION ON UPDATE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT fk_kcache_st FOREIGN KEY (server_id, sample_id, datid, userid, queryid, toplevel)
       REFERENCES sample_statements(server_id, sample_id, datid, userid, queryid, toplevel) ON DELETE CASCADE
 );
@@ -71,13 +73,9 @@ CREATE TABLE last_stat_kcache (
     exec_msgrcvs        bigint, -- Number of IPC messages received
     exec_nsignals       bigint, -- Number of signals received
     exec_nvcsws         bigint, -- Number of voluntary context switches
-    exec_nivcsws        bigint,
-    CONSTRAINT pk_last_stat_kcache PRIMARY KEY (server_id, sample_id, datid, userid, queryid, toplevel),
-    CONSTRAINT fk_last_kcache_stmts FOREIGN KEY
-      (server_id, sample_id, datid, userid, queryid, toplevel) REFERENCES
-      last_stat_statements(server_id, sample_id, datid, userid, queryid, toplevel)
-      ON DELETE CASCADE
-);
+    exec_nivcsws        bigint
+)
+PARTITION BY LIST (server_id);
 
 CREATE TABLE sample_kcache_total (
     server_id           integer,

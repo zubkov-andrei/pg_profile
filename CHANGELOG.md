@@ -1,5 +1,11 @@
 # pg_profile changelog
 
+## 4.1
+- Avoid serialization of parallel samples (#48 by @xinferum) caused by locking due to analyze operations.
+- Fixed retention of last statements data. The new statements sample taking procedure implemented in 4.0 contained a bug - the obsolete data was not deleted from last_ tables. Update to 4.1 will fix this error and cleanup all obsolete data.
+- Support of PostgreSQL 15 (*pg_stat_statements* v1.10) data collection
+- JIT statistic section will appear in report for *pg_stat_statements* v1.10 (implemented by @Djoongaar).
+
 ## 4.0
 - Corrected nested-level statements support (#37)
 - Added username field in statement-related sections

@@ -68,8 +68,10 @@ BEGIN
         'function_stats',profile_checkavail_functions(sserver_id, start1_id, end1_id),
         'trigger_function_stats',profile_checkavail_trg_functions(sserver_id, start1_id, end1_id),
         'kcachestatements',profile_checkavail_rusage(sserver_id,start1_id,end1_id),
-        'rusage_planstats',profile_checkavail_rusage_planstats(sserver_id,start1_id,end1_id)
-      ),
+        'rusage_planstats',profile_checkavail_rusage_planstats(sserver_id,start1_id,end1_id),
+        'statements_jit_stats',profile_checkavail_statements_jit_stats(sserver_id, start1_id, end1_id) OR
+          profile_checkavail_statements_jit_stats(sserver_id, start2_id, end2_id)
+        ),
       'report_properties',jsonb_build_object(
         'interval_duration_sec',
           (SELECT extract(epoch FROM e.sample_time - s.sample_time)
@@ -139,7 +141,9 @@ BEGIN
         'kcachestatements',profile_checkavail_rusage(sserver_id, start1_id, end1_id) OR
           profile_checkavail_rusage(sserver_id, start2_id, end2_id),
         'rusage_planstats',profile_checkavail_rusage_planstats(sserver_id, start1_id, end1_id) OR
-          profile_checkavail_rusage_planstats(sserver_id, start2_id, end2_id)
+          profile_checkavail_rusage_planstats(sserver_id, start2_id, end2_id),
+        'statements_jit_stats',profile_checkavail_statements_jit_stats(sserver_id, start1_id, end1_id) OR
+          profile_checkavail_statements_jit_stats(sserver_id, start2_id, end2_id)
         ),
       'report_properties',jsonb_build_object(
         'interval1_duration_sec',
@@ -152,7 +156,6 @@ BEGIN
           FROM samples s JOIN samples e USING (server_id)
           WHERE e.sample_id=end2_id and s.sample_id=start2_id
             AND server_id = sserver_id),
-        'max_query_length', qlen_limit,
         'checksum_fail_detected', COALESCE((
           SELECT sum(checksum_failures) > 0
           FROM sample_stat_database

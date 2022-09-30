@@ -52,12 +52,8 @@ CREATE VIEW v_sample_stat_user_functions AS
     FROM sample_stat_user_functions JOIN funcs_list USING (server_id, datid, funcid);
 COMMENT ON VIEW v_sample_stat_user_functions IS 'Reconstructed stats view with function names and schemas';
 
-CREATE TABLE last_stat_user_functions (LIKE v_sample_stat_user_functions, in_sample boolean NOT NULL DEFAULT false);
-ALTER TABLE last_stat_user_functions ADD CONSTRAINT pk_last_stat_user_functions PRIMARY KEY (server_id, sample_id, datid, funcid);
-ALTER TABLE last_stat_user_functions ADD CONSTRAINT fk_last_stat_user_functions_dat
-  FOREIGN KEY (server_id, sample_id, datid)
-  -- Restrict deleting last data sample
-  REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE RESTRICT;
+CREATE TABLE last_stat_user_functions (LIKE v_sample_stat_user_functions, in_sample boolean NOT NULL DEFAULT false)
+PARTITION BY LIST (server_id);
 COMMENT ON TABLE last_stat_user_functions IS 'Last sample data for calculating diffs in next sample';
 
 CREATE TABLE sample_stat_user_func_total (
