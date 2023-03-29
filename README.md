@@ -14,8 +14,8 @@ Any time you take a sample, _pg_stat_statements_reset()_ will be called, ensurin
 *pg_profile*, installed in one cluster is able to collect statistics from other clusters, called *servers*. You just need to define some servers, providing names and connection strings and make sure connection can be established to all databases of all defined servers. Now you can track statistics on your standbys from master, or from any other server. Once extension is installed, a *local* server is automatically created - this is a *server* for cluster where *pg_profile* resides.
 
 Report examples:
-* [Regular report from Postgres 14 database](https://zubkov-andrei.github.io/pg_profile/report_examples/pg14.html)
-* [Differential report from Postgres 14 database](https://zubkov-andrei.github.io/pg_profile/report_examples/pg14_diff.html)
+* [Regular report from Postgres 15 database](https://zubkov-andrei.github.io/pg_profile/report_examples/pg15.html)
+* [Differential report from Postgres 15 database](https://zubkov-andrei.github.io/pg_profile/report_examples/pg15_diff.html)
 
 ## Prerequisites
 
