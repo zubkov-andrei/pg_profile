@@ -3,8 +3,9 @@
 INSERT INTO report_static(static_name, static_text)
 VALUES
 ('css1',
+  '* {font-family: Century Gothic, CenturyGothic, AppleGothic, sans-serif;} '
   'table, th, td {border: 1px solid black; border-collapse: collapse; padding:4px;} '
-  'table tr td.value, table tr td.mono {font-family: Monospace;} '
+  'table tr td.value, table tr td.mono {font-family: consolas, monaco, Monospace;} '
   'table tr td.value {text-align: right;} '
   'table p {margin: 0.2em;}'
   'table tr.parent td:not(.hdr) {background-color: #D8E8C2;} '
@@ -34,8 +35,9 @@ VALUES
   '<h2>Report sections</h2>'
   '{report:toc}{report:sect}</body></html>'),
 ('css2',
+  '* {font-family: Century Gothic, CenturyGothic, AppleGothic, sans-serif;} '
   'table, th, td {border: 1px solid black; border-collapse: collapse; padding: 4px;} '
-  'table .value, table .mono {font-family: Monospace;} '
+  'table .value, table .mono {font-family: consolas, monaco, Monospace;} '
   'table .value {text-align: right;} '
   'table p {margin: 0.2em;}'
   '.int1 td:not(.hdr), td.int1 {background-color: #FFEEEE;} '
