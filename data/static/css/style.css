@@ -1,0 +1,168 @@
+/* ----------- Common styles ----------- */
+
+:root {
+    --main-bg-color: #68B8F9;
+    --main-font-color: black;
+    --secondary-bg-color: #a4d4fb;
+    --main-bottom: -20%;
+    --main-right: 2%;
+    --main-opacity: 1;
+    --main-border-radius: 5px;
+    --main-box-shadow: rgba(0, 0, 0, 0.35) 0 5px 15px;
+    --main-position: fixed;
+    --main-width: 500px;
+    --main-height: 100px;
+    --main-transition-property: top;
+    --main-transition-delay: 500ms;
+}
+html {
+    scroll-behavior:smooth;
+}
+a:hover {
+    text-decoration: none;
+}
+#navigator {
+    position: var(--main-position);
+    background-color: #ffffff;
+    border-radius: 4px;
+    padding: 10px 20px 20px 30px;
+    box-shadow: var(--main-box-shadow);
+    visibility: hidden;
+    top: 2%;
+    height: 92%;
+    right: -15%;
+    overflow: auto;
+    opacity: 0.2;
+    transition: opacity 300ms linear, visibility 300ms linear, right 300ms linear;
+}
+#navigator:hover {
+    opacity: 0.9;
+    right: 0;
+}
+#navigator li.active {
+    background-color: var(--secondary-bg-color);
+    border-radius: 3px;
+    padding: 2px;
+}
+#commonstat {
+    display: flex;
+    flex-wrap: wrap;
+}
+#commonstat div {
+    margin-right: 10px;
+}
+table {
+    margin-bottom: 10px;
+}
+table, th, td {
+    border: 1px solid black;
+    border-collapse: collapse;
+    padding: 4px;
+}
+table tr td.table_obj_value, table tr td.mono {
+    font-family: Monospace;
+}
+table tr td.table_obj_value {
+    text-align: right;
+}
+table p {
+    margin: 0.2em;
+}
+
+table.stat tr:nth-child(even), table.setlist tr:nth-child(even) {
+    background-color: #eee;
+}
+table.setlist tr.new td.switch_bold {
+    font-weight: bold;
+}
+table th {
+    color: black;
+    background-color: #ffcc99;
+}
+table tr:target, td:target {
+    border: medium solid limegreen;
+}
+table tr:target td:first-of-type, table td:target {
+    font-weight: bold;
+}
+table.stat tr.active td {
+    background-color: #CCF1FF;
+}
+table.toast tr.active td {
+    background-color: #CCF1FF;
+}
+table.stmtlist tr.active td {
+    background-color: #CCF1FF;
+}
+table.diff tr.active td {
+    background-color: #CCF1FF;
+}
+table.diff tr.active td:not(.hdr) {
+    background-color: #CCF1FF;
+}
+div.popup {
+    background-color: var(--main-bg-color);
+    bottom: var(--main-bottom);
+    color: var(--main-font-color);
+    right: var(--main-right);
+    opacity: var(--main-opacity);
+    border-radius: var(--main-border-radius);
+    box-shadow: var(--main-box-shadow);
+    position: var(--main-position);
+    max-width: var(--main-width);
+    transition: bottom 250ms linear;
+    z-index: 500 !important;
+    padding: 10px 20px;
+}
+svg rect:hover, svg circle:hover, svg path:hover, a.copyButton svg:hover>rect{
+    stroke:limegreen;
+    cursor: pointer;
+}
+/* ----------- Differential report styles ----------- */
+
+.int1 td:not(.hdr), table.setlist tr.new_i1 {
+    background-color: #FFEEEE;
+}
+.int2 td:not(.hdr), table.setlist tr.new_i2 {
+    background-color: #EEEEFF;
+}
+table.toast tr.int1:not(.active) td:not(.hdr) {
+    background-color: #D8E8C2;
+}
+table.toast tr.int2:not(.active) td:not(.hdr) {
+    background-color: #BBDD97;
+}
+table.diff tr.int2 td {
+    border-top: hidden;
+}
+table.diff tr:nth-child(4n+1), table.toast tr:nth-child(4n+1){
+    background-color: #eee;
+}
+table.stat tr:nth-child(even), table.setlist tr:nth-child(even):not(.new_i1):not(.new_i2) {
+    background-color: #eee;
+}
+table.setlist tr.new_i1 td.switch_bold, table.setlist tr.new_i2 td.switch_bold, .new td.switch_bold {
+    font-weight: bold;
+}
+table th {
+    color: black; background-color: #ffcc99;
+}
+.label {
+    color: grey;
+}
+table tr:target,td:target {
+    border: medium solid limegreen;
+}
+table tr:target td:first-of-type, table td:target {
+    font-weight: bold;
+}
+table tr.parent td {
+    background-color: #D8E8C2;
+}
+table tr.child td {
+    background-color: #BBDD97;
+    border-top-style: hidden;
+}
+table.stat tr.active td {
+      background-color: #CCF1FF;
+}
