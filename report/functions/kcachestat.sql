@@ -47,45 +47,45 @@ RETURNS TABLE(
         FROM sample_kcache_total
         WHERE server_id = sserver_id AND sample_id BETWEEN start_id + 1 AND end_id)
     SELECT
-        kc.server_id as server_id,
-        kc.datid as datid,
-        sample_db.datname as dbname,
-        kc.userid as userid,
-        rl.username as username,
-        kc.queryid as queryid,
-        kc.toplevel as toplevel,
-        sum(kc.exec_user_time) as exec_user_time,
+        kc.server_id AS server_id,
+        kc.datid AS datid,
+        sample_db.datname AS dbname,
+        kc.userid AS userid,
+        rl.username AS username,
+        kc.queryid AS queryid,
+        kc.toplevel AS toplevel,
+        sum(kc.exec_user_time) AS exec_user_time,
         ((COALESCE(sum(kc.exec_user_time), 0.0) + COALESCE(sum(kc.plan_user_time), 0.0))
           *100/NULLIF(min(tot.user_time),0.0))::float AS user_time_pct,
-        sum(kc.exec_system_time) as exec_system_time,
+        sum(kc.exec_system_time) AS exec_system_time,
         ((COALESCE(sum(kc.exec_system_time), 0.0) + COALESCE(sum(kc.plan_system_time), 0.0))
           *100/NULLIF(min(tot.system_time), 0.0))::float AS system_time_pct,
-        sum(kc.exec_minflts)::bigint as exec_minflts,
-        sum(kc.exec_majflts)::bigint as exec_majflts,
-        sum(kc.exec_nswaps)::bigint as exec_nswaps,
-        sum(kc.exec_reads)::bigint as exec_reads,
-        sum(kc.exec_writes)::bigint as exec_writes,
-        sum(kc.exec_msgsnds)::bigint as exec_msgsnds,
-        sum(kc.exec_msgrcvs)::bigint as exec_msgrcvs,
-        sum(kc.exec_nsignals)::bigint as exec_nsignals,
-        sum(kc.exec_nvcsws)::bigint as exec_nvcsws,
-        sum(kc.exec_nivcsws)::bigint as exec_nivcsws,
+        sum(kc.exec_minflts)::bigint AS exec_minflts,
+        sum(kc.exec_majflts)::bigint AS exec_majflts,
+        sum(kc.exec_nswaps)::bigint AS exec_nswaps,
+        sum(kc.exec_reads)::bigint AS exec_reads,
+        sum(kc.exec_writes)::bigint AS exec_writes,
+        sum(kc.exec_msgsnds)::bigint AS exec_msgsnds,
+        sum(kc.exec_msgrcvs)::bigint AS exec_msgrcvs,
+        sum(kc.exec_nsignals)::bigint AS exec_nsignals,
+        sum(kc.exec_nvcsws)::bigint AS exec_nvcsws,
+        sum(kc.exec_nivcsws)::bigint AS exec_nivcsws,
         ((COALESCE(sum(kc.exec_reads), 0) + COALESCE(sum(kc.plan_reads), 0))
           *100/NULLIF(min(tot.reads),0))::float AS reads_total_pct,
         ((COALESCE(sum(kc.exec_writes), 0) + COALESCE(sum(kc.plan_writes), 0))
           *100/NULLIF(min(tot.writes),0))::float AS writes_total_pct,
-        sum(kc.plan_user_time) as plan_user_time,
-        sum(kc.plan_system_time) as plan_system_time,
-        sum(kc.plan_minflts)::bigint as plan_minflts,
-        sum(kc.plan_majflts)::bigint as plan_majflts,
-        sum(kc.plan_nswaps)::bigint as plan_nswaps,
-        sum(kc.plan_reads)::bigint as plan_reads,
-        sum(kc.plan_writes)::bigint as plan_writes,
-        sum(kc.plan_msgsnds)::bigint as plan_msgsnds,
-        sum(kc.plan_msgrcvs)::bigint as plan_msgrcvs,
-        sum(kc.plan_nsignals)::bigint as plan_nsignals,
-        sum(kc.plan_nvcsws)::bigint as plan_nvcsws,
-        sum(kc.plan_nivcsws)::bigint as plan_nivcsws
+        sum(kc.plan_user_time) AS plan_user_time,
+        sum(kc.plan_system_time) AS plan_system_time,
+        sum(kc.plan_minflts)::bigint AS plan_minflts,
+        sum(kc.plan_majflts)::bigint AS plan_majflts,
+        sum(kc.plan_nswaps)::bigint AS plan_nswaps,
+        sum(kc.plan_reads)::bigint AS plan_reads,
+        sum(kc.plan_writes)::bigint AS plan_writes,
+        sum(kc.plan_msgsnds)::bigint AS plan_msgsnds,
+        sum(kc.plan_msgrcvs)::bigint AS plan_msgrcvs,
+        sum(kc.plan_nsignals)::bigint AS plan_nsignals,
+        sum(kc.plan_nvcsws)::bigint AS plan_nvcsws,
+        sum(kc.plan_nivcsws)::bigint AS plan_nivcsws
    FROM sample_kcache kc
         -- User name
         JOIN roles_list rl USING (server_id, userid)
@@ -105,555 +105,303 @@ RETURNS TABLE(
       kc.toplevel
 $$ LANGUAGE sql;
 
+CREATE FUNCTION top_rusage_statements_format(IN sserver_id integer,
+  IN start_id integer, IN end_id integer)
+RETURNS TABLE(
+    datid                    oid,
+    dbname                   name,
+    userid                   oid,
+    username                 name,
+    queryid                  bigint,
+    hexqueryid               text,
+    toplevel                 boolean,
+    hashed_ids               text,
+    exec_user_time           numeric,
+    user_time_pct            numeric,
+    exec_system_time         numeric,
+    system_time_pct          numeric,
+    exec_minflts             bigint,
+    exec_majflts             bigint,
+    exec_nswaps              bigint,
+    exec_reads               text,
+    exec_writes              text,
+    exec_msgsnds             bigint,
+    exec_msgrcvs             bigint,
+    exec_nsignals            bigint,
+    exec_nvcsws              bigint,
+    exec_nivcsws             bigint,
+    reads_total_pct          numeric,
+    writes_total_pct         numeric,
+    plan_user_time           numeric,
+    plan_system_time         numeric,
+    plan_minflts             bigint,
+    plan_majflts             bigint,
+    plan_nswaps              bigint,
+    plan_reads               text,
+    plan_writes              text,
+    plan_msgsnds             bigint,
+    plan_msgrcvs             bigint,
+    plan_nsignals            bigint,
+    plan_nvcsws              bigint,
+    plan_nivcsws             bigint,
+    sum_cpu_time             numeric,
+    sum_io_bytes             bigint,
 
-CREATE FUNCTION top_cpu_time_htbl(IN report_context jsonb, IN sserver_id integer)
-RETURNS text SET search_path=@extschema@ AS $$
-DECLARE
-    report      text := '';
-    tab_row     text := '';
-    jtab_tpl    jsonb;
+    ord_cpu_time             integer,
+    ord_io_bytes             integer
+)
+SET search_path=@extschema@ AS $$
+  SELECT
+    datid,
+    dbname,
+    userid,
+    username,
+    queryid,
+    to_hex(st.queryid) AS hexqueryid,
+    toplevel,
+    left(md5(st.userid::text || st.datid::text || st.queryid::text), 10) AS hashed_ids,
+    round(CAST(NULLIF(st.exec_user_time, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st.user_time_pct, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st.exec_system_time, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st.system_time_pct, 0.0) AS numeric), 2),
+    NULLIF(st.exec_minflts, 0),
+    NULLIF(st.exec_majflts, 0),
+    NULLIF(st.exec_nswaps, 0),
+    pg_size_pretty(NULLIF(st.exec_reads, 0)),
+    pg_size_pretty(NULLIF(st.exec_writes, 0)),
+    NULLIF(st.exec_msgsnds, 0),
+    NULLIF(st.exec_msgrcvs, 0),
+    NULLIF(st.exec_nsignals, 0),
+    NULLIF(st.exec_nvcsws, 0),
+    NULLIF(st.exec_nivcsws, 0),
+    round(CAST(NULLIF(st.reads_total_pct, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st.writes_total_pct, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st.plan_user_time, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st.plan_system_time, 0.0) AS numeric), 2),
+    NULLIF(st.plan_minflts, 0),
+    NULLIF(st.plan_majflts, 0),
+    NULLIF(st.plan_nswaps, 0),
+    pg_size_pretty(NULLIF(st.plan_reads, 0)),
+    pg_size_pretty(NULLIF(st.plan_writes, 0)),
+    NULLIF(st.plan_msgsnds, 0),
+    NULLIF(st.plan_msgrcvs, 0),
+    NULLIF(st.plan_nsignals, 0),
+    NULLIF(st.plan_nvcsws, 0),
+    NULLIF(st.plan_nivcsws, 0),
+    (COALESCE(st.plan_user_time, 0.0) + COALESCE(st.plan_system_time, 0.0) +
+      COALESCE(st.exec_user_time, 0.0) + COALESCE(st.exec_system_time, 0.0))::numeric AS sum_cpu_time,
+    COALESCE(st.plan_reads, 0) + COALESCE(st.plan_writes, 0) +
+      COALESCE(st.exec_reads, 0) + COALESCE(st.exec_writes, 0) AS sum_io_bytes,
+    CASE WHEN COALESCE(st.plan_user_time, 0.0) + COALESCE(st.plan_system_time, 0.0) +
+        COALESCE(st.exec_user_time, 0.0) + COALESCE(st.exec_system_time, 0.0) > 0 THEN
+      row_number() OVER (ORDER BY COALESCE(st.plan_user_time, 0.0) +
+        COALESCE(st.plan_system_time, 0.0) + COALESCE(st.exec_user_time, 0.0) +
+        COALESCE(st.exec_system_time, 0.0) DESC NULLS LAST,
+        datid, userid, queryid, toplevel)::integer
+    ELSE NULL END AS ord_cpu_time,
+    CASE WHEN COALESCE(st.plan_reads, 0) + COALESCE(st.plan_writes, 0) +
+        COALESCE(st.exec_reads, 0) + COALESCE(st.exec_writes, 0) > 0 THEN
+      row_number() OVER (ORDER BY COALESCE(st.plan_reads, 0) + COALESCE(st.plan_writes, 0) +
+        COALESCE(st.exec_reads, 0) + COALESCE(st.exec_writes, 0) DESC NULLS LAST,
+        datid, userid, queryid, toplevel)::integer
+    ELSE NULL END AS ord_io_bytes
+  FROM
+    top_kcache_statements(sserver_id, start_id, end_id) st
+$$ LANGUAGE sql;
 
-    --Cursor for top(cnt) queries ordered by elapsed time
-    c_elapsed_time CURSOR(topn integer) FOR
-    SELECT
-        kc.datid as datid,
-        kc.dbname as dbname,
-        kc.userid as userid,
-        kc.username as username,
-        kc.queryid as queryid,
-        kc.toplevel as toplevel,
-        NULLIF(kc.plan_user_time, 0.0) as plan_user_time,
-        NULLIF(kc.exec_user_time, 0.0) as exec_user_time,
-        NULLIF(kc.user_time_pct, 0.0) as user_time_pct,
-        NULLIF(kc.plan_system_time, 0.0) as plan_system_time,
-        NULLIF(kc.exec_system_time, 0.0) as exec_system_time,
-        NULLIF(kc.system_time_pct, 0.0) as system_time_pct
-    FROM top_kcache_statements1 kc
-    WHERE COALESCE(kc.plan_user_time, 0.0) + COALESCE(kc.plan_system_time, 0.0) +
-      COALESCE(kc.exec_user_time, 0.0) + COALESCE(kc.exec_system_time, 0.0) > 0
-    ORDER BY COALESCE(kc.plan_user_time, 0.0) + COALESCE(kc.plan_system_time, 0.0) +
-      COALESCE(kc.exec_user_time, 0.0) + COALESCE(kc.exec_system_time, 0.0) DESC,
-      kc.datid,
-      kc.userid,
-      kc.queryid,
-      kc.toplevel
-    LIMIT topn;
-
-    r_result RECORD;
-BEGIN
-    jtab_tpl := jsonb_build_object(
-      'tab_hdr',
-        '<table {stattbl}>'
-        '<tr>'
-          '<th rowspan="2">Query ID</th>'
-          '<th rowspan="2">Database</th>'
-          '<th rowspan="2">User</th>'
-          '<th title="Userspace CPU" colspan="{rusage_planstats?cputime_colspan}">User Time</th>'
-          '<th title="Kernelspace CPU" colspan="{rusage_planstats?cputime_colspan}">System Time</th>'
-        '</tr>'
-        '<tr>'
-          '{rusage_planstats?user_plan_time_hdr}'
-          '<th title="User CPU time elapsed during execution">Exec (s)</th>'
-          '<th title="User CPU time elapsed by this statement as a percentage of total user CPU time">%Total</th>'
-          '{rusage_planstats?system_plan_time_hdr}'
-          '<th title="System CPU time elapsed during execution">Exec (s)</th>'
-          '<th title="System CPU time elapsed by this statement as a percentage of total system CPU time">%Total</th>'
-        '</tr>'
-        '{rows}'
-        '</table>',
-      'stmt_tpl',
-        '<tr>'
-          '<td {mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small>%1$s</p></td>'
-          '<td>%4$s</td>'
-          '<td>%5$s</td>'
-          '{rusage_planstats?user_plan_time_row}'
-          '<td {value}>%7$s</td>'
-          '<td {value}>%8$s</td>'
-          '{rusage_planstats?system_plan_time_row}'
-          '<td {value}>%10$s</td>'
-          '<td {value}>%11$s</td>'
-        '</tr>',
-      'nested_tpl',
-        ' <small title="Nested level">(N)</small>',
-      'rusage_planstats?cputime_colspan','3',
-      '!rusage_planstats?cputime_colspan','2',
-      'rusage_planstats?user_plan_time_hdr',
-        '<th title="User CPU time elapsed during planning">Plan (s)</th>',
-      'rusage_planstats?system_plan_time_hdr',
-        '<th title="System CPU time elapsed during planning">Plan (s)</th>',
-      'rusage_planstats?user_plan_time_row',
-        '<td {value}>%6$s</td>',
-      'rusage_planstats?system_plan_time_row',
-        '<td {value}>%9$s</td>'
-    );
-    -- apply settings to templates
-    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
-    -- Reporting on top queries by elapsed time
-    FOR r_result IN c_elapsed_time(
-        (report_context #>> '{report_properties,topn}')::integer
-      )
-    LOOP
-        tab_row := format(
-            jtab_tpl #>> ARRAY['stmt_tpl'],
-            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
-            to_hex(r_result.queryid),
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
-            r_result.dbname,
-            r_result.username,
-            round(CAST(r_result.plan_user_time AS numeric),2),
-            round(CAST(r_result.exec_user_time AS numeric),2),
-            round(CAST(r_result.user_time_pct AS numeric),2),
-            round(CAST(r_result.plan_system_time AS numeric),2),
-            round(CAST(r_result.exec_system_time AS numeric),2),
-            round(CAST(r_result.system_time_pct AS numeric),2)
-        );
-
-        report := report || tab_row;
-        PERFORM collect_queries(
-            r_result.userid,r_result.datid,r_result.queryid
-        );
-    END LOOP;
-
-    IF report != '' THEN
-        RETURN replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
-    ELSE
-        RETURN '';
-    END IF;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE FUNCTION top_cpu_time_diff_htbl(IN report_context jsonb, IN sserver_id integer)
-RETURNS text SET search_path=@extschema@ AS $$
-DECLARE
-    report      text := '';
-    tab_row     text := '';
-    jtab_tpl    jsonb;
-
-    --Cursor for top(cnt) queries ordered by elapsed time
-    c_elapsed_time CURSOR(topn integer) FOR
-    SELECT * FROM (SELECT
-        COALESCE(kc1.datid,kc2.datid) as datid,
-        COALESCE(kc1.dbname,kc2.dbname) as dbname,
-        COALESCE(kc1.userid,kc2.userid) as userid,
-        COALESCE(kc1.username,kc2.username) as username,
-        COALESCE(kc1.queryid,kc2.queryid) as queryid,
-        COALESCE(kc1.toplevel,kc2.toplevel) as toplevel,
-        NULLIF(kc1.plan_user_time, 0.0) as plan_user_time1,
-        NULLIF(kc1.exec_user_time, 0.0) as exec_user_time1,
-        NULLIF(kc1.user_time_pct, 0.0) as user_time_pct1,
-        NULLIF(kc1.plan_system_time, 0.0) as plan_system_time1,
-        NULLIF(kc1.exec_system_time, 0.0) as exec_system_time1,
-        NULLIF(kc1.system_time_pct, 0.0) as system_time_pct1,
-        NULLIF(kc2.plan_user_time, 0.0) as plan_user_time2,
-        NULLIF(kc2.exec_user_time, 0.0) as exec_user_time2,
-        NULLIF(kc2.user_time_pct, 0.0) as user_time_pct2,
-        NULLIF(kc2.plan_system_time, 0.0) as plan_system_time2,
-        NULLIF(kc2.exec_system_time, 0.0) as exec_system_time2,
-        NULLIF(kc2.system_time_pct, 0.0) as system_time_pct2,
-        row_number() over (ORDER BY COALESCE(kc1.exec_user_time, 0.0) + COALESCE(kc1.exec_system_time, 0.0) DESC NULLS LAST) as time1,
-        row_number() over (ORDER BY COALESCE(kc2.exec_user_time, 0.0) + COALESCE(kc2.exec_system_time, 0.0) DESC NULLS LAST) as time2
-    FROM top_kcache_statements1 kc1
-        FULL OUTER JOIN top_kcache_statements2 kc2 USING (server_id, datid, userid, queryid)
-    WHERE COALESCE(kc1.plan_user_time, 0.0) + COALESCE(kc2.plan_user_time, 0.0) +
-        COALESCE(kc1.plan_system_time, 0.0) + COALESCE(kc2.plan_system_time, 0.0) +
-        COALESCE(kc1.exec_user_time, 0.0) + COALESCE(kc2.exec_user_time, 0.0) +
-        COALESCE(kc1.exec_system_time, 0.0) + COALESCE(kc2.exec_system_time, 0.0) > 0
-    ORDER BY COALESCE(kc1.plan_user_time, 0.0) + COALESCE(kc2.plan_user_time, 0.0) +
-        COALESCE(kc1.plan_system_time, 0.0) + COALESCE(kc2.plan_system_time, 0.0) +
-        COALESCE(kc1.exec_user_time, 0.0) + COALESCE(kc2.exec_user_time, 0.0) +
-        COALESCE(kc1.exec_system_time, 0.0) + COALESCE(kc2.exec_system_time, 0.0) DESC,
-        COALESCE(kc1.datid,kc2.datid),
-        COALESCE(kc1.userid,kc2.userid),
-        COALESCE(kc1.queryid,kc2.queryid),
-        COALESCE(kc1.toplevel,kc2.toplevel)
-        ) t1
-    WHERE least(
-        time1,
-        time2
-      ) <= topn;
-
-    r_result RECORD;
-BEGIN
-    -- Elapsed time sorted list TPLs
-    jtab_tpl := jsonb_build_object(
-      'tab_hdr',
-        '<table {stattbl}>'
-        '<tr>'
-          '<th rowspan="2">Query ID</th>'
-          '<th rowspan="2">Database</th>'
-          '<th rowspan="2">User</th>'
-          '<th rowspan="2">I</th>'
-          '<th title="Userspace CPU" colspan="{rusage_planstats?cputime_colspan}">User Time</th>'
-          '<th title="Kernelspace CPU" colspan="{rusage_planstats?cputime_colspan}">System Time</th>'
-        '</tr>'
-        '<tr>'
-          '{rusage_planstats?user_plan_time_hdr}'
-          '<th title="User CPU time elapsed during execution">Exec (s)</th>'
-          '<th title="User CPU time elapsed by this statement as a percentage of total user CPU time">%Total</th>'
-          '{rusage_planstats?system_plan_time_hdr}'
-          '<th title="System CPU time elapsed during execution">Exec (s)</th>'
-          '<th title="System CPU time elapsed by this statement as a percentage of total system CPU time">%Total</th>'
-        '</tr>'
-        '{rows}'
-        '</table>',
-      'stmt_tpl',
-        '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small>%1$s</p></td>'
-          '<td {rowtdspanhdr}>%4$s</td>'
-          '<td {rowtdspanhdr}>%5$s</td>'
-          '<td {label} {title1}>1</td>'
-          '{rusage_planstats?user_plan_time_row1}'
-          '<td {value}>%7$s</td>'
-          '<td {value}>%8$s</td>'
-          '{rusage_planstats?system_plan_time_row1}'
-          '<td {value}>%10$s</td>'
-          '<td {value}>%11$s</td>'
-        '</tr>'
-        '<tr {interval2}>'
-          '<td {label} {title2}>2</td>'
-          '{rusage_planstats?user_plan_time_row2}'
-          '<td {value}>%13$s</td>'
-          '<td {value}>%14$s</td>'
-          '{rusage_planstats?system_plan_time_row2}'
-          '<td {value}>%16$s</td>'
-          '<td {value}>%17$s</td>'
-        '</tr>'
-        '<tr style="visibility:collapse"></tr>',
-      'nested_tpl',
-        ' <small title="Nested level">(N)</small>',
-      'rusage_planstats?cputime_colspan','3',
-      '!rusage_planstats?cputime_colspan','2',
-      'rusage_planstats?user_plan_time_hdr',
-        '<th title="User CPU time elapsed during planning">Plan (s)</th>',
-      'rusage_planstats?system_plan_time_hdr',
-        '<th title="System CPU time elapsed during planning">Plan (s)</th>',
-      'rusage_planstats?user_plan_time_row1',
-        '<td {value}>%6$s</td>',
-      'rusage_planstats?system_plan_time_row1',
-        '<td {value}>%9$s</td>',
-      'rusage_planstats?user_plan_time_row2',
-        '<td {value}>%12$s</td>',
-      'rusage_planstats?system_plan_time_row2',
-        '<td {value}>%15$s</td>'
-    );
-    -- apply settings to templates
-    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
-
-    -- Reporting on top queries by elapsed time
-    FOR r_result IN c_elapsed_time(
-        (report_context #>> '{report_properties,topn}')::integer
-      )
-    LOOP
-        tab_row := format(
-            jtab_tpl #>> ARRAY['stmt_tpl'],
-            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
-            to_hex(r_result.queryid),
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
-            r_result.dbname,
-            r_result.username,
-            round(CAST(r_result.plan_user_time1 AS numeric),2),
-            round(CAST(r_result.exec_user_time1 AS numeric),2),
-            round(CAST(r_result.user_time_pct1 AS numeric),2),
-            round(CAST(r_result.plan_system_time1 AS numeric),2),
-            round(CAST(r_result.exec_system_time1 AS numeric),2),
-            round(CAST(r_result.system_time_pct1 AS numeric),2),
-            round(CAST(r_result.plan_user_time2 AS numeric),2),
-            round(CAST(r_result.exec_user_time2 AS numeric),2),
-            round(CAST(r_result.user_time_pct2 AS numeric),2),
-            round(CAST(r_result.plan_system_time2 AS numeric),2),
-            round(CAST(r_result.exec_system_time2 AS numeric),2),
-            round(CAST(r_result.system_time_pct2 AS numeric),2)
-        );
-
-        report := report || tab_row;
-        PERFORM collect_queries(
-            r_result.userid,r_result.datid,r_result.queryid
-        );
-    END LOOP;
-
-    IF report != '' THEN
-        RETURN replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
-    ELSE
-        RETURN '';
-    END IF;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE FUNCTION top_io_filesystem_htbl(IN report_context jsonb, IN sserver_id integer)
-RETURNS text SET search_path=@extschema@ AS $$
-DECLARE
-    report      text := '';
-    tab_row     text := '';
-    jtab_tpl    jsonb;
-
-    --Cursor for top(cnt) queries ordered by elapsed time
-    c_elapsed_time CURSOR(topn integer) FOR
-    SELECT
-        kc.datid as datid,
-        kc.dbname as dbname,
-        kc.userid as userid,
-        kc.username as username,
-        kc.queryid as queryid,
-        kc.toplevel as toplevel,
-        NULLIF(kc.plan_reads, 0) as plan_reads,
-        NULLIF(kc.exec_reads, 0) as exec_reads,
-        NULLIF(kc.reads_total_pct, 0.0) as reads_total_pct,
-        NULLIF(kc.plan_writes, 0)  as plan_writes,
-        NULLIF(kc.exec_writes, 0)  as exec_writes,
-        NULLIF(kc.writes_total_pct, 0.0) as writes_total_pct
-    FROM top_kcache_statements1 kc
-    WHERE COALESCE(kc.plan_reads, 0) + COALESCE(kc.plan_writes, 0) +
-      COALESCE(kc.exec_reads, 0) + COALESCE(kc.exec_writes, 0) > 0
-    ORDER BY COALESCE(kc.plan_reads, 0) + COALESCE(kc.plan_writes, 0) +
-      COALESCE(kc.exec_reads, 0) + COALESCE(kc.exec_writes, 0) DESC,
-      kc.datid,
-      kc.userid,
-      kc.queryid,
-      kc.toplevel
-    LIMIT topn;
-
-    r_result RECORD;
-BEGIN
-    jtab_tpl := jsonb_build_object(
-      'tab_hdr',
-        '<table {stattbl}>'
-          '<tr>'
-            '<th rowspan="2">Query ID</th>'
-            '<th rowspan="2">Database</th>'
-            '<th rowspan="2">User</th>'
-            '<th title="Filesystem reads" colspan="{rusage_planstats?fs_colspan}">Read Bytes</th>'
-            '<th title="Filesystem writes" colspan="{rusage_planstats?fs_colspan}">Write Bytes</th>'
-          '</tr>'
-          '<tr>'
-            '{rusage_planstats?plan_reads_hdr}'
-            '<th title="Filesystem read amount during execution">Exec</th>'
-            '<th title="Filesystem read amount of this statement as a percentage of all statements FS read amount">%Total</th>'
-            '{rusage_planstats?plan_writes_hdr}'
-            '<th title="Filesystem write amount during execution">Exec</th>'
-            '<th title="Filesystem write amount of this statement as a percentage of all statements FS write amount">%Total</th>'
-          '</tr>'
-          '{rows}'
-        '</table>',
-      'stmt_tpl',
-        '<tr>'
-          '<td {mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small>%1$s</p></td>'
-          '<td>%4$s</td>'
-          '<td>%5$s</td>'
-          '{rusage_planstats?plan_reads_row}'
-          '<td {value}>%7$s</td>'
-          '<td {value}>%8$s</td>'
-          '{rusage_planstats?plan_writes_row}'
-          '<td {value}>%10$s</td>'
-          '<td {value}>%11$s</td>'
-        '</tr>',
-      'nested_tpl',
-        ' <small title="Nested level">(N)</small>',
-      'rusage_planstats?fs_colspan','3',
-      '!rusage_planstats?fs_colspan','2',
-      'rusage_planstats?plan_reads_hdr',
-        '<th title="Filesystem read amount during planning">Plan</th>',
-      'rusage_planstats?plan_writes_hdr',
-        '<th title="Filesystem write amount during planning">Plan</th>',
-      'rusage_planstats?plan_reads_row',
-        '<td {value}>%6$s</td>',
-      'rusage_planstats?plan_writes_row',
-        '<td {value}>%9$s</td>'
-    );
-
-    -- apply settings to templates
-    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
-    -- Reporting on top queries by elapsed time
-    FOR r_result IN c_elapsed_time(
-        (report_context #>> '{report_properties,topn}')::integer
-      )
-    LOOP
-        tab_row := format(
-            jtab_tpl #>> ARRAY['stmt_tpl'],
-            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
-            to_hex(r_result.queryid),
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
-            r_result.dbname,
-            r_result.username,
-            pg_size_pretty(r_result.plan_reads),
-            pg_size_pretty(r_result.exec_reads),
-            round(CAST(r_result.reads_total_pct AS numeric),2),
-            pg_size_pretty(r_result.plan_writes),
-            pg_size_pretty(r_result.exec_writes),
-            round(CAST(r_result.writes_total_pct AS numeric),2)
-        );
-
-        report := report || tab_row;
-        PERFORM collect_queries(
-            r_result.userid,r_result.datid,r_result.queryid
-        );
-    END LOOP;
-
-    IF report != '' THEN
-        RETURN replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
-    ELSE
-        RETURN '';
-    END IF;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE FUNCTION top_io_filesystem_diff_htbl(IN report_context jsonb, IN sserver_id integer)
-RETURNS text SET search_path=@extschema@ AS $$
-DECLARE
-    report      text := '';
-    tab_row     text := '';
-    jtab_tpl    jsonb;
-
-    --Cursor for top(cnt) queries ordered by elapsed time
-    c_elapsed_time CURSOR(topn integer) FOR
-    SELECT * FROM (SELECT
-        COALESCE(kc1.datid,kc2.datid) as datid,
-        COALESCE(kc1.dbname,kc2.dbname) as dbname,
-        COALESCE(kc1.userid,kc2.userid) as userid,
-        COALESCE(kc1.username,kc2.username) as username,
-        COALESCE(kc1.queryid,kc2.queryid) as queryid,
-        COALESCE(kc1.toplevel,kc2.toplevel) as toplevel,
-        NULLIF(kc1.plan_reads, 0) as plan_reads1,
-        NULLIF(kc1.exec_reads, 0) as exec_reads1,
-        NULLIF(kc1.reads_total_pct, 0.0) as reads_total_pct1,
-        NULLIF(kc1.plan_writes, 0)  as plan_writes1,
-        NULLIF(kc1.exec_writes, 0)  as exec_writes1,
-        NULLIF(kc1.writes_total_pct, 0.0) as writes_total_pct1,
-        NULLIF(kc2.plan_reads, 0) as plan_reads2,
-        NULLIF(kc2.exec_reads, 0) as exec_reads2,
-        NULLIF(kc2.reads_total_pct, 0.0) as reads_total_pct2,
-        NULLIF(kc2.plan_writes, 0) as plan_writes2,
-        NULLIF(kc2.exec_writes, 0) as exec_writes2,
-        NULLIF(kc2.writes_total_pct, 0.0) as writes_total_pct2,
-        row_number() OVER (ORDER BY COALESCE(kc1.exec_reads, 0.0) + COALESCE(kc1.exec_writes, 0.0) DESC NULLS LAST) as io_count1,
-        row_number() OVER (ORDER BY COALESCE(kc2.exec_reads, 0.0) + COALESCE(kc2.exec_writes, 0.0)  DESC NULLS LAST) as io_count2
-    FROM top_kcache_statements1 kc1
-        FULL OUTER JOIN top_kcache_statements2 kc2 USING (server_id, datid, userid, queryid)
-    WHERE COALESCE(kc1.plan_writes, 0.0) + COALESCE(kc2.plan_writes, 0.0) +
-        COALESCE(kc1.plan_reads, 0.0) + COALESCE(kc2.plan_reads, 0.0) +
-        COALESCE(kc1.exec_writes, 0.0) + COALESCE(kc2.exec_writes, 0.0) +
-        COALESCE(kc1.exec_reads, 0.0) + COALESCE(kc2.exec_reads, 0.0) > 0
-    ORDER BY COALESCE(kc1.plan_writes, 0.0) + COALESCE(kc2.plan_writes, 0.0) +
-        COALESCE(kc1.plan_reads, 0.0) + COALESCE(kc2.plan_reads, 0.0) +
-        COALESCE(kc1.exec_writes, 0.0) + COALESCE(kc2.exec_writes, 0.0) +
-        COALESCE(kc1.exec_reads, 0.0) + COALESCE(kc2.exec_reads, 0.0) DESC,
-        COALESCE(kc1.datid,kc2.datid),
-        COALESCE(kc1.userid,kc2.userid),
-        COALESCE(kc1.queryid,kc2.queryid),
-        COALESCE(kc1.toplevel,kc2.toplevel)
-        ) t1
-    WHERE least(
-        io_count1,
-        io_count2
-      ) <= topn;
-
-    r_result RECORD;
-BEGIN
-    -- Elapsed time sorted list TPLs
-    jtab_tpl := jsonb_build_object(
-      'tab_hdr',
-        '<table {stattbl}>'
-          '<tr>'
-            '<th rowspan="2">Query ID</th>'
-            '<th rowspan="2">Database</th>'
-            '<th rowspan="2">User</th>'
-            '<th rowspan="2">I</th>'
-            '<th title="Filesystem reads" colspan="{rusage_planstats?fs_colspan}">Read Bytes</th>'
-            '<th title="Filesystem writes" colspan="{rusage_planstats?fs_colspan}">Write Bytes</th>'
-          '</tr>'
-          '<tr>'
-            '{rusage_planstats?plan_reads_hdr}'
-            '<th title="Filesystem read amount during execution">Exec</th>'
-            '<th title="Filesystem read amount of this statement as a percentage of all statements FS read amount">%Total</th>'
-            '{rusage_planstats?plan_writes_hdr}'
-            '<th title="Filesystem write amount during execution">Exec</th>'
-            '<th title="Filesystem write amount of this statement as a percentage of all statements FS write amount">%Total</th>'
-          '</tr>'
-          '{rows}'
-        '</table>',
-      'stmt_tpl',
-        '<tr {interval1}>'
-          '<td {rowtdspanhdr_mono}><p><a HREF="#%2$s">%2$s</a></p>'
-          '<p><small>[%3$s]</small>%1$s</p></td>'
-          '<td {rowtdspanhdr}>%4$s</td>'
-          '<td {rowtdspanhdr}>%5$s</td>'
-          '<td {label} {title1}>1</td>'
-          '{rusage_planstats?plan_reads_row1}'
-          '<td {value}>%7$s</td>'
-          '<td {value}>%8$s</td>'
-          '{rusage_planstats?plan_writes_row1}'
-          '<td {value}>%10$s</td>'
-          '<td {value}>%11$s</td>'
-        '</tr>'
-        '<tr {interval2}>'
-          '<td {label} {title2}>2</td>'
-          '{rusage_planstats?plan_reads_row2}'
-          '<td {value}>%13$s</td>'
-          '<td {value}>%14$s</td>'
-          '{rusage_planstats?plan_writes_row2}'
-          '<td {value}>%16$s</td>'
-          '<td {value}>%17$s</td>'
-        '</tr>'
-        '<tr style="visibility:collapse"></tr>',
-      'nested_tpl',
-        ' <small title="Nested level">(N)</small>',
-      'rusage_planstats?fs_colspan','3',
-      '!rusage_planstats?fs_colspan','2',
-      'rusage_planstats?plan_reads_hdr',
-        '<th title="Filesystem read amount during planning">Plan</th>',
-      'rusage_planstats?plan_writes_hdr',
-        '<th title="Filesystem write amount during planning">Plan</th>',
-      'rusage_planstats?plan_reads_row1',
-        '<td {value}>%6$s</td>',
-      'rusage_planstats?plan_writes_row1',
-        '<td {value}>%9$s</td>',
-      'rusage_planstats?plan_reads_row2',
-        '<td {value}>%12$s</td>',
-      'rusage_planstats?plan_writes_row2',
-        '<td {value}>%15$s</td>'
-    );
-    -- apply settings to templates
-    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
-
-    -- Reporting on top queries by elapsed time
-    FOR r_result IN c_elapsed_time(
-        (report_context #>> '{report_properties,topn}')::integer
-      )
-    LOOP
-        tab_row := format(
-            jtab_tpl #>> ARRAY['stmt_tpl'],
-            CASE WHEN NOT r_result.toplevel THEN jtab_tpl #>> ARRAY['nested_tpl'] ELSE '' END,
-            to_hex(r_result.queryid),
-            left(md5(r_result.userid::text || r_result.datid::text || r_result.queryid::text), 10),
-            r_result.dbname,
-            r_result.username,
-            pg_size_pretty(r_result.plan_reads1),
-            pg_size_pretty(r_result.exec_reads1),
-            round(CAST(r_result.reads_total_pct1 AS numeric),2),
-            pg_size_pretty(r_result.plan_writes1),
-            pg_size_pretty(r_result.exec_writes1),
-            round(CAST(r_result.writes_total_pct1 AS numeric),2),
-            pg_size_pretty(r_result.plan_reads2),
-            pg_size_pretty(r_result.exec_reads2),
-            round(CAST(r_result.reads_total_pct2 AS numeric),2),
-            pg_size_pretty(r_result.plan_writes2),
-            pg_size_pretty(r_result.exec_writes2),
-            round(CAST(r_result.writes_total_pct2 AS numeric),2)
-        );
-
-        report := report || tab_row;
-        PERFORM collect_queries(
-            r_result.userid,r_result.datid,r_result.queryid
-        );
-    END LOOP;
-
-    IF report != '' THEN
-        RETURN replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
-    ELSE
-        RETURN '';
-    END IF;
-END;
-$$ LANGUAGE plpgsql;
-
+CREATE FUNCTION top_rusage_statements_format_diff(IN sserver_id integer,
+  IN start1_id integer, IN end1_id integer,
+  IN start2_id integer, IN end2_id integer)
+RETURNS TABLE(
+    datid                    oid,
+    dbname                   name,
+    userid                   oid,
+    username                 name,
+    queryid                  bigint,
+    hexqueryid               text,
+    toplevel                 boolean,
+    hashed_ids               text,
+    -- First interval statistics
+    exec_user_time1          numeric,
+    user_time_pct1           numeric,
+    exec_system_time1        numeric,
+    system_time_pct1         numeric,
+    exec_minflts1            bigint,
+    exec_majflts1            bigint,
+    exec_nswaps1             bigint,
+    exec_reads1              text,
+    exec_writes1             text,
+    exec_msgsnds1            bigint,
+    exec_msgrcvs1            bigint,
+    exec_nsignals1           bigint,
+    exec_nvcsws1             bigint,
+    exec_nivcsws1            bigint,
+    reads_total_pct1         numeric,
+    writes_total_pct1        numeric,
+    plan_user_time1          numeric,
+    plan_system_time1        numeric,
+    plan_minflts1            bigint,
+    plan_majflts1            bigint,
+    plan_nswaps1             bigint,
+    plan_reads1              text,
+    plan_writes1             text,
+    plan_msgsnds1            bigint,
+    plan_msgrcvs1            bigint,
+    plan_nsignals1           bigint,
+    plan_nvcsws1             bigint,
+    plan_nivcsws1            bigint,
+    -- Second interval
+    exec_user_time2          numeric,
+    user_time_pct2           numeric,
+    exec_system_time2        numeric,
+    system_time_pct2         numeric,
+    exec_minflts2            bigint,
+    exec_majflts2            bigint,
+    exec_nswaps2             bigint,
+    exec_reads2              text,
+    exec_writes2             text,
+    exec_msgsnds2            bigint,
+    exec_msgrcvs2            bigint,
+    exec_nsignals2           bigint,
+    exec_nvcsws2             bigint,
+    exec_nivcsws2            bigint,
+    reads_total_pct2         numeric,
+    writes_total_pct2        numeric,
+    plan_user_time2          numeric,
+    plan_system_time2        numeric,
+    plan_minflts2            bigint,
+    plan_majflts2            bigint,
+    plan_nswaps2             bigint,
+    plan_reads2              text,
+    plan_writes2             text,
+    plan_msgsnds2            bigint,
+    plan_msgrcvs2            bigint,
+    plan_nsignals2           bigint,
+    plan_nvcsws2             bigint,
+    plan_nivcsws2            bigint,
+    -- Filter and ordering fields
+    sum_cpu_time             numeric,
+    sum_io_bytes             bigint,
+    ord_cpu_time             integer,
+    ord_io_bytes             integer
+)
+SET search_path=@extschema@ AS $$
+  SELECT
+    COALESCE(st1.datid,st2.datid) as datid,
+    COALESCE(st1.dbname,st2.dbname) as dbname,
+    COALESCE(st1.userid,st2.userid) as userid,
+    COALESCE(st1.username,st2.username) as username,
+    COALESCE(st1.queryid,st2.queryid) AS queryid,
+    to_hex(COALESCE(st1.queryid,st2.queryid)) as hexqueryid,
+    COALESCE(st1.toplevel,st2.toplevel) as toplevel,
+    left(md5(
+         COALESCE(st1.userid,st2.userid)::text ||
+         COALESCE(st1.datid,st2.datid)::text ||
+         COALESCE(st1.queryid,st2.queryid)::text), 10
+     ) AS hashed_ids,
+    -- First interval
+    round(CAST(NULLIF(st1.exec_user_time, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st1.user_time_pct, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st1.exec_system_time, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st1.system_time_pct, 0.0) AS numeric), 2),
+    NULLIF(st1.exec_minflts, 0),
+    NULLIF(st1.exec_majflts, 0),
+    NULLIF(st1.exec_nswaps, 0),
+    pg_size_pretty(NULLIF(st1.exec_reads, 0)),
+    pg_size_pretty(NULLIF(st1.exec_writes, 0)),
+    NULLIF(st1.exec_msgsnds, 0),
+    NULLIF(st1.exec_msgrcvs, 0),
+    NULLIF(st1.exec_nsignals, 0),
+    NULLIF(st1.exec_nvcsws, 0),
+    NULLIF(st1.exec_nivcsws, 0),
+    round(CAST(NULLIF(st1.reads_total_pct, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st1.writes_total_pct, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st1.plan_user_time, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st1.plan_system_time, 0.0) AS numeric), 2),
+    NULLIF(st1.plan_minflts, 0),
+    NULLIF(st1.plan_majflts, 0),
+    NULLIF(st1.plan_nswaps, 0),
+    pg_size_pretty(NULLIF(st1.plan_reads, 0)),
+    pg_size_pretty(NULLIF(st1.plan_writes, 0)),
+    NULLIF(st1.plan_msgsnds, 0),
+    NULLIF(st1.plan_msgrcvs, 0),
+    NULLIF(st1.plan_nsignals, 0),
+    NULLIF(st1.plan_nvcsws, 0),
+    NULLIF(st1.plan_nivcsws, 0),
+    -- Second interval
+    round(CAST(NULLIF(st2.exec_user_time, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st2.user_time_pct, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st2.exec_system_time, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st2.system_time_pct, 0.0) AS numeric), 2),
+    NULLIF(st2.exec_minflts, 0),
+    NULLIF(st2.exec_majflts, 0),
+    NULLIF(st2.exec_nswaps, 0),
+    pg_size_pretty(NULLIF(st2.exec_reads, 0)),
+    pg_size_pretty(NULLIF(st2.exec_writes, 0)),
+    NULLIF(st2.exec_msgsnds, 0),
+    NULLIF(st2.exec_msgrcvs, 0),
+    NULLIF(st2.exec_nsignals, 0),
+    NULLIF(st2.exec_nvcsws, 0),
+    NULLIF(st2.exec_nivcsws, 0),
+    round(CAST(NULLIF(st2.reads_total_pct, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st2.writes_total_pct, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st2.plan_user_time, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st2.plan_system_time, 0.0) AS numeric), 2),
+    NULLIF(st2.plan_minflts, 0),
+    NULLIF(st2.plan_majflts, 0),
+    NULLIF(st2.plan_nswaps, 0),
+    pg_size_pretty(NULLIF(st2.plan_reads, 0)),
+    pg_size_pretty(NULLIF(st2.plan_writes, 0)),
+    NULLIF(st2.plan_msgsnds, 0),
+    NULLIF(st2.plan_msgrcvs, 0),
+    NULLIF(st2.plan_nsignals, 0),
+    NULLIF(st2.plan_nvcsws, 0),
+    NULLIF(st2.plan_nivcsws, 0),
+    -- Filter and ordering fields
+    COALESCE(st1.plan_user_time, 0.0) + COALESCE(st1.plan_system_time, 0.0) +
+      COALESCE(st1.exec_user_time, 0.0) + COALESCE(st1.exec_system_time, 0.0) +
+      COALESCE(st2.plan_user_time, 0.0) + COALESCE(st2.plan_system_time, 0.0) +
+      COALESCE(st2.exec_user_time, 0.0) + COALESCE(st2.exec_system_time, 0.0)
+        AS sum_cpu_time,
+    COALESCE(st1.plan_reads, 0) + COALESCE(st1.plan_writes, 0) +
+      COALESCE(st1.exec_reads, 0) + COALESCE(st1.exec_writes, 0) +
+      COALESCE(st2.plan_reads, 0) + COALESCE(st2.plan_writes, 0) +
+      COALESCE(st2.exec_reads, 0) + COALESCE(st2.exec_writes, 0)
+        AS sum_io_bytes,
+    CASE WHEN COALESCE(st1.plan_user_time, 0.0) + COALESCE(st1.plan_system_time, 0.0) +
+        COALESCE(st1.exec_user_time, 0.0) + COALESCE(st1.exec_system_time, 0.0) +
+        COALESCE(st2.plan_user_time, 0.0) + COALESCE(st2.plan_system_time, 0.0) +
+        COALESCE(st2.exec_user_time, 0.0) + COALESCE(st2.exec_system_time, 0.0) > 0
+    THEN
+      row_number() OVER (ORDER BY COALESCE(st1.plan_user_time, 0.0) +
+        COALESCE(st1.plan_system_time, 0.0) +
+        COALESCE(st1.exec_user_time, 0.0) +
+        COALESCE(st1.exec_system_time, 0.0) +
+        COALESCE(st2.plan_user_time, 0.0) +
+        COALESCE(st2.plan_system_time, 0.0) +
+        COALESCE(st2.exec_user_time, 0.0) +
+        COALESCE(st2.exec_system_time, 0.0) DESC NULLS LAST,
+        COALESCE(st1.datid,st2.datid),
+        COALESCE(st1.userid,st2.userid),
+        COALESCE(st1.queryid,st2.queryid),
+        COALESCE(st1.toplevel,st2.toplevel))
+    ELSE NULL END AS ord_cpu_time,
+    CASE WHEN COALESCE(st1.plan_reads, 0) + COALESCE(st1.plan_writes, 0) +
+        COALESCE(st1.exec_reads, 0) + COALESCE(st1.exec_writes, 0) +
+        COALESCE(st2.plan_reads, 0) + COALESCE(st2.plan_writes, 0) +
+        COALESCE(st2.exec_reads, 0) + COALESCE(st2.exec_writes, 0) > 0
+    THEN
+      row_number() OVER (ORDER BY COALESCE(st1.plan_reads, 0) +
+        COALESCE(st1.plan_writes, 0) + COALESCE(st1.exec_reads, 0) +
+        COALESCE(st1.exec_writes, 0) + COALESCE(st2.plan_reads, 0) +
+        COALESCE(st2.plan_writes, 0) + COALESCE(st2.exec_reads, 0) +
+        COALESCE(st2.exec_writes, 0) DESC NULLS LAST,
+        COALESCE(st1.datid,st2.datid),
+        COALESCE(st1.userid,st2.userid),
+        COALESCE(st1.queryid,st2.queryid),
+        COALESCE(st1.toplevel,st2.toplevel))
+    ELSE NULL END AS ord_io_bytes
+  FROM top_kcache_statements(sserver_id, start1_id, end1_id) st1
+      FULL OUTER JOIN top_kcache_statements(sserver_id, start2_id, end2_id) st2 USING
+        (server_id, datid, userid, queryid, toplevel)
+$$ LANGUAGE sql;

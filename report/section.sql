@@ -58,19 +58,32 @@ BEGIN
         'reltdspanhdr','rowspan="2" class="hdr"'
       ),
       'report_features',jsonb_build_object(
+        'dbstats_reset', profile_checkavail_dbstats_reset(sserver_id, start1_id, end1_id),
+        'stmt_cnt_range', profile_checkavail_stmt_cnt(sserver_id, start1_id, end1_id),
+        'stmt_cnt_all', profile_checkavail_stmt_cnt(sserver_id, 0, 0),
+        'cluster_stats_reset', profile_checkavail_cluster_stats_reset(sserver_id, start1_id, end1_id),
+        'wal_stats_reset', profile_checkavail_wal_stats_reset(sserver_id, start1_id, end1_id),
         'statstatements',profile_checkavail_statstatements(sserver_id, start1_id, end1_id),
         'planning_times',profile_checkavail_planning_times(sserver_id, start1_id, end1_id),
         'wait_sampling_tot',profile_checkavail_wait_sampling_total(sserver_id, start1_id, end1_id),
         'io_times',profile_checkavail_io_times(sserver_id, start1_id, end1_id),
         'statement_wal_bytes',profile_checkavail_stmt_wal_bytes(sserver_id, start1_id, end1_id),
+        'statements_top_temp', profile_checkavail_top_temp(sserver_id, start1_id, end1_id),
+        'statements_temp_io_times', profile_checkavail_statements_temp_io_times(sserver_id, start1_id, end1_id),
         'wal_stats',profile_checkavail_walstats(sserver_id, start1_id, end1_id),
         'sess_stats',profile_checkavail_sessionstats(sserver_id, start1_id, end1_id),
         'function_stats',profile_checkavail_functions(sserver_id, start1_id, end1_id),
         'trigger_function_stats',profile_checkavail_trg_functions(sserver_id, start1_id, end1_id),
         'kcachestatements',profile_checkavail_rusage(sserver_id,start1_id,end1_id),
         'rusage_planstats',profile_checkavail_rusage_planstats(sserver_id,start1_id,end1_id),
-        'statements_jit_stats',profile_checkavail_statements_jit_stats(sserver_id, start1_id, end1_id) OR
-          profile_checkavail_statements_jit_stats(sserver_id, start2_id, end2_id)
+        'statements_jit_stats',profile_checkavail_statements_jit_stats(sserver_id, start1_id, end1_id),
+        'top_tables_dead', profile_checkavail_tbl_top_dead(sserver_id,start1_id,end1_id),
+        'top_tables_mods', profile_checkavail_tbl_top_mods(sserver_id,start1_id,end1_id),
+        'checksum_fail_detected', COALESCE((
+          SELECT sum(checksum_failures) > 0
+          FROM sample_stat_database
+          WHERE server_id = sserver_id AND sample_id BETWEEN start1_id + 1 AND end1_id
+          ), false)
         ),
       'report_properties',jsonb_build_object(
         'interval_duration_sec',
@@ -78,11 +91,6 @@ BEGIN
           FROM samples s JOIN samples e USING (server_id)
           WHERE e.sample_id=end1_id and s.sample_id=start1_id
             AND server_id = sserver_id),
-        'checksum_fail_detected', COALESCE((
-          SELECT sum(checksum_failures) > 0
-          FROM sample_stat_database
-          WHERE server_id = sserver_id AND sample_id BETWEEN start1_id + 1 AND end1_id
-          ), false),
         'topn', topn,
         'max_query_length', qlen_limit,
         'start1_id', start1_id,
@@ -120,6 +128,15 @@ BEGIN
         'title2',format('title="(%s - %s)"',start2_time, end2_time)
         ),
       'report_features',jsonb_build_object(
+        'dbstats_reset', profile_checkavail_dbstats_reset(sserver_id, start1_id, end1_id) OR
+          profile_checkavail_dbstats_reset(sserver_id, start2_id, end2_id),
+        'stmt_cnt_range', profile_checkavail_stmt_cnt(sserver_id, start1_id, end1_id) OR
+          profile_checkavail_stmt_cnt(sserver_id, start2_id, end2_id),
+        'stmt_cnt_all', profile_checkavail_stmt_cnt(sserver_id, 0, 0),
+        'cluster_stats_reset', profile_checkavail_cluster_stats_reset(sserver_id, start1_id, end1_id) OR
+          profile_checkavail_cluster_stats_reset(sserver_id, start2_id, end2_id),
+        'wal_stats_reset', profile_checkavail_wal_stats_reset(sserver_id, start1_id, end1_id) OR
+          profile_checkavail_wal_stats_reset(sserver_id, start2_id, end2_id),
         'statstatements',profile_checkavail_statstatements(sserver_id, start1_id, end1_id) OR
           profile_checkavail_statstatements(sserver_id, start2_id, end2_id),
         'planning_times',profile_checkavail_planning_times(sserver_id, start1_id, end1_id) OR
@@ -130,6 +147,10 @@ BEGIN
           profile_checkavail_io_times(sserver_id, start2_id, end2_id),
         'statement_wal_bytes',profile_checkavail_stmt_wal_bytes(sserver_id, start1_id, end1_id) OR
           profile_checkavail_stmt_wal_bytes(sserver_id, start2_id, end2_id),
+        'statements_top_temp', profile_checkavail_top_temp(sserver_id, start1_id, end1_id) OR
+            profile_checkavail_top_temp(sserver_id, start2_id, end2_id),
+        'statements_temp_io_times', profile_checkavail_statements_temp_io_times(sserver_id, start1_id, end1_id) OR
+            profile_checkavail_statements_temp_io_times(sserver_id, start2_id, end2_id),
         'wal_stats',profile_checkavail_walstats(sserver_id, start1_id, end1_id) OR
           profile_checkavail_walstats(sserver_id, start2_id, end2_id),
         'sess_stats',profile_checkavail_sessionstats(sserver_id, start1_id, end1_id) OR
@@ -143,7 +164,14 @@ BEGIN
         'rusage_planstats',profile_checkavail_rusage_planstats(sserver_id, start1_id, end1_id) OR
           profile_checkavail_rusage_planstats(sserver_id, start2_id, end2_id),
         'statements_jit_stats',profile_checkavail_statements_jit_stats(sserver_id, start1_id, end1_id) OR
-          profile_checkavail_statements_jit_stats(sserver_id, start2_id, end2_id)
+          profile_checkavail_statements_jit_stats(sserver_id, start2_id, end2_id),
+        'checksum_fail_detected', COALESCE((
+          SELECT sum(checksum_failures) > 0
+          FROM sample_stat_database
+          WHERE server_id = sserver_id AND
+            (sample_id BETWEEN start1_id + 1 AND end1_id OR
+            sample_id BETWEEN start2_id + 1 AND end2_id)
+          ), false)
         ),
       'report_properties',jsonb_build_object(
         'interval1_duration_sec',
@@ -156,13 +184,6 @@ BEGIN
           FROM samples s JOIN samples e USING (server_id)
           WHERE e.sample_id=end2_id and s.sample_id=start2_id
             AND server_id = sserver_id),
-        'checksum_fail_detected', COALESCE((
-          SELECT sum(checksum_failures) > 0
-          FROM sample_stat_database
-          WHERE server_id = sserver_id AND
-            (sample_id BETWEEN start1_id + 1 AND end1_id OR
-            sample_id BETWEEN start2_id + 1 AND end2_id)
-          ), false),
 
         'topn', topn,
         'max_query_length', qlen_limit,
@@ -274,264 +295,619 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION init_report_temp_tables(IN report_context jsonb, IN sserver_id integer)
-RETURNS void SET search_path=@extschema@ AS $$
+CREATE FUNCTION get_report_datasets(IN report_context jsonb, IN sserver_id integer)
+RETURNS jsonb SET search_path=@extschema@ AS $$
 DECLARE
   start1_id   integer = (report_context #>> '{report_properties,start1_id}')::integer;
   start2_id   integer = (report_context #>> '{report_properties,start2_id}')::integer;
   end1_id     integer = (report_context #>> '{report_properties,end1_id}')::integer;
   end2_id     integer = (report_context #>> '{report_properties,end2_id}')::integer;
+
+  datasets    jsonb = '{}';
+  dataset     jsonb;
+  queries_set jsonb = '[]';
+  r_result    RECORD;
 BEGIN
-    -- Report internal temporary tables
-    -- Creating temporary table for reported queries
-    CREATE TEMPORARY TABLE IF NOT EXISTS queries_list (
-      userid              oid,
-      datid               oid,
-      queryid             bigint,
-      CONSTRAINT pk_queries_list PRIMARY KEY (userid, datid, queryid))
-    ON COMMIT DELETE ROWS;
+  IF num_nulls(start1_id, end1_id) = 0 AND num_nulls(start2_id, end2_id) > 0 THEN
+    -- Regular report
+    -- database statistics dataset
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM dbstats_format(sserver_id, start1_id, end1_id)
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    datasets := jsonb_set(datasets, '{dbstat}', dataset);
 
-    /*
-    * Caching temporary tables, containing object stats cache
-    * used several times in a report functions
-    */
-    CREATE TEMPORARY TABLE top_statements1 AS
-    SELECT * FROM top_statements(sserver_id, start1_id, end1_id);
-
-    /* table size is collected in a sample when relsize field is not null
-    In a report we can use relsize-based growth calculated as a sum of
-    relsize increments only when sizes was collected
-    in the both first and last sample, otherwise we only can use
-    pg_class.relpages
-    */
-    CREATE TEMPORARY TABLE top_tables1 AS
-    SELECT tt.*,
-      rs.relsize_growth_avail AS relsize_growth_avail,
-      CASE WHEN rs.relsize_growth_avail THEN
-        tt.growth
-      ELSE
-        tt.relpagegrowth_bytes
-      END AS best_growth,
-      rs.relsize_toastgrowth_avail AS relsize_toastgrowth_avail,
-      CASE WHEN rs.relsize_toastgrowth_avail THEN
-        tt.toastgrowth
-      ELSE
-        tt.toastrelpagegrowth_bytes
-      END AS best_toastgrowth,
-      CASE WHEN tt.seqscan_relsize_avail THEN
-        tt.seqscan_bytes_relsize
-      ELSE
-        tt.seqscan_bytes_relpages
-      END AS best_seqscan_bytes,
-      CASE WHEN tt.t_seqscan_relsize_avail THEN
-        tt.t_seqscan_bytes_relsize
-      ELSE
-        tt.t_seqscan_bytes_relpages
-      END AS best_t_seqscan_bytes
-    FROM top_tables(sserver_id, start1_id, end1_id) tt
-    JOIN (
-      SELECT rel.server_id, rel.datid, rel.relid,
-          COALESCE(
-              max(rel.sample_id) = max(rel.sample_id) FILTER (WHERE rel.relsize IS NOT NULL)
-              AND min(rel.sample_id) = min(rel.sample_id) FILTER (WHERE rel.relsize IS NOT NULL)
-          , false) AS relsize_growth_avail,
-          COALESCE(
-              max(reltoast.sample_id) = max(reltoast.sample_id) FILTER (WHERE reltoast.relsize IS NOT NULL)
-              AND min(reltoast.sample_id) = min(reltoast.sample_id) FILTER (WHERE reltoast.relsize IS NOT NULL)
-          , false) AS relsize_toastgrowth_avail
-      FROM sample_stat_tables rel
-          JOIN tables_list tl USING (server_id, datid, relid)
-          LEFT JOIN sample_stat_tables reltoast ON
-              (rel.server_id, rel.sample_id, rel.datid, tl.reltoastrelid) =
-              (reltoast.server_id, reltoast.sample_id, reltoast.datid, reltoast.relid)
-      WHERE
-          rel.server_id = sserver_id
-          AND rel.sample_id BETWEEN start1_id AND end1_id
-      GROUP BY rel.server_id, rel.datid, rel.relid
-    ) rs USING (server_id, datid, relid);
-
-    CREATE TEMPORARY TABLE top_indexes1 AS
-    SELECT ti.*,
-      rs.relsize_growth_avail AS relsize_growth_avail,
-      CASE WHEN rs.relsize_growth_avail THEN
-        ti.growth
-      ELSE
-        ti.relpagegrowth_bytes
-      END AS best_growth
-    FROM top_indexes(sserver_id, start1_id, end1_id) ti
-    JOIN (
-      SELECT server_id, datid, indexrelid,
-          COALESCE(
-              max(sample_id) = max(sample_id) FILTER (WHERE relsize IS NOT NULL)
-              AND min(sample_id) = min(sample_id) FILTER (WHERE relsize IS NOT NULL)
-          , false) AS relsize_growth_avail
-      FROM sample_stat_indexes
-      WHERE
-          server_id = sserver_id
-          AND sample_id BETWEEN start1_id AND end1_id
-      GROUP BY server_id, datid, indexrelid
-    ) rs USING (server_id, datid, indexrelid);
-
-    CREATE TEMPORARY TABLE top_io_tables1 AS
-    SELECT * FROM top_io_tables(sserver_id, start1_id, end1_id);
-    CREATE TEMPORARY TABLE top_io_indexes1 AS
-    SELECT * FROM top_io_indexes(sserver_id, start1_id, end1_id);
-    CREATE TEMPORARY TABLE top_functions1 AS
-    SELECT * FROM top_functions(sserver_id, start1_id, end1_id, false);
-    CREATE TEMPORARY TABLE top_kcache_statements1 AS
-    SELECT * FROM top_kcache_statements(sserver_id, start1_id, end1_id);
-
-    ANALYZE top_statements1;
-    ANALYZE top_tables1;
-    ANALYZE top_indexes1;
-    ANALYZE top_io_tables1;
-    ANALYZE top_io_indexes1;
-    ANALYZE top_functions1;
-    ANALYZE top_kcache_statements1;
-
-    IF jsonb_extract_path_text(report_context, 'report_features', 'wait_sampling_tot')::boolean THEN
-      CREATE TEMPORARY TABLE wait_sampling_total_stats1 AS
-      SELECT * FROM wait_sampling_total_stats(sserver_id, start1_id, end1_id);
-      ANALYZE wait_sampling_total_stats1;
+    IF (report_context #> '{report_features,dbstats_reset}')::boolean THEN
+      -- dbstats reset dataset
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM dbstats_reset_format(sserver_id, start1_id, end1_id)
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{dbstats_reset}', dataset);
     END IF;
 
-    IF num_nulls(start2_id, end2_id) = 0 THEN
-      CREATE TEMPORARY TABLE top_statements2 AS
-      SELECT * FROM top_statements(sserver_id, start2_id, end2_id);
-
-      CREATE TEMPORARY TABLE top_tables2 AS
-      SELECT tt.*,
-        rs.relsize_growth_avail AS relsize_growth_avail,
-        CASE WHEN rs.relsize_growth_avail THEN
-          tt.growth
-        ELSE
-          tt.relpagegrowth_bytes
-        END AS best_growth,
-        rs.relsize_toastgrowth_avail AS relsize_toastgrowth_avail,
-        CASE WHEN rs.relsize_toastgrowth_avail THEN
-          tt.toastgrowth
-        ELSE
-          tt.toastrelpagegrowth_bytes
-        END AS best_toastgrowth,
-        CASE WHEN tt.seqscan_relsize_avail THEN
-          tt.seqscan_bytes_relsize
-        ELSE
-          tt.seqscan_bytes_relpages
-        END AS best_seqscan_bytes,
-        CASE WHEN tt.t_seqscan_relsize_avail THEN
-          tt.t_seqscan_bytes_relsize
-        ELSE
-          tt.t_seqscan_bytes_relpages
-        END AS best_t_seqscan_bytes
-      FROM top_tables(sserver_id, start2_id, end2_id) tt
-      JOIN (
-        SELECT rel.server_id, rel.datid, rel.relid,
-            COALESCE(
-                max(rel.sample_id) = max(rel.sample_id) FILTER (WHERE rel.relsize IS NOT NULL)
-                AND min(rel.sample_id) = min(rel.sample_id) FILTER (WHERE rel.relsize IS NOT NULL)
-            , false) AS relsize_growth_avail,
-            COALESCE(
-                max(reltoast.sample_id) = max(reltoast.sample_id) FILTER (WHERE reltoast.relsize IS NOT NULL)
-                AND min(reltoast.sample_id) = min(reltoast.sample_id) FILTER (WHERE reltoast.relsize IS NOT NULL)
-            , false) AS relsize_toastgrowth_avail
-        FROM sample_stat_tables rel
-            JOIN tables_list tl USING (server_id, datid, relid)
-            LEFT JOIN sample_stat_tables reltoast ON
-                (rel.server_id, rel.sample_id, rel.datid, tl.reltoastrelid) =
-                (reltoast.server_id, reltoast.sample_id, reltoast.datid, reltoast.relid)
-        WHERE
-            rel.server_id = sserver_id
-            AND rel.sample_id BETWEEN start2_id AND end2_id
-        GROUP BY rel.server_id, rel.datid, rel.relid
-      ) rs USING (server_id, datid, relid);
-
-      CREATE TEMPORARY TABLE top_indexes2 AS
-      SELECT ti.*,
-        rs.relsize_growth_avail AS relsize_growth_avail,
-        CASE WHEN rs.relsize_growth_avail THEN
-          ti.growth
-        ELSE
-          ti.relpagegrowth_bytes
-        END AS best_growth
-      FROM top_indexes(sserver_id, start2_id, end2_id) ti
-      JOIN (
-        SELECT server_id, datid, indexrelid,
-            COALESCE(
-                max(sample_id) = max(sample_id) FILTER (WHERE relsize IS NOT NULL)
-                AND min(sample_id) = min(sample_id) FILTER (WHERE relsize IS NOT NULL)
-            , false) AS relsize_growth_avail
-        FROM sample_stat_indexes
-        WHERE
-            server_id = sserver_id
-            AND sample_id BETWEEN start2_id AND end2_id
-        GROUP BY server_id, datid, indexrelid
-      ) rs USING (server_id, datid, indexrelid);
-
-      CREATE TEMPORARY TABLE top_io_tables2 AS
-      SELECT * FROM top_io_tables(sserver_id, start2_id, end2_id);
-      CREATE TEMPORARY TABLE top_io_indexes2 AS
-      SELECT * FROM top_io_indexes(sserver_id, start2_id, end2_id);
-      CREATE TEMPORARY TABLE top_functions2 AS
-      SELECT * FROM top_functions(sserver_id, start2_id, end2_id, false);
-      CREATE TEMPORARY TABLE top_kcache_statements2 AS
-      SELECT * FROM top_kcache_statements(sserver_id, start2_id, end2_id);
-
-      ANALYZE top_statements2;
-      ANALYZE top_tables2;
-      ANALYZE top_indexes2;
-      ANALYZE top_io_tables2;
-      ANALYZE top_io_indexes2;
-      ANALYZE top_functions2;
-      ANALYZE top_kcache_statements2;
-      IF jsonb_extract_path_text(report_context, 'report_features', 'wait_sampling_tot')::boolean THEN
-        CREATE TEMPORARY TABLE wait_sampling_total_stats2 AS
-        SELECT * FROM wait_sampling_total_stats(sserver_id, start2_id, end2_id);
-        ANALYZE wait_sampling_total_stats2;
-      END IF;
-
+    IF (report_context #> '{report_features,statstatements}')::boolean THEN
+      -- statements by database dataset
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM statements_dbstats_format(sserver_id, start1_id, end1_id)
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{statements_dbstats}', dataset);
     END IF;
+
+    IF (report_context #> '{report_features,stmt_cnt_range}')::boolean THEN
+      -- statements count of max for interval
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM stmt_cnt_format(sserver_id, start1_id, end1_id)
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{stmt_cnt_range}', dataset);
+    END IF;
+
+    IF (report_context #> '{report_features,stmt_cnt_all}')::boolean THEN
+      -- statements count of max for all samples
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM stmt_cnt_format(sserver_id, 0, 0)
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{stmt_cnt_all}', dataset);
+    END IF;
+
+    -- cluster statistics dataset
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM cluster_stats_format(sserver_id, start1_id, end1_id)
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    datasets := jsonb_set(datasets, '{cluster_stats}', dataset);
+
+    IF (report_context #> '{report_features,cluster_stats_reset}')::boolean THEN
+      -- cluster stats reset dataset
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM cluster_stats_reset_format(sserver_id, start1_id, end1_id)
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{cluster_stats_reset}', dataset);
+    END IF;
+
+    IF (report_context #> '{report_features,wal_stats_reset}')::boolean THEN
+      -- WAL stats reset dataset
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM wal_stats_reset_format(sserver_id, start1_id, end1_id)
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{wal_stats_reset}', dataset);
+    END IF;
+
+    IF (report_context #> '{report_features,wal_stats}')::boolean THEN
+      -- WAL stats dataset
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM wal_stats_format(sserver_id, start1_id, end1_id,
+            (report_context #>> '{report_properties,interval_duration_sec}')::numeric)
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{wal_stats}', dataset);
+    END IF;
+    
+    -- Tablespace stats dataset
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM tablespace_stats_format(sserver_id, start1_id, end1_id)
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    datasets := jsonb_set(datasets, '{tablespace_stats}', dataset);
+
+    IF (report_context #> '{report_features,wait_sampling_tot}')::boolean THEN
+      -- Wait totals dataset
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM wait_sampling_total_stats_format(sserver_id, start1_id, end1_id)
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{wait_sampling_total_stats}', dataset);
+      -- Wait events dataset
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM top_wait_sampling_events_format(sserver_id, start1_id, end1_id)
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{wait_sampling_events}', dataset);
+    END IF;
+    
+    IF (report_context #> '{report_features,statstatements}')::boolean THEN
+      -- Statement stats dataset
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM top_statements_format(sserver_id, start1_id, end1_id)
+          WHERE least(
+              ord_total_time,
+              ord_plan_time,
+              ord_exec_time,
+              ord_calls,
+              ord_io_time,
+              ord_shared_blocks_fetched,
+              ord_shared_blocks_read,
+              ord_shared_blocks_dirt,
+              ord_shared_blocks_written,
+              ord_wal,
+              ord_temp,
+              ord_jit
+            ) <= (report_context #>> '{report_properties,topn}')::numeric
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+        queries_set := queries_set || jsonb_build_object(
+          'userid', r_result.userid,
+          'datid', r_result.datid,
+          'queryid', r_result.queryid
+        );
+      END LOOP;
+      datasets := jsonb_set(datasets, '{top_statements}', dataset);
+    END IF;
+
+    IF (report_context #> '{report_features,kcachestatements}')::boolean THEN
+      -- Statement rusage stats dataset
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM top_rusage_statements_format(sserver_id, start1_id, end1_id)
+          WHERE least(
+              ord_cpu_time,
+              ord_io_bytes
+            ) <= (report_context #>> '{report_properties,topn}')::numeric
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+        queries_set := queries_set || jsonb_build_object(
+          'userid', r_result.userid,
+          'datid', r_result.datid,
+          'queryid', r_result.queryid
+        );
+      END LOOP;
+      datasets := jsonb_set(datasets, '{top_rusage_statements}', dataset);
+    END IF;
+
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM report_queries_format(sserver_id, queries_set, start1_id, end1_id, NULL, NULL)
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    datasets := jsonb_set(datasets, '{queries}', dataset);
+
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM top_tables_format(sserver_id, start1_id, end1_id)
+        WHERE least(
+          ord_dml,
+          ord_seq_scan,
+          ord_upd,
+          ord_growth,
+          ord_vac,
+          ord_anl
+        ) <= (report_context #>> '{report_properties,topn}')::numeric
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    datasets := jsonb_set(datasets, '{top_tables}', dataset);
+
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM top_io_tables_format(sserver_id, start1_id, end1_id)
+        WHERE least(
+          ord_read,
+          ord_fetch
+        ) <= (report_context #>> '{report_properties,topn}')::numeric
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    datasets := jsonb_set(datasets, '{top_io_tables}', dataset);
+
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM top_io_indexes_format(sserver_id, start1_id, end1_id)
+        WHERE least(
+          ord_read,
+          ord_fetch
+        ) <= (report_context #>> '{report_properties,topn}')::numeric
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    datasets := jsonb_set(datasets, '{top_io_indexes}', dataset);
+
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM top_indexes_format(sserver_id, start1_id, end1_id)
+        WHERE least(
+          ord_growth,
+          ord_unused,
+          ord_vac
+        ) <= (report_context #>> '{report_properties,topn}')::numeric
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    datasets := jsonb_set(datasets, '{top_indexes}', dataset);
+    
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM top_functions_format(sserver_id, start1_id, end1_id)
+        WHERE least(
+          ord_time,
+          ord_calls,
+          ord_trgtime
+        ) <= (report_context #>> '{report_properties,topn}')::numeric
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    datasets := jsonb_set(datasets, '{top_functions}', dataset);
+
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM top_tbl_last_sample_format(sserver_id, start1_id, end1_id)
+        WHERE least(
+          ord_dead,
+          ord_mod
+        ) <= (report_context #>> '{report_properties,topn}')::numeric
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    datasets := jsonb_set(datasets, '{top_tbl_last_sample}', dataset);
+
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM settings_format(sserver_id, start1_id, end1_id)
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    datasets := jsonb_set(datasets, '{settings}', dataset);
+  ELSIF num_nulls(start1_id, end1_id, start2_id, end2_id) = 0 THEN
+    -- Differential report
+    -- database statistics dataset
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM dbstats_format_diff(sserver_id, start1_id, end1_id,
+          start2_id, end2_id)
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    datasets := jsonb_set(datasets, '{dbstat}', dataset);
+
+    IF (report_context #> '{report_features,dbstats_reset}')::boolean THEN
+      -- dbstats reset dataset
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM dbstats_reset_format_diff(sserver_id, start1_id, end1_id,
+            start2_id, end2_id)
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{dbstats_reset}', dataset);
+    END IF;
+
+    IF (report_context #> '{report_features,statstatements}')::boolean THEN
+      -- statements by database dataset
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM statements_dbstats_format_diff(sserver_id, start1_id, end1_id,
+                 start2_id, end2_id)
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{statements_dbstats}', dataset);
+    END IF;
+
+    IF (report_context #> '{report_features,stmt_cnt_range}')::boolean THEN
+      -- statements count of max for interval
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM stmt_cnt_format_diff(sserver_id, start1_id, end1_id,
+            start2_id, end2_id)
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{stmt_cnt_range}', dataset);
+    END IF;
+
+    IF (report_context #> '{report_features,stmt_cnt_all}')::boolean THEN
+      -- statements count of max for all samples
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM stmt_cnt_format(sserver_id, 0, 0)
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{stmt_cnt_all}', dataset);
+    END IF;
+
+    -- cluster statistics dataset
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM cluster_stats_format_diff(sserver_id, start1_id, end1_id,
+                 start2_id, end2_id)
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    datasets := jsonb_set(datasets, '{cluster_stats}', dataset);
+
+    IF (report_context #> '{report_features,cluster_stats_reset}')::boolean THEN
+      -- cluster stats reset dataset
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM cluster_stats_reset_format_diff(sserver_id, start1_id, end1_id,
+            start2_id, end2_id)
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{cluster_stats_reset}', dataset);
+    END IF;
+
+    IF (report_context #> '{report_features,wal_stats_reset}')::boolean THEN
+      -- WAL stats reset dataset
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM wal_stats_reset_format_diff(sserver_id, start1_id, end1_id,
+            start2_id, end2_id)
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{wal_stats_reset}', dataset);
+    END IF;
+
+    IF (report_context #> '{report_features,wal_stats}')::boolean THEN
+      -- WAL stats dataset
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM wal_stats_format_diff(sserver_id,
+            start1_id, end1_id, start2_id, end2_id,
+            (report_context #>> '{report_properties,interval1_duration_sec}')::numeric,
+            (report_context #>> '{report_properties,interval2_duration_sec}')::numeric)
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{wal_stats}', dataset);
+    END IF;
+
+    -- Tablespace stats dataset
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM tablespace_stats_format_diff(sserver_id, start1_id, end1_id, start2_id, end2_id)
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    datasets := jsonb_set(datasets, '{tablespace_stats}', dataset);
+    
+    IF (report_context #> '{report_features,wait_sampling_tot}')::boolean THEN
+      -- Wait totals dataset
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM wait_sampling_total_stats_format_diff(sserver_id, start1_id, end1_id,
+            start2_id, end2_id)
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{wait_sampling_total_stats}', dataset);
+      -- Wait events dataset
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM top_wait_sampling_events_format_diff(sserver_id, start1_id, end1_id,
+            start2_id, end2_id)
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{wait_sampling_events}', dataset);
+    END IF;
+
+    IF (report_context #> '{report_features,statstatements}')::boolean THEN
+      -- Statement stats dataset
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM top_statements_format_diff(sserver_id, start1_id, end1_id,
+            start2_id, end2_id)
+          WHERE least(
+              ord_total_time,
+              ord_plan_time,
+              ord_exec_time,
+              ord_calls,
+              ord_io_time,
+              ord_shared_blocks_fetched,
+              ord_shared_blocks_read,
+              ord_shared_blocks_dirt,
+              ord_shared_blocks_written,
+              ord_wal,
+              ord_temp,
+              ord_jit
+            ) <= (report_context #>> '{report_properties,topn}')::numeric
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+        queries_set := queries_set || jsonb_build_object(
+          'userid', r_result.userid,
+          'datid', r_result.datid,
+          'queryid', r_result.queryid
+        );
+      END LOOP;
+      datasets := jsonb_set(datasets, '{top_statements}', dataset);
+    END IF;
+
+    IF (report_context #> '{report_features,kcachestatements}')::boolean THEN
+      -- Statement rusage stats dataset
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM top_rusage_statements_format_diff(sserver_id, start1_id, end1_id,
+            start2_id, end2_id)
+          WHERE least(
+              ord_cpu_time,
+              ord_io_bytes
+            ) <= (report_context #>> '{report_properties,topn}')::numeric
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+        queries_set := queries_set || jsonb_build_object(
+          'userid', r_result.userid,
+          'datid', r_result.datid,
+          'queryid', r_result.queryid
+        );
+      END LOOP;
+      datasets := jsonb_set(datasets, '{top_rusage_statements}', dataset);
+    END IF;
+
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM report_queries_format(sserver_id, queries_set,
+          start1_id, end1_id, start2_id, end2_id
+        )
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    datasets := jsonb_set(datasets, '{queries}', dataset);
+
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM top_tables_format_diff(sserver_id, start1_id, end1_id, start2_id, end2_id)
+        WHERE least(
+          ord_dml,
+          ord_seq_scan,
+          ord_upd,
+          ord_growth,
+          ord_vac,
+          ord_anl
+        ) <= (report_context #>> '{report_properties,topn}')::numeric
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    datasets := jsonb_set(datasets, '{top_tables}', dataset);
+
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM top_io_tables_format_diff(sserver_id, start1_id, end1_id, start2_id, end2_id)
+        WHERE least(
+          ord_read,
+          ord_fetch
+        ) <= (report_context #>> '{report_properties,topn}')::numeric
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    datasets := jsonb_set(datasets, '{top_io_tables}', dataset);
+
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM top_io_indexes_format_diff(sserver_id, start1_id, end1_id, start2_id, end2_id)
+        WHERE least(
+          ord_read,
+          ord_fetch
+        ) <= (report_context #>> '{report_properties,topn}')::numeric
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    datasets := jsonb_set(datasets, '{top_io_indexes}', dataset);
+
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM top_indexes_format_diff(sserver_id,
+          start1_id, end1_id, start2_id, end2_id)
+        WHERE least(
+          ord_growth,
+          ord_vac
+        ) <= (report_context #>> '{report_properties,topn}')::numeric
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    datasets := jsonb_set(datasets, '{top_indexes}', dataset);
+
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM top_functions_format_diff(sserver_id,
+          start1_id, end1_id, start2_id, end2_id)
+        WHERE least(
+          ord_time,
+          ord_calls,
+          ord_trgtime
+        ) <= (report_context #>> '{report_properties,topn}')::numeric
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    datasets := jsonb_set(datasets, '{top_functions}', dataset);
+
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM settings_format_diff(sserver_id,
+          start1_id, end1_id, start2_id, end2_id)
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    datasets := jsonb_set(datasets, '{settings}', dataset);
+  END IF;
+  RETURN datasets;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION cleanup_report_temp_tables(IN report_context jsonb, IN sserver_id integer)
-RETURNS void SET search_path=@extschema@ AS $$
+CREATE FUNCTION sections_jsonb(IN report_context jsonb, IN sserver_id integer,
+  IN report_id integer)
+RETURNS jsonb SET search_path=@extschema@ AS $$
 DECLARE
-  start2_id   integer = (report_context #>> '{report_properties,start2_id}')::integer;
-  end2_id     integer = (report_context #>> '{report_properties,end2_id}')::integer;
-BEGIN
-  DROP TABLE top_statements1;
-  DROP TABLE top_tables1;
-  DROP TABLE top_indexes1;
-  DROP TABLE top_io_tables1;
-  DROP TABLE top_io_indexes1;
-  DROP TABLE top_functions1;
-  DROP TABLE top_kcache_statements1;
-  IF jsonb_extract_path_text(report_context, 'report_features', 'wait_sampling_tot')::boolean THEN
-    DROP TABLE wait_sampling_total_stats1;
-  END IF;
-  IF num_nulls(start2_id, end2_id) = 0 THEN
-    DROP TABLE top_statements2;
-    DROP TABLE top_tables2;
-    DROP TABLE top_indexes2;
-    DROP TABLE top_io_tables2;
-    DROP TABLE top_io_indexes2;
-    DROP TABLE top_functions2;
-    DROP TABLE top_kcache_statements2;
-    IF jsonb_extract_path_text(report_context, 'report_features', 'wait_sampling_tot')::boolean THEN
-      DROP TABLE wait_sampling_total_stats2;
-    END IF;
-  END IF;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE FUNCTION template_populate_sections(IN report_context jsonb, IN sserver_id integer,
-  IN template text, IN report_id integer)
-RETURNS text SET search_path=@extschema@ AS $$
-DECLARE
+    -- Recursive sections query with condition checking
     c_sections CURSOR(init_depth integer) FOR
-    WITH RECURSIVE search_tree(report_id, sect_id, parent_sect_id,
-      toc_cap, tbl_cap, feature, function_name, href, content, depth,
-      sect_ord) AS
+    WITH RECURSIVE sections_tree(report_id, sect_id, parent_sect_id,
+      toc_cap, tbl_cap, function_name, href, content, sect_struct, depth,
+      path, ordering_path) AS
     (
         SELECT
           rs.report_id,
@@ -539,14 +915,20 @@ DECLARE
           rs.parent_sect_id,
           rs.toc_cap,
           rs.tbl_cap,
-          rs.feature,
           rs.function_name,
           rs.href,
           rs.content,
+          rs.sect_struct,
           init_depth,
-          ARRAY[s_ord]
+          ARRAY['sections', (row_number() OVER (ORDER BY s_ord ASC) - 1)::text] path,
+          ARRAY[row_number() OVER (ORDER BY s_ord ASC)] as ordering_path
         FROM report_struct rs
-        WHERE rs.report_id = template_populate_sections.report_id AND parent_sect_id IS NULL
+        WHERE rs.report_id = sections_jsonb.report_id AND parent_sect_id IS NULL
+          AND (
+            rs.feature IS NULL OR
+            (left(rs.feature,1) = '!' AND NOT jsonb_extract_path_text(report_context, 'report_features', rs.feature)::boolean) OR
+            (left(rs.feature,1) != '!' AND jsonb_extract_path_text(report_context, 'report_features', rs.feature)::boolean)
+          )
       UNION ALL
         SELECT
           rs.report_id,
@@ -554,63 +936,159 @@ DECLARE
           rs.parent_sect_id,
           rs.toc_cap,
           rs.tbl_cap,
-          rs.feature,
           rs.function_name,
           rs.href,
           rs.content,
+          rs.sect_struct,
           st.depth + 1,
-          sect_ord || s_ord
-        FROM report_struct rs JOIN search_tree st ON
+          st.path || ARRAY['sections', (row_number() OVER (PARTITION BY st.path ORDER BY s_ord ASC) - 1)::text] path,
+          ordering_path || ARRAY[row_number() OVER (PARTITION BY st.path ORDER BY s_ord ASC)] as ordering_path
+        FROM report_struct rs JOIN sections_tree st ON
           (rs.report_id, rs.parent_sect_id) =
           (st.report_id, st.sect_id)
-    )
-    SELECT * FROM search_tree ORDER BY sect_ord;
-
-    toc_t       text := '';
-    sect_t      text := '';
-    tpl         text;
-    cur_depth   integer := 1;
-    func_output text := NULL;
-    skip_depth  integer = 10;
-BEGIN
-    FOR r_result IN c_sections(2) LOOP
-      ASSERT r_result.depth BETWEEN 1 AND 5, 'Section depth is not in 1 - 5';
-
-      -- Check if section feature enabled in report
-      IF r_result.depth > skip_depth THEN
-        CONTINUE;
-      ELSE
-        skip_depth := 10;
-      END IF;
-      IF r_result.feature IS NOT NULL AND (
-          NOT jsonb_extract_path_text(report_context, 'report_features', r_result.feature)::boolean
-        OR (
-            left(r_result.feature, 1) = '!' AND
-            jsonb_extract_path_text(report_context, 'report_features', ltrim(r_result.feature,'!'))::boolean
+        WHERE (
+            rs.feature IS NULL OR
+            (left(rs.feature,1) = '!' AND NOT jsonb_extract_path_text(report_context, 'report_features', rs.feature)::boolean) OR
+            (left(rs.feature,1) != '!' AND jsonb_extract_path_text(report_context, 'report_features', rs.feature)::boolean)
           )
-        )
-      THEN
-        skip_depth := r_result.depth;
-        CONTINUE;
+    )
+    SELECT * FROM sections_tree ORDER BY ordering_path;
+
+    -- Recursive columns query with condition checking
+    c_columns CURSOR(header_blocks jsonb) FOR
+    WITH RECURSIVE columns AS (
+      SELECT
+        ARRAY[blk_no::text, 'columns', (row_number() OVER (PARTITION BY blk_no) - 1)::text] as path,
+        ARRAY[blk_no, row_number() OVER ()] as ordering_path,
+        je #- '{condition}' #- '{columns}' as entry,
+        je #> '{columns}' as columns
+      FROM
+        generate_series(0, jsonb_array_length(header_blocks) - 1) blk_no,
+        jsonb_array_elements(header_blocks #> ARRAY[blk_no::text,'columns']) as je
+      WHERE
+        je #>> '{condition}' IS NULL OR trim(je #>> '{condition}') = '' OR
+        (left(je #>> '{condition}',1) = '!' AND
+          NOT jsonb_extract_path_text(
+              report_context,
+              'report_features',
+              je #>> '{condition}'
+            )::boolean) OR
+        (left(je #>> '{condition}',1) != '!' AND
+          jsonb_extract_path_text(
+            report_context,
+            'report_features',
+            je #>> '{condition}'
+          )::boolean)
+      UNION ALL
+      SELECT
+        columns.path || ARRAY['columns',(row_number() OVER (PARTITION BY columns.path) - 1)::text] path,
+        columns.ordering_path || ARRAY[row_number() OVER ()] as ordering_path,
+        je #- '{condition}' #- '{columns}' as entry,
+        je #> '{columns}' as columns
+      FROM columns CROSS JOIN
+        jsonb_array_elements(columns.columns) as je
+      WHERE
+        je #>> '{condition}' IS NULL OR trim(je #>> '{condition}') = '' OR
+        (left(je #>> '{condition}',1) = '!' AND
+          NOT jsonb_extract_path_text(
+              report_context,
+              'report_features',
+              je #>> '{condition}'
+            )::boolean) OR
+        (left(je #>> '{condition}',1) != '!' AND
+          jsonb_extract_path_text(
+            report_context,
+            'report_features',
+            je #>> '{condition}'
+          )::boolean)
+    )
+    SELECT * FROM columns
+    ORDER BY ordering_path;
+
+    c_new_queryids CURSOR(js_collected jsonb, js_new jsonb) FOR
+    SELECT
+      userid,
+      datid,
+      queryid
+    FROM
+      jsonb_array_elements(js_new) js_data_block,
+      jsonb_to_recordset(js_data_block) AS (
+        userid   bigint,
+        datid    bigint,
+        queryid  bigint
+      )
+    WHERE queryid IS NOT NULL AND datid IS NOT NULL
+    EXCEPT
+    SELECT
+      userid,
+      datid,
+      queryid
+    FROM
+      jsonb_to_recordset(js_collected) AS (
+        userid   bigint,
+        datid    bigint,
+        queryid  bigint
+      );
+
+    max_depth   CONSTANT integer := 5;
+
+    js_hdr      jsonb;
+    js_fhdr     jsonb;
+    js_fdata    jsonb;
+    js_report   jsonb;
+
+    js_queryids jsonb = '[]'::jsonb;
+BEGIN
+    js_report := jsonb_build_object(
+      'type', report_id,
+      'properties', report_context #> '{report_properties}'
+    );
+
+    -- Prepare report_context queryid array
+    report_context := jsonb_insert(
+      report_context,
+      '{report_properties,queryids}',
+      '[]'::jsonb
+    );
+
+    <<sections>>
+    FOR r_result IN c_sections(1) LOOP
+      ASSERT r_result.depth BETWEEN 1 AND max_depth,
+        format('Section depth is not in 1 - %s', max_depth);
+
+      ASSERT js_report IS NOT NULL, format('Report JSON lost at start of section: %s', r_result.sect_id);
+      -- Create "sections" array on the current level on first entry
+      IF r_result.path[array_length(r_result.path, 1)] = '0' THEN
+        js_report := jsonb_set(js_report, r_result.path[:array_length(r_result.path,1)-1],
+          '[]'::jsonb
+        );
+      END IF;
+      -- Section entry
+      js_report := jsonb_insert(js_report, r_result.path, '{}'::jsonb);
+
+      -- Set section attributes
+      IF r_result.href IS NOT NULL THEN
+        js_report := jsonb_set(js_report, array_append(r_result.path, 'href'), to_jsonb(r_result.href));
+      END IF;
+      IF r_result.sect_id IS NOT NULL THEN
+        js_report := jsonb_set(js_report, array_append(r_result.path, 'sect_id'), to_jsonb(r_result.sect_id));
+      END IF;
+      IF r_result.tbl_cap IS NOT NULL THEN
+        js_report := jsonb_set(js_report, array_append(r_result.path, 'tbl_cap'), to_jsonb(r_result.tbl_cap));
+      END IF;
+      IF r_result.toc_cap IS NOT NULL THEN
+        js_report := jsonb_set(js_report, array_append(r_result.path, 'toc_cap'), to_jsonb(r_result.toc_cap));
+      END IF;
+      IF r_result.content IS NOT NULL THEN
+        js_report := jsonb_set(js_report, array_append(r_result.path, 'content'), to_jsonb(r_result.content));
       END IF;
 
-      IF r_result.depth != cur_depth THEN
-        IF r_result.depth > cur_depth THEN
-          toc_t := toc_t || repeat('<ul>', r_result.depth - cur_depth);
-        END IF;
-        IF r_result.depth < cur_depth THEN
-          toc_t := toc_t || repeat('</ul>', cur_depth - r_result.depth);
-        END IF;
-        cur_depth := r_result.depth;
-      END IF;
-
-      func_output := '';
-
+      ASSERT js_report IS NOT NULL, format('Report JSON lost in attributes, section: %s', r_result.sect_id);
       -- Executing function of report section if requested
       IF r_result.function_name IS NOT NULL THEN
         IF (SELECT count(*) FROM pg_catalog.pg_extension WHERE extname = '{pg_profile}') THEN
           -- Fail when requested function doesn't exists in extension
-          ASSERT (
+          IF (
             SELECT count(*) = 1
             FROM
               pg_catalog.pg_proc f JOIN pg_catalog.pg_depend dep
@@ -624,11 +1102,14 @@ BEGIN
                 'text'
               AND pg_catalog.pg_get_function_arguments(f.oid) =
                 'report_context jsonb, sserver_id integer'
-            ),
-            'Report requested function % not found', r_result.function_name;
+            )
+          THEN
+            RAISE EXCEPTION 'Report requested function % not found', r_result.function_name
+              USING HINT = 'This is a bug. Please report to {pg_profile} developers.';
+          END IF;
         ELSE
           -- When not installed as an extension check only the function existance
-          ASSERT (
+          IF (
             SELECT count(*) = 1
             FROM
               pg_catalog.pg_proc f
@@ -638,93 +1119,103 @@ BEGIN
                 'text'
               AND pg_catalog.pg_get_function_arguments(f.oid) =
                 'report_context jsonb, sserver_id integer'
-            ),
-            format('Report requested function %s not found', r_result.function_name);
+            )
+          THEN
+            RAISE EXCEPTION 'Report requested function % not found', r_result.function_name
+              USING HINT = 'This is a bug. Please report to {pg_profile} developers.';
+          END IF;
         END IF;
 
-        -- Set report context
+        -- Set report_context
         IF r_result.href IS NOT NULL THEN
-          report_context := jsonb_set(report_context, '{report_properties,sect_href}',
+          report_context := jsonb_set(report_context, '{report_properties,href}',
             to_jsonb(r_result.href));
-        ELSE
-          report_context := report_context #- '{report_properties,sect_href}';
-        END IF;
-        IF r_result.tbl_cap IS NOT NULL THEN
-          report_context := jsonb_set(report_context, '{report_properties,sect_tbl_cap}',
-            to_jsonb(r_result.tbl_cap));
-        ELSE
-          report_context := report_context #- '{report_properties,sect_tbl_cap}';
         END IF;
 
         ASSERT report_context IS NOT NULL, 'Lost report context';
-        -- Execute function for our report and get a section
-        EXECUTE format('SELECT %I($1,$2)', r_result.function_name)
-        INTO func_output
+        -- Execute function for a report and get a section
+        EXECUTE format('SELECT section_structure, section_data FROM %I($1,$2)',
+          r_result.function_name)
+        INTO js_fhdr, js_fdata
         USING
           report_context,
           sserver_id
         ;
-      END IF; -- report section contains a function
 
-      -- Insert an entry to table of contents
-      IF r_result.toc_cap IS NOT NULL AND trim(r_result.toc_cap) != '' THEN
-        IF r_result.function_name IS NULL OR
-          (func_output IS NOT NULL AND func_output != '') THEN
-            toc_t := toc_t || format(
-              '<li><a HREF="#%s">%s</a></li>',
-              COALESCE(r_result.href, r_result.function_name),
-              r_result.toc_cap
-            );
-        END IF;
-      END IF;
+        ASSERT js_fhdr IS NOT NULL, format('Error in report function %s - header is null',
+          r_result.function_name);
+        ASSERT js_fdata IS NOT NULL, format('Error in report function %s - data is null',
+          r_result.function_name);
+        -- Skip processing if there is no data
+        CONTINUE sections WHEN jsonb_array_length(js_fdata) = 0;
 
-      -- Adding table title
-      IF r_result.function_name IS NULL OR
-        (func_output IS NOT NULL AND func_output != '') THEN
-        tpl := COALESCE(r_result.content, '');
-        -- Processing section header
-        IF r_result.tbl_cap IS NOT NULL THEN
-          IF strpos(tpl, '{header}') > 0 THEN
-            tpl := replace(
-              tpl,
-              '{header}',
-              format(
-                '<H%1$s><a NAME="%2$s">%3$s</a></H%1$s>',
-                r_result.depth,
-                COALESCE(r_result.href, r_result.function_name),
-                r_result.tbl_cap
-              )
-            );
-          ELSE
-            tpl := format(
-              '<H%1$s><a NAME="%2$s">%3$s</a></H%1$s>',
-              r_result.depth,
-              COALESCE(r_result.href, r_result.function_name),
-              r_result.tbl_cap
-            ) || tpl;
-          END IF;
-        END IF;
-
-        -- Processing function output
-        IF strpos(tpl, '{func_output}') > 0 THEN
-          tpl := replace(tpl,
-            '{func_output}',
-            COALESCE(func_output, '')
+        -- Collect queryids from section data
+        FOR r_queryid IN c_new_queryids(
+          report_context #> '{report_properties,queryids}',
+          js_fdata
+        ) LOOP
+          report_context := jsonb_insert(
+            report_context,
+            '{report_properties,queryids,0}',
+            to_jsonb(r_queryid)
           );
-        ELSE
-          tpl := tpl || COALESCE(func_output, '');
-        END IF;
-        sect_t := sect_t || tpl;
-      END IF;
+        END LOOP;
+        ASSERT report_context IS NOT NULL, 'Lost report context';
 
+        IF jsonb_array_length(js_fdata) > 0 THEN
+          -- Remove header fields with false conditions
+          -- Prepare new empty array structure for generated blocks
+          SELECT jsonb_agg('{}'::jsonb) INTO js_hdr
+          FROM generate_series(1,jsonb_array_length(js_fhdr));
+          -- Load a new structure
+          FOR valid_columns IN c_columns(js_fhdr) LOOP
+            IF valid_columns.path[array_length(valid_columns.path, 1)] = '0' THEN
+              -- New columns list
+              js_hdr := jsonb_set(js_hdr, valid_columns.path[:array_length(valid_columns.path,1)-1],
+                '[]'::jsonb
+              );
+            END IF;
+            -- Section entry
+            js_hdr := jsonb_insert(js_hdr, valid_columns.path, valid_columns.entry);
+          END LOOP; -- Over valid columns
+
+          -- Assign headers and data to report
+          FOR block_no IN 0..jsonb_array_length(js_hdr) - 1 LOOP
+            js_fhdr := jsonb_set(js_fhdr, ARRAY[block_no::text,'columns'], js_hdr #> ARRAY[block_no::text,'columns']);
+          END LOOP;
+          js_report := jsonb_set(js_report, array_append(r_result.path, 'header'), js_fhdr);
+          ASSERT js_report IS NOT NULL, format('Report JSON lost in header, section: %s', r_result.sect_id);
+          js_report := jsonb_set(js_report, array_append(r_result.path, 'data'), js_fdata);
+          ASSERT js_report IS NOT NULL, format('Report JSON lost in data, section: %s', r_result.sect_id);
+        END IF; -- Function returned data rows
+      -- report section contains a function
+
+      ELSIF r_result.sect_struct IS NOT NULL THEN
+          js_fhdr := r_result.sect_struct;
+          -- Remove header fields with false conditions
+          -- Prepare new empty array structure
+          SELECT jsonb_agg('{}'::jsonb) INTO js_hdr
+          FROM generate_series(1,jsonb_array_length(js_fhdr));
+          -- Load a new structure
+          FOR valid_columns IN c_columns(js_fhdr) LOOP
+            IF valid_columns.path[array_length(valid_columns.path, 1)] = '0' THEN
+              -- New columns list
+              js_hdr := jsonb_set(js_hdr, valid_columns.path[:array_length(valid_columns.path,1)-1],
+                '[]'::jsonb
+              );
+            END IF;
+            -- Section entry
+            js_hdr := jsonb_insert(js_hdr, valid_columns.path, valid_columns.entry);
+          END LOOP; -- Over valid columns
+
+          -- Assign headers and data to report
+          FOR block_no IN 0..jsonb_array_length(js_hdr) - 1 LOOP
+            js_fhdr := jsonb_set(js_fhdr, ARRAY[block_no::text,'columns'], js_hdr #> ARRAY[block_no::text,'columns']);
+          END LOOP;
+          js_report := jsonb_set(js_report, array_append(r_result.path, 'header'), js_fhdr);
+          ASSERT js_report IS NOT NULL, format('Report JSON lost in header, section: %s', r_result.sect_id);
+      END IF; -- sect_struct json field exists
     END LOOP; -- Over recursive sections query
-
-    -- Closing TOC <ul> tags based on final depth
-    toc_t := toc_t || repeat('</ul>', cur_depth);
-
-    template := replace(template, '{report:toc}', toc_t);
-    template := replace(template, '{report:sect}', sect_t);
-
-    RETURN template;
+    RETURN js_report;
 END;
 $$ LANGUAGE plpgsql;

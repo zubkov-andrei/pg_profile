@@ -5,6 +5,7 @@ CREATE FUNCTION get_diffreport(IN sserver_id integer, IN start1_id integer, IN e
   IN with_growth boolean = false) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report          text;
+    report_data     jsonb;
     report_context  jsonb;
 BEGIN
     -- Interval expanding in case of growth stats requested
@@ -31,19 +32,13 @@ BEGIN
     report_context := get_report_context(sserver_id, start1_id, end1_id, description,
       start2_id, end2_id);
 
-    -- Create internal temporary tables for report
-    PERFORM init_report_temp_tables(report_context, sserver_id);
-
     -- Prepare report template
     report := get_report_template(report_context, 2);
-    -- Populate template with report tables
-    report := template_populate_sections(report_context, sserver_id, report, 2);
-    /*
-    * Cleanup cache temporary tables
-    * This is needed to avoid conflict with existing table if several
-    * reports are collected in one session
-    */
-    PERFORM cleanup_report_temp_tables(report_context, sserver_id);
+    -- Populate template with report data
+    report_data := sections_jsonb(report_context, sserver_id, 2);
+    report_data := jsonb_set(report_data, '{datasets}',
+        get_report_datasets(report_context, sserver_id));
+    report := replace(report, '{dynamic:data1}', report_data::text);
 
     RETURN report;
 END;

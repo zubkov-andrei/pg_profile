@@ -461,7 +461,7 @@ psql -Aqtc "select profile.get_report(tstzrange(now() - interval '1 day',now()))
 Now you can view report file using any web browser.
 
 ## Sections of a report
-Report tables and their columns are described in this section.
+Report tables and their columns are described in this section. The most objects mentioned in the report can be selected to highlight all related entries in a report.
 ### Server statistics
 
 #### Database statistics
@@ -475,11 +475,14 @@ Contains per-database statistics during report interval, based on *pg_stat_datab
   * *Deadlocks* - number of deadlocks detected (*deadlocks*)
 * *Checksums* - checksum failures (if any)
   * *Failures* - number of block checksum failures detected
-  * *Last* - last checksum filure detected
+  * *Last* - last checksum failure detected
 * *Block statistics* - database blocks read and hit statistics
   * *Hit(%)* - buffer cache hit ratio
   * *Read* - number of disk blocks read in this database (*blks_read*)
   * *Hit* - number of times disk blocks were found already in the buffer cache (*blks_hit*)
+* *Block I/O times* - time spent on data blocks I/O
+  * *Read* - time spent reading data file blocks by backends, in seconds
+  * *Write* - time spent writing data file blocks by backends, in seconds
 * *Tuples* - tuples statistics section
   * *Ret* - number of returned tuples (*tup_returned*)
   * *Fet* - number of fetched tuples (*tup_fetched*)
@@ -518,6 +521,9 @@ Contains per-database aggregated total statistics of *pg_stat_statements* data (
   * *Read* - time spent reading blocks (sum of *blk_read_time*)
   * *Write* - time spent writing blocks (sum of *blk_write_time*)
   * *Trg* - time spent executing trigger functions
+* *Temp I/O Time* - time spent on temporary file blocks I/O
+  * *Read* - time spent reading temporary file blocks, in seconds
+  * *Write* - time spent writing temporary file blocks, in seconds
 * *Fetched (blk)* - total blocks fetched from disk and buffer cache
   * *Shared* - total fetched shared blocks count (sum of *shared_blks_read + shared_blks_hit*)
   * *Local* - total fetched local blocks count (sum of *local_blks_read + local_blks_hit*)
@@ -570,6 +576,8 @@ This table contains data from *pg_stat_bgwriter* view
 * *Bgwriter interrupts (too many buffers)* - total count of background writer interrupts due to reaching value of the *bgwriter_lru_maxpages* parameter.
 * *Number of buffers allocated* - total count of buffers allocated (*buffers_alloc* field)
 * *WAL generated* - total amount of WAL generated (based on *pg_current_wal_lsn()* difference)
+* *Start LSN* - WAL LSN at the start of the current report
+* *End LSN* - WAL LSN at the end of the current report
 * *WAL segments archived* - archived WAL segments count (based on *archived_count* of *pg_stat_archiver* view)
 * *WAL segments archive failed*  - WAL segment archive failures count (based on *failed_count* of *pg_stat_archiver* view)
 
@@ -812,6 +820,26 @@ Top _pg_profile.topn_ statements sorted by temp I/O, calculated as the sum of *t
   * *%Total* - *local_blks_written* of this statement as a percentage of total *local_blks_written* for all statements in a cluster
   * *Read* - number of read local blocks (*local_blks_read*)
   * *%Total* - *local_blks_read* of this statement as a percentage of total *local_blks_read* for all statements in a cluster
+* *Temp (blk)* - I/O statistics of blocks used in operations (like sorts and joins)
+  * *Write* - number of written temp blocks (*temp_blks_written*)
+  * *%Total* - *temp_blks_written* of this statement as a percentage of total *temp_blks_written* for all statements in a cluster
+  * *Read* - number of read local blocks (*temp_blks_read*)
+  * *%Total* - *temp_blks_read* of this statement as a percentage of total *temp_blks_read* for all statements in a cluster
+* *Elapsed(s)* - amount of time spent in this statement, in seconds (*total_time* or *total_exec_time+total_plan_time* field)
+* *Rows* - number of rows retrieved or affected by the statement (*rows* field)
+* *Executions* - number of executions for this statement (*calls* field)
+
+#### Top SQL by temp usage
+
+Top _pg_profile.topn_ statements sorted by temp I/O time, calculated as the sum of *temp_blk_read_time* and *temp_blk_write_time* fields
+
+* *Query ID* - Query identifier as provided by the *pg_stat_statements* extension (*queryid*) in hexadecimal notation. Alternative query identifier as a hash of *dbid*, *userid* and *queryid* is shown in square brackets, this identifier is compatible with *pgcenter* utility.
+* *Database* - Statement database name (derived from *dbid* field)
+* *User* - User name executed this statement (derived from *userid* field)
+* *Temp I/O time (s)* - time spent on temporary file blocks I/O
+  * *Read* - time spent reading temporary file blocks, in seconds
+  * *Write* - time spent writing temporary file blocks, in seconds
+  * *%Total* - temporary I/O time of this statement as a percentage of total temporary I/O time of all statements in a cluster
 * *Temp (blk)* - I/O statistics of blocks used in operations (like sorts and joins)
   * *Write* - number of written temp blocks (*temp_blks_written*)
   * *%Total* - *temp_blks_written* of this statement as a percentage of total *temp_blks_written* for all statements in a cluster

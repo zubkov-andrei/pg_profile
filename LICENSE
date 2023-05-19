@@ -1,9 +1,6 @@
-pg_profile extension is released under the PostgreSQL License, a
-liberal Open Source license, similar to the BSD or MIT licenses.
-
 pg_profile - Postgres historic workload reporting tool
 
-Copyright (c) 2017-2022 Andrei Zubkov
+Copyright (c) 2017-2023 Andrei Zubkov
 
 Permission to use, copy, modify, and distribute this software and its
 documentation for any purpose, without fee, and without a written agreement

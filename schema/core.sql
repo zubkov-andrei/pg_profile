@@ -45,4 +45,5 @@ CREATE TABLE bl_samples (
     CONSTRAINT pk_bl_samples PRIMARY KEY (server_id, bl_id, sample_id)
 );
 CREATE INDEX ix_bl_samples_blid ON bl_samples(bl_id);
+CREATE INDEX ix_bl_samples_sample ON bl_samples(server_id, sample_id);
 COMMENT ON TABLE bl_samples IS 'Samples in baselines';

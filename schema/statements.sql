@@ -55,6 +55,8 @@ CREATE TABLE sample_statements (
     jit_optimization_time   double precision,
     jit_emission_count  bigint,
     jit_emission_time   double precision,
+    temp_blk_read_time  double precision,
+    temp_blk_write_time double precision,
     CONSTRAINT pk_sample_statements_n PRIMARY KEY (server_id, sample_id, datid, userid, queryid, toplevel),
     CONSTRAINT fk_stmt_list FOREIGN KEY (server_id,queryid_md5)
       REFERENCES stmt_list (server_id,queryid_md5)
@@ -116,7 +118,9 @@ CREATE TABLE last_stat_statements (
     jit_optimization_count  bigint,
     jit_optimization_time   double precision,
     jit_emission_count  bigint,
-    jit_emission_time   double precision
+    jit_emission_time   double precision,
+    temp_blk_read_time  double precision,
+    temp_blk_write_time double precision
 )
 PARTITION BY LIST (server_id);
 
@@ -153,6 +157,8 @@ CREATE TABLE sample_statements_total (
     jit_optimization_time   double precision,
     jit_emission_count  bigint,
     jit_emission_time   double precision,
+    temp_blk_read_time  double precision,
+    temp_blk_write_time double precision,
     CONSTRAINT pk_sample_statements_total PRIMARY KEY (server_id, sample_id, datid),
     CONSTRAINT fk_statments_t_dat FOREIGN KEY (server_id, sample_id, datid)
       REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE CASCADE

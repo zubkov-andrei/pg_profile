@@ -5,7 +5,7 @@ DECLARE
 BEGIN
     -- Adding dblink extension schema to search_path if it does not already there
     SELECT extnamespace::regnamespace AS dblink_schema INTO STRICT qres FROM pg_catalog.pg_extension WHERE extname = 'dblink';
-    IF NOT string_to_array(current_setting('search_path'),',') @> ARRAY[qres.dblink_schema::text] THEN
+    IF NOT string_to_array(current_setting('search_path'),', ') @> ARRAY[qres.dblink_schema::text] THEN
       EXECUTE 'SET LOCAL search_path TO ' || current_setting('search_path')||','|| qres.dblink_schema;
     END IF;
 
@@ -19,6 +19,37 @@ BEGIN
     THEN
       RETURN;
     END IF;
+
+    -- Save used statements extension in sample_settings
+    INSERT INTO sample_settings(
+      server_id,
+      first_seen,
+      setting_scope,
+      name,
+      setting,
+      reset_val,
+      boot_val,
+      unit,
+      sourcefile,
+      sourceline,
+      pending_restart
+    )
+    SELECT
+      s.server_id,
+      s.sample_time,
+      2 as setting_scope,
+      'statements_extension',
+      'pg_stat_statements',
+      'pg_stat_statements',
+      'pg_stat_statements',
+      null,
+      null,
+      null,
+      false
+    FROM samples s LEFT OUTER JOIN  v_sample_settings prm ON
+      (s.server_id, s.sample_id, prm.name, prm.setting_scope) =
+      (prm.server_id, prm.sample_id, 'statements_extension', 2)
+    WHERE s.server_id = sserver_id AND s.sample_id = s_id AND (prm.setting IS NULL OR prm.setting != 'pg_stat_statements');
 
     -- Dynamic statements query
     st_query := format(
@@ -87,7 +118,9 @@ BEGIN
           'NULL as jit_optimization_count, '
           'NULL as jit_optimization_time, '
           'NULL as jit_emission_count, '
-          'NULL as jit_emission_time '
+          'NULL as jit_emission_time, '
+          'NULL as temp_blk_read_time, '
+          'NULL as temp_blk_write_time '
         );
       WHEN '1.8' THEN
         st_query := replace(st_query, '{statements_fields}',
@@ -127,7 +160,9 @@ BEGIN
           'NULL as jit_optimization_count, '
           'NULL as jit_optimization_time, '
           'NULL as jit_emission_count, '
-          'NULL as jit_emission_time '
+          'NULL as jit_emission_time, '
+          'NULL as temp_blk_read_time, '
+          'NULL as temp_blk_write_time '
         );
       WHEN '1.9' THEN
         st_query := replace(st_query, '{statements_fields}',
@@ -167,7 +202,9 @@ BEGIN
           'NULL as jit_optimization_count, '
           'NULL as jit_optimization_time, '
           'NULL as jit_emission_count, '
-          'NULL as jit_emission_time '
+          'NULL as jit_emission_time, '
+          'NULL as temp_blk_read_time, '
+          'NULL as temp_blk_write_time '
         );
       WHEN '1.10' THEN
         st_query := replace(st_query, '{statements_fields}',
@@ -207,7 +244,9 @@ BEGIN
           'st.jit_optimization_count, '
           'st.jit_optimization_time, '
           'st.jit_emission_count, '
-          'st.jit_emission_time '
+          'st.jit_emission_time, '
+          'st.temp_blk_read_time, '
+          'st.temp_blk_write_time '
         );
       ELSE
         RAISE 'Unsupported pg_stat_statements extension version.';
@@ -258,7 +297,9 @@ BEGIN
         jit_optimization_count,
         jit_optimization_time,
         jit_emission_count,
-        jit_emission_time
+        jit_emission_time,
+        temp_blk_read_time,
+        temp_blk_write_time
       )
     SELECT
       sserver_id,
@@ -304,7 +345,9 @@ BEGIN
       dbl.jit_optimization_count,
       dbl.jit_optimization_time,
       dbl.jit_emission_count,
-      dbl.jit_emission_time
+      dbl.jit_emission_time,
+      dbl.temp_blk_read_time,
+      dbl.temp_blk_write_time
     FROM dblink('server_connection',st_query)
     AS dbl (
       -- pg_stat_statements fields
@@ -348,7 +391,9 @@ BEGIN
         jit_optimization_count  bigint,
         jit_optimization_time   double precision,
         jit_emission_count  bigint,
-        jit_emission_time   double precision
+        jit_emission_time   double precision,
+        temp_blk_read_time  double precision,
+        temp_blk_write_time double precision
       );
     EXECUTE format('ANALYZE last_stat_statements_srv%1$s',
       sserver_id);
@@ -714,6 +759,10 @@ SET search_path=@extschema@ AS $$
       row_number() over (ORDER BY cur.total_exec_time DESC NULLS LAST) AS exec_time_rank,
       row_number() over (ORDER BY cur.calls DESC NULLS LAST) AS calls_rank,
       row_number() over (ORDER BY cur.blk_read_time + cur.blk_write_time DESC NULLS LAST) AS io_time_rank,
+      CASE WHEN COALESCE(cur.temp_blk_read_time, 0) + COALESCE(cur.temp_blk_write_time, 0) > 0 THEN
+        row_number() over (ORDER BY COALESCE(cur.temp_blk_read_time, 0) + COALESCE(cur.temp_blk_write_time, 0)
+          DESC NULLS LAST)
+      ELSE NULL END AS io_temp_rank,
       row_number() over (ORDER BY cur.shared_blks_hit + cur.shared_blks_read DESC NULLS LAST) AS gets_rank,
       row_number() over (ORDER BY cur.shared_blks_read DESC NULLS LAST) AS read_rank,
       row_number() over (ORDER BY cur.shared_blks_dirtied DESC NULLS LAST) AS dirtied_rank,
@@ -740,6 +789,7 @@ SET search_path=@extschema@ AS $$
         read_rank,
         dirtied_rank,
         written_rank,
+        io_temp_rank,
         tempw_rank,
         tempr_rank
       ) <= topn
@@ -856,7 +906,9 @@ SET search_path=@extschema@ AS $$
     jit_optimization_count,
     jit_optimization_time,
     jit_emission_count,
-    jit_emission_time
+    jit_emission_time,
+    temp_blk_read_time,
+    temp_blk_write_time
   )
   SELECT
     sserver_id,
@@ -901,7 +953,9 @@ SET search_path=@extschema@ AS $$
     jit_optimization_count,
     jit_optimization_time,
     jit_emission_count,
-    jit_emission_time
+    jit_emission_time,
+    temp_blk_read_time,
+    temp_blk_write_time
   FROM
     last_stat_statements JOIN stmt_list USING (server_id, queryid_md5)
   WHERE
@@ -942,7 +996,9 @@ SET search_path=@extschema@ AS $$
     jit_optimization_count,
     jit_optimization_time,
     jit_emission_count,
-    jit_emission_time
+    jit_emission_time,
+    temp_blk_read_time,
+    temp_blk_write_time
   )
   SELECT
     server_id,
@@ -976,7 +1032,9 @@ SET search_path=@extschema@ AS $$
     sum(lss.jit_optimization_count),
     sum(lss.jit_optimization_time),
     sum(lss.jit_emission_count),
-    sum(lss.jit_emission_time)
+    sum(lss.jit_emission_time),
+    sum(lss.temp_blk_read_time),
+    sum(lss.temp_blk_write_time)
   FROM
     last_stat_statements lss
     -- In case of already dropped database

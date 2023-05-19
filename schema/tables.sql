@@ -79,6 +79,7 @@ CREATE VIEW v_sample_stat_tables AS
         sample_id,
         datid,
         relid,
+        tablespacename,
         schemaname,
         relname,
         seq_scan,
@@ -116,7 +117,9 @@ CREATE VIEW v_sample_stat_tables AS
         relkind,
         relpages_bytes,
         relpages_bytes_diff
-    FROM sample_stat_tables JOIN tables_list USING (server_id, datid, relid);
+    FROM sample_stat_tables
+      JOIN tables_list USING (server_id, datid, relid)
+      JOIN tablespaces_list tl USING (server_id, tablespaceid);
 COMMENT ON VIEW v_sample_stat_tables IS 'Tables stats view with table names and schemas';
 
 CREATE TABLE last_stat_tables(

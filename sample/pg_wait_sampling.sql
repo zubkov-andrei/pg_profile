@@ -28,7 +28,7 @@ DECLARE
 BEGIN
     -- Adding dblink extension schema to search_path if it does not already there
     SELECT extnamespace::regnamespace AS dblink_schema INTO STRICT qres FROM pg_catalog.pg_extension WHERE extname = 'dblink';
-    IF NOT string_to_array(current_setting('search_path'),',') @> ARRAY[qres.dblink_schema::text] THEN
+    IF NOT string_to_array(current_setting('search_path'),', ') @> ARRAY[qres.dblink_schema::text] THEN
       EXECUTE 'SET LOCAL search_path TO ' || current_setting('search_path')||','|| qres.dblink_schema;
     END IF;
 
@@ -42,13 +42,14 @@ BEGIN
             'FILTER (WHERE queryid IS NOT NULL AND queryid != 0) as stmt_waited '
         'FROM '
           '%1$I.pg_wait_sampling_profile '
+        'WHERE event IS NOT NULL '
         'GROUP BY '
           'event_type, '
           'event) as w',
       (
         SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
           AS x(extname text, extnamespace text)
-        WHERE extname = 'pg_stat_statements'
+        WHERE extname = 'pg_wait_sampling'
       )
     );
 

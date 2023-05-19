@@ -11,34 +11,6 @@ SET search_path=@extschema@ AS $$
     AND sample_id BETWEEN start_id + 1 AND end_id
 $$ LANGUAGE sql;
 
-CREATE FUNCTION wal_stats(IN sserver_id integer, IN start_id integer, IN end_id integer)
-RETURNS TABLE(
-        server_id               integer,
-        wal_records         bigint,
-        wal_fpi             bigint,
-        wal_bytes           numeric,
-        wal_buffers_full    bigint,
-        wal_write           bigint,
-        wal_sync            bigint,
-        wal_write_time      double precision,
-        wal_sync_time       double precision
-)
-SET search_path=@extschema@ AS $$
-    SELECT
-        st.server_id as server_id,
-        sum(wal_records)::bigint as wal_records,
-        sum(wal_fpi)::bigint as wal_fpi,
-        sum(wal_bytes)::numeric as wal_bytes,
-        sum(wal_buffers_full)::bigint as wal_buffers_full,
-        sum(wal_write)::bigint as wal_write,
-        sum(wal_sync)::bigint as wal_sync,
-        sum(wal_write_time)::double precision as wal_write_time,
-        sum(wal_sync_time)::double precision as wal_sync_time
-    FROM sample_stat_wal st
-    WHERE st.server_id = sserver_id AND st.sample_id BETWEEN start_id + 1 AND end_id
-    GROUP BY st.server_id
-$$ LANGUAGE sql;
-
 CREATE FUNCTION wal_stats_reset(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS TABLE(
         sample_id        integer,
@@ -56,368 +28,184 @@ SET search_path=@extschema@ AS $$
   ORDER BY ws1.sample_id ASC
 $$ LANGUAGE sql;
 
-CREATE FUNCTION wal_stats_reset_htbl(IN report_context jsonb, IN sserver_id integer)
-RETURNS text SET search_path=@extschema@ AS $$
-DECLARE
-    report text := '';
-    jtab_tpl    jsonb;
+CREATE FUNCTION profile_checkavail_wal_stats_reset(IN sserver_id integer, IN start_id integer, IN end_id integer)
+RETURNS BOOLEAN
+SET search_path=@extschema@ AS $$
+    -- Check if wal statistics were reset
+  SELECT count(*) > 0 FROM wal_stats_reset(sserver_id, start_id, end_id)
+$$ LANGUAGE sql;
 
-    --Cursor for db stats
-    c_dbstats CURSOR(start1_id integer, end1_id integer) FOR
-    SELECT
-        sample_id,
-        wal_stats_reset
-    FROM wal_stats_reset(sserver_id,start1_id,end1_id)
-    ORDER BY wal_stats_reset ASC;
+CREATE FUNCTION wal_stats_reset_format(IN sserver_id integer, IN start_id integer, IN end_id integer)
+RETURNS TABLE(
+  sample_id       integer,
+  wal_stats_reset text
+)
+SET search_path=@extschema@ AS $$
+  SELECT
+    sample_id,
+    wal_stats_reset::text
+  FROM
+    wal_stats_reset(sserver_id, start_id, end_id)
+$$ LANGUAGE sql;
 
-    r_result RECORD;
-BEGIN
-    -- Database stats TPLs
-    jtab_tpl := jsonb_build_object(
-      'tab_hdr',
-        '<table {stattbl}>'
-          '<tr>'
-            '<th>Sample</th>'
-            '<th>WAL stats reset time</th>'
-          '</tr>'
-          '{rows}'
-        '</table>',
-      'sample_tpl',
-        '<tr>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-        '</tr>');
-    -- apply settings to templates
-    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
+CREATE FUNCTION wal_stats_reset_format_diff(IN sserver_id integer,
+  IN start1_id integer, IN end1_id integer,
+  IN start2_id integer, IN end2_id integer)
+RETURNS TABLE(
+  interval_num    integer,
+  sample_id       integer,
+  wal_stats_reset text
+)
+SET search_path=@extschema@ AS $$
+  SELECT
+    1 AS interval_num,
+    sample_id,
+    wal_stats_reset::text
+  FROM
+    wal_stats_reset(sserver_id, start1_id, end1_id)
+  UNION
+  SELECT
+    2 AS interval_num,
+    sample_id,
+    wal_stats_reset::text
+  FROM
+    wal_stats_reset(sserver_id, start2_id, end2_id)
+$$ LANGUAGE sql;
 
-    -- Reporting summary databases stats
-    FOR r_result IN c_dbstats(
-        (report_context #>> '{report_properties,start1_id}')::integer,
-        (report_context #>> '{report_properties,end1_id}')::integer
-      )
-    LOOP
-        report := report||format(
-            jtab_tpl #>> ARRAY['sample_tpl'],
-            r_result.sample_id,
-            r_result.wal_stats_reset
-        );
-    END LOOP;
+CREATE FUNCTION wal_stats(IN sserver_id integer, IN start_id integer, IN end_id integer)
+RETURNS TABLE(
+  server_id           integer,
+  wal_records         bigint,
+  wal_fpi             bigint,
+  wal_bytes           numeric,
+  wal_buffers_full    bigint,
+  wal_write           bigint,
+  wal_sync            bigint,
+  wal_write_time      double precision,
+  wal_sync_time       double precision
+)
+SET search_path=@extschema@ AS $$
+  SELECT
+    st.server_id as server_id,
+    sum(wal_records)::bigint as wal_records,
+    sum(wal_fpi)::bigint as wal_fpi,
+    sum(wal_bytes)::numeric as wal_bytes,
+    sum(wal_buffers_full)::bigint as wal_buffers_full,
+    sum(wal_write)::bigint as wal_write,
+    sum(wal_sync)::bigint as wal_sync,
+    sum(wal_write_time)::double precision as wal_write_time,
+    sum(wal_sync_time)::double precision as wal_sync_time
+  FROM sample_stat_wal st
+  WHERE st.server_id = sserver_id AND st.sample_id BETWEEN start_id + 1 AND end_id
+  GROUP BY st.server_id
+$$ LANGUAGE sql;
 
-    IF report != '' THEN
-        report := replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
-    END IF;
+CREATE FUNCTION wal_stats_format(IN sserver_id integer, IN start_id integer, IN end_id integer,
+  duration numeric)
+RETURNS TABLE(
+  wal_records       numeric,
+  wal_fpi           numeric,
+  wal_bytes         numeric,
+  wal_bytes_text    text,
+  wal_bytes_per_sec text,
+  wal_buffers_full  numeric,
+  wal_write         numeric,
+  wal_write_per_sec numeric,
+  wal_sync          numeric,
+  wal_sync_per_sec  numeric,
+  wal_write_time    numeric,
+  wal_write_time_per_sec  text,
+  wal_sync_time     numeric,
+  wal_sync_time_per_sec   text
+)
+SET search_path=@extschema@ AS $$
+  SELECT
+    NULLIF(wal_records, 0),
+    NULLIF(wal_fpi, 0),
+    NULLIF(wal_bytes, 0),
+    pg_size_pretty(NULLIF(wal_bytes, 0)),
+    pg_size_pretty(round(NULLIF(wal_bytes, 0)/NULLIF(duration, 0))::bigint),
+    NULLIF(wal_buffers_full, 0),
+    NULLIF(wal_write, 0),
+    round((NULLIF(wal_write, 0)/NULLIF(duration, 0))::numeric,2),
+    NULLIF(wal_sync, 0),
+    round((NULLIF(wal_sync, 0)/NULLIF(duration, 0))::numeric,2),
+    round(cast(NULLIF(wal_write_time, 0)/1000 as numeric),2),
+    round((NULLIF(wal_write_time, 0)/10/NULLIF(duration, 0))::numeric,2) || '%',
+    round(cast(NULLIF(wal_sync_time, 0)/1000 as numeric),2),
+    round((NULLIF(wal_sync_time, 0)/10/NULLIF(duration, 0))::numeric,2) || '%'
+  FROM
+    wal_stats(sserver_id, start_id, end_id)
+$$ LANGUAGE sql;
 
-    RETURN  report;
-END;
-$$ LANGUAGE plpgsql;
+CREATE FUNCTION wal_stats_format_diff(IN sserver_id integer,
+  IN start1_id integer, IN end1_id integer,
+  IN start2_id integer, IN end2_id integer,
+  duration1 numeric, duration2 numeric)
+RETURNS TABLE(
+  wal_records1       numeric,
+  wal_fpi1           numeric,
+  wal_bytes1         numeric,
+  wal_bytes_text1    text,
+  wal_bytes_per_sec1 text,
+  wal_buffers_full1  numeric,
+  wal_write1         numeric,
+  wal_write_per_sec1 numeric,
+  wal_sync1          numeric,
+  wal_sync_per_sec1  numeric,
+  wal_write_time1    numeric,
+  wal_write_time_per_sec1  text,
+  wal_sync_time1     numeric,
+  wal_sync_time_per_sec1   text,
 
-CREATE FUNCTION wal_stats_reset_diff_htbl(IN report_context jsonb, IN sserver_id integer)
-RETURNS text SET search_path=@extschema@ AS $$
-DECLARE
-    report text := '';
-    jtab_tpl    jsonb;
+  wal_records2       numeric,
+  wal_fpi2           numeric,
+  wal_bytes2         numeric,
+  wal_bytes_text2    text,
+  wal_bytes_per_sec2 text,
+  wal_buffers_full2  numeric,
+  wal_write2         numeric,
+  wal_write_per_sec2 numeric,
+  wal_sync2          numeric,
+  wal_sync_per_sec2  numeric,
+  wal_write_time2    numeric,
+  wal_write_time_per_sec2  text,
+  wal_sync_time2     numeric,
+  wal_sync_time_per_sec2   text
+)
+SET search_path=@extschema@ AS $$
+  SELECT
+    NULLIF(ws1.wal_records, 0),
+    NULLIF(ws1.wal_fpi, 0),
+    NULLIF(ws1.wal_bytes, 0),
+    pg_size_pretty(NULLIF(ws1.wal_bytes, 0)),
+    pg_size_pretty(round(NULLIF(ws1.wal_bytes, 0)/NULLIF(duration1, 0))::bigint),
+    NULLIF(ws1.wal_buffers_full, 0),
+    NULLIF(ws1.wal_write, 0),
+    round((NULLIF(ws1.wal_write, 0)/NULLIF(duration1, 0))::numeric,2),
+    NULLIF(ws1.wal_sync, 0),
+    round((NULLIF(ws1.wal_sync, 0)/NULLIF(duration1, 0))::numeric,2),
+    round(cast(NULLIF(ws1.wal_write_time, 0)/1000 as numeric),2),
+    round((NULLIF(ws1.wal_write_time, 0)/10/NULLIF(duration1, 0))::numeric,2) || '%',
+    round(cast(NULLIF(ws1.wal_sync_time, 0)/1000 as numeric),2),
+    round((NULLIF(ws1.wal_sync_time, 0)/10/NULLIF(duration1, 0))::numeric,2) || '%',
 
-    --Cursor for db stats
-    c_dbstats CURSOR(start1_id integer, end1_id integer,
-      start2_id integer, end2_id integer) FOR
-    SELECT
-        interval_num,
-        sample_id,
-        wal_stats_reset
-    FROM
-      (SELECT 1 AS interval_num, sample_id, wal_stats_reset
-        FROM wal_stats_reset(sserver_id,start1_id,end1_id)
-      UNION ALL
-      SELECT 2 AS interval_num, sample_id, wal_stats_reset
-        FROM wal_stats_reset(sserver_id,start2_id,end2_id)) AS samples
-    ORDER BY interval_num, wal_stats_reset ASC;
-
-    r_result RECORD;
-BEGIN
-    -- Database stats TPLs
-    jtab_tpl := jsonb_build_object(
-      'tab_hdr',
-        '<table {stattbl}>'
-          '<tr>'
-            '<th>I</th>'
-            '<th>Sample</th>'
-            '<th>WAL stats reset time</th>'
-          '</tr>'
-          '{rows}'
-        '</table>',
-      'sample_tpl1',
-        '<tr {interval1}>'
-          '<td {label} {title1}>1</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-        '</tr>',
-      'sample_tpl2',
-        '<tr {interval2}>'
-          '<td {label} {title2}>2</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-        '</tr>');
-    -- apply settings to templates
-    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
-
-    -- Reporting summary databases stats
-    FOR r_result IN c_dbstats(
-        (report_context #>> '{report_properties,start1_id}')::integer,
-        (report_context #>> '{report_properties,end1_id}')::integer,
-        (report_context #>> '{report_properties,start2_id}')::integer,
-        (report_context #>> '{report_properties,end2_id}')::integer
-      )
-    LOOP
-      CASE r_result.interval_num
-        WHEN 1 THEN
-          report := report||format(
-              jtab_tpl #>> ARRAY['sample_tpl1'],
-              r_result.sample_id,
-              r_result.wal_stats_reset
-          );
-        WHEN 2 THEN
-          report := report||format(
-              jtab_tpl #>> ARRAY['sample_tpl2'],
-              r_result.sample_id,
-              r_result.wal_stats_reset
-          );
-        END CASE;
-    END LOOP;
-
-    IF report != '' THEN
-        report := replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
-    END IF;
-
-    RETURN  report;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE FUNCTION wal_stats_htbl(IN report_context jsonb, IN sserver_id integer)
-RETURNS text SET search_path=@extschema@ AS $$
-DECLARE
-    report text := '';
-    jtab_tpl    jsonb;
-
-    report_duration float = (report_context #> ARRAY['report_properties','interval_duration_sec'])::float;
-
-    --Cursor for db stats
-    c_dbstats CURSOR(start1_id integer, end1_id integer) FOR
-    SELECT
-        NULLIF(wal_records, 0) as wal_records,
-        NULLIF(wal_fpi, 0) as wal_fpi,
-        NULLIF(wal_bytes, 0) as wal_bytes,
-        NULLIF(wal_buffers_full, 0) as wal_buffers_full,
-        NULLIF(wal_write, 0) as wal_write,
-        NULLIF(wal_sync, 0) as wal_sync,
-        NULLIF(wal_write_time, 0.0) as wal_write_time,
-        NULLIF(wal_sync_time, 0.0) as wal_sync_time
-    FROM wal_stats(sserver_id,start1_id,end1_id);
-
-    r_result RECORD;
-BEGIN
-    jtab_tpl := jsonb_build_object(
-      'tab_hdr',
-        '<table {stattbl}>'
-          '<tr>'
-            '<th>Metric</th>'
-            '<th>Value</th>'
-          '</tr>'
-          '{rows}'
-        '</table>',
-      'val_tpl',
-        '<tr>'
-          '<td title="%s">%s</td>'
-          '<td {value}>%s</td>'
-        '</tr>');
-    -- apply settings to templates
-    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
-    -- Reporting summary bgwriter stats
-    FOR r_result IN c_dbstats(
-        (report_context #>> '{report_properties,start1_id}')::integer,
-        (report_context #>> '{report_properties,end1_id}')::integer
-      )
-    LOOP
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'Total amount of WAL generated', 'WAL generated', pg_size_pretty(r_result.wal_bytes));
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'Average amount of WAL generated per second', 'WAL per second',
-          pg_size_pretty(
-            round(
-              r_result.wal_bytes/report_duration
-            )::bigint
-          ));
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'Total number of WAL records generated', 'WAL records', r_result.wal_records);
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'Total number of WAL full page images generated', 'WAL FPI', r_result.wal_fpi);
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'Number of times WAL data was written to disk because WAL buffers became full',
-          'WAL buffers full', r_result.wal_buffers_full);
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'Number of times WAL buffers were written out to disk via XLogWrite request',
-          'WAL writes', r_result.wal_write);
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'Average number of times WAL buffers were written out to disk via XLogWrite request per second',
-          'WAL writes per second',
-          round((r_result.wal_write/report_duration)::numeric,2));
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'Number of times WAL files were synced to disk via issue_xlog_fsync request (if fsync is on and wal_sync_method is either fdatasync, fsync or fsync_writethrough, otherwise zero)',
-          'WAL sync', r_result.wal_sync);
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'Average number of times WAL files were synced to disk via issue_xlog_fsync request per second',
-          'WAL syncs per second',
-          round((r_result.wal_sync/report_duration)::numeric,2));
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'Total amount of time spent writing WAL buffers to disk via XLogWrite request, in milliseconds (if track_wal_io_timing is enabled, otherwise zero). This includes the sync time when wal_sync_method is either open_datasync or open_sync',
-          'WAL write time (s)',
-          round(cast(r_result.wal_write_time/1000 as numeric),2));
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'WAL write time as a percentage of the report duration time',
-          'WAL write duty',
-          round((r_result.wal_write_time/10/report_duration)::numeric,2) || '%');
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'Total amount of time spent syncing WAL files to disk via issue_xlog_fsync request, in milliseconds (if track_wal_io_timing is enabled, fsync is on, and wal_sync_method is either fdatasync, fsync or fsync_writethrough, otherwise zero)',
-          'WAL sync time (s)',
-          round(cast(r_result.wal_sync_time/1000 as numeric),2));
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'WAL sync time as a percentage of the report duration time',
-          'WAL sync duty',
-          round((r_result.wal_sync_time/10/report_duration)::numeric,2) || '%');
-    END LOOP;
-
-    IF report != '' THEN
-        report := replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
-    END IF;
-
-    RETURN  report;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE FUNCTION wal_stats_diff_htbl(IN report_context jsonb, IN sserver_id integer)
-RETURNS text SET search_path=@extschema@ AS $$
-DECLARE
-    report text := '';
-    jtab_tpl    jsonb;
-
-    report1_duration float = (report_context #> ARRAY['report_properties','interval1_duration_sec'])::float;
-    report2_duration float = (report_context #> ARRAY['report_properties','interval2_duration_sec'])::float;
-
-    --Cursor for db stats
-    c_dbstats CURSOR(start1_id integer, end1_id integer,
-      start2_id integer, end2_id integer) FOR
-    SELECT
-        NULLIF(stat1.wal_records, 0) as wal_records1,
-        NULLIF(stat1.wal_fpi, 0) as wal_fpi1,
-        NULLIF(stat1.wal_bytes, 0) as wal_bytes1,
-        NULLIF(stat1.wal_buffers_full, 0) as wal_buffers_full1,
-        NULLIF(stat1.wal_write, 0) as wal_write1,
-        NULLIF(stat1.wal_sync, 0) as wal_sync1,
-        NULLIF(stat1.wal_write_time, 0.0) as wal_write_time1,
-        NULLIF(stat1.wal_sync_time, 0.0) as wal_sync_time1,
-        NULLIF(stat2.wal_records, 0) as wal_records2,
-        NULLIF(stat2.wal_fpi, 0) as wal_fpi2,
-        NULLIF(stat2.wal_bytes, 0) as wal_bytes2,
-        NULLIF(stat2.wal_buffers_full, 0) as wal_buffers_full2,
-        NULLIF(stat2.wal_write, 0) as wal_write2,
-        NULLIF(stat2.wal_sync, 0) as wal_sync2,
-        NULLIF(stat2.wal_write_time, 0.0) as wal_write_time2,
-        NULLIF(stat2.wal_sync_time, 0.0) as wal_sync_time2
-    FROM wal_stats(sserver_id,start1_id,end1_id) stat1
-        FULL OUTER JOIN wal_stats(sserver_id,start2_id,end2_id) stat2 USING (server_id);
-
-    r_result RECORD;
-BEGIN
-    -- Database stats TPLs
-    jtab_tpl := jsonb_build_object(
-      'tab_hdr',
-        '<table {stattbl}>'
-          '<tr>'
-            '<th>Metric</th>'
-            '<th {title1}>Value (1)</th>'
-            '<th {title2}>Value (2)</th>'
-          '</tr>'
-          '{rows}'
-        '</table>',
-      'val_tpl',
-        '<tr>'
-          '<td title="%s">%s</td>'
-          '<td {interval1}><div {value}>%s</div></td>'
-          '<td {interval2}><div {value}>%s</div></td>'
-        '</tr>');
-    -- apply settings to templates
-    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
-    -- Reporting summary bgwriter stats
-    FOR r_result IN c_dbstats(
-        (report_context #>> '{report_properties,start1_id}')::integer,
-        (report_context #>> '{report_properties,end1_id}')::integer,
-        (report_context #>> '{report_properties,start2_id}')::integer,
-        (report_context #>> '{report_properties,end2_id}')::integer
-      )
-    LOOP
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'Total amount of WAL generated', 'WAL generated',
-          pg_size_pretty(r_result.wal_bytes1), pg_size_pretty(r_result.wal_bytes2));
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'Average amount of WAL generated per second', 'WAL per second',
-          pg_size_pretty(
-            round(
-              r_result.wal_bytes1/report1_duration
-            )::bigint
-          ),
-          pg_size_pretty(
-            round(
-              r_result.wal_bytes2/report2_duration
-            )::bigint
-          ));
-
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'Total number of WAL records generated', 'WAL records', r_result.wal_records1, r_result.wal_records2);
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'Total number of WAL full page images generated', 'WAL FPI', r_result.wal_fpi1, r_result.wal_fpi2);
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'Number of times WAL data was written to disk because WAL buffers became full', 'WAL buffers full', r_result.wal_buffers_full1, r_result.wal_buffers_full2);
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'Number of times WAL buffers were written out to disk via XLogWrite request', 'WAL writes',
-          r_result.wal_write1, r_result.wal_write2);
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'Average number of times WAL buffers were written out to disk via XLogWrite request per second',
-          'WAL writes per second',
-          round((r_result.wal_write1/report1_duration)::numeric,2),
-          round((r_result.wal_write2/report2_duration)::numeric,2));
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'Number of times WAL files were synced to disk via issue_xlog_fsync request (if fsync is on and wal_sync_method is either fdatasync, fsync or fsync_writethrough, otherwise zero)',
-          'WAL sync', r_result.wal_sync1, r_result.wal_sync2);
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'Average number of times WAL files were synced to disk via issue_xlog_fsync request per second',
-          'WAL syncs per second',
-          round((r_result.wal_sync1/report1_duration)::numeric,2),
-          round((r_result.wal_sync2/report2_duration)::numeric,2));
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'Total amount of time spent writing WAL buffers to disk via XLogWrite request, in milliseconds (if track_wal_io_timing is enabled, otherwise zero). This includes the sync time when wal_sync_method is either open_datasync or open_sync',
-          'WAL write time (s)',
-          round(cast(r_result.wal_write_time1/1000 as numeric),2),
-          round(cast(r_result.wal_write_time2/1000 as numeric),2));
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'WAL write time as a percentage of the report duration time',
-          'WAL write duty',
-          round((r_result.wal_write_time1/10/report1_duration)::numeric,2) || '%',
-          round((r_result.wal_write_time2/10/report2_duration)::numeric,2) || '%');
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'Total amount of time spent syncing WAL files to disk via issue_xlog_fsync request, in milliseconds (if track_wal_io_timing is enabled, fsync is on, and wal_sync_method is either fdatasync, fsync or fsync_writethrough, otherwise zero)',
-          'WAL sync time (s)',
-          round(cast(r_result.wal_sync_time1/1000 as numeric),2),
-          round(cast(r_result.wal_sync_time2/1000 as numeric),2));
-        report := report||format(jtab_tpl #>> ARRAY['val_tpl'],
-          'WAL sync time as a percentage of the report duration time',
-          'WAL sync duty',
-          round((r_result.wal_sync_time1/10/report1_duration)::numeric,2) || '%',
-          round((r_result.wal_sync_time2/10/report2_duration)::numeric,2) || '%');
-    END LOOP;
-
-    IF report != '' THEN
-        report := replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
-    END IF;
-
-    RETURN  report;
-END;
-$$ LANGUAGE plpgsql;
+    NULLIF(ws2.wal_records, 0),
+    NULLIF(ws2.wal_fpi, 0),
+    NULLIF(ws2.wal_bytes, 0),
+    pg_size_pretty(NULLIF(ws2.wal_bytes, 0)),
+    pg_size_pretty(round(NULLIF(ws2.wal_bytes, 0)/NULLIF(duration2, 0))::bigint),
+    NULLIF(ws2.wal_buffers_full, 0),
+    NULLIF(ws2.wal_write, 0),
+    round((NULLIF(ws2.wal_write, 0)/NULLIF(duration2, 0))::numeric,2),
+    NULLIF(ws2.wal_sync, 0),
+    round((NULLIF(ws2.wal_sync, 0)/NULLIF(duration2, 0))::numeric,2),
+    round(cast(NULLIF(ws2.wal_write_time, 0)/1000 as numeric),2),
+    round((NULLIF(ws2.wal_write_time, 0)/10/NULLIF(duration2, 0))::numeric,2) || '%',
+    round(cast(NULLIF(ws2.wal_sync_time, 0)/1000 as numeric),2),
+    round((NULLIF(ws2.wal_sync_time, 0)/10/NULLIF(duration2, 0))::numeric,2) || '%'
+  FROM
+    wal_stats(sserver_id, start1_id, end1_id) ws1
+    CROSS JOIN
+    wal_stats(sserver_id, start2_id, end2_id) ws2
+$$ LANGUAGE sql;

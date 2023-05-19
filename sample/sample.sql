@@ -1,17 +1,15 @@
 /* ========= Sample functions ========= */
-
-CREATE FUNCTION take_sample(IN sserver_id integer, IN skip_sizes boolean
-) RETURNS integer SET search_path=@extschema@ AS $$
+CREATE FUNCTION init_sample(IN sserver_id integer
+) RETURNS jsonb SET search_path=@extschema@ SET lock_timeout=300000 AS $$
 DECLARE
-    s_id              integer;
-    topn              integer;
-    ret               integer;
     server_properties jsonb = '{"extensions":[],"settings":[],"timings":{},"properties":{}}'; -- version, extensions, etc.
     qres              record;
-    settings_refresh  boolean = true;
+    server_connstr    text;
     collect_timings   boolean = false;
+    topn              integer;
 
     server_query      text;
+    server_host       text = NULL;
 BEGIN
     -- Get server connstr
     SELECT properties INTO server_properties FROM get_connstr(sserver_id, server_properties);
@@ -32,13 +30,15 @@ BEGIN
         WHEN OTHERS THEN topn := 20;
     END;
 
+    server_properties := jsonb_set(server_properties,'{properties,topn}',to_jsonb(topn));
 
     -- Adding dblink extension schema to search_path if it does not already there
     IF (SELECT count(*) = 0 FROM pg_catalog.pg_extension WHERE extname = 'dblink') THEN
       RAISE 'dblink extension must be installed';
     END IF;
+
     SELECT extnamespace::regnamespace AS dblink_schema INTO STRICT qres FROM pg_catalog.pg_extension WHERE extname = 'dblink';
-    IF NOT string_to_array(current_setting('search_path'),',') @> ARRAY[qres.dblink_schema::text] THEN
+    IF NOT string_to_array(current_setting('search_path'),', ') @> ARRAY[qres.dblink_schema::text] THEN
       EXECUTE 'SET LOCAL search_path TO ' || current_setting('search_path')||','|| qres.dblink_schema;
     END IF;
 
@@ -53,53 +53,6 @@ BEGIN
     EXCEPTION
         WHEN OTHERS THEN RAISE 'Can''t get lock on server. Is there another take_sample() function running on this server?';
     END;
-
-    -- Creating a new sample record
-    UPDATE servers SET last_sample_id = last_sample_id + 1 WHERE server_id = sserver_id
-      RETURNING last_sample_id INTO s_id;
-    INSERT INTO samples(sample_time,server_id,sample_id)
-      VALUES (now(),sserver_id,s_id);
-
-    -- Getting max_sample_age setting
-    BEGIN
-        ret := COALESCE(current_setting('{pg_profile}.max_sample_age')::integer);
-    EXCEPTION
-        WHEN OTHERS THEN ret := 7;
-    END;
-    -- Applying skip sizes policy
-    IF skip_sizes IS NULL THEN
-      IF num_nulls(qres.size_smp_wnd_start, qres.size_smp_wnd_dur, qres.size_smp_interval) > 0 THEN
-        skip_sizes := false;
-      ELSE
-        /*
-        Skip sizes collection if there was a sample with sizes recently
-        or if we are not in size collection time window
-        */
-        SELECT
-          count(*) > 0 OR
-          NOT
-          CASE WHEN timezone('UTC',current_time) > timezone('UTC',qres.size_smp_wnd_start) THEN
-            timezone('UTC',now()) <=
-            timezone('UTC',now())::date +
-            timezone('UTC',qres.size_smp_wnd_start) +
-            qres.size_smp_wnd_dur
-          ELSE
-            timezone('UTC',now()) <=
-            timezone('UTC',now() - interval '1 day')::date +
-            timezone('UTC',qres.size_smp_wnd_start) +
-            qres.size_smp_wnd_dur
-          END
-            INTO STRICT skip_sizes
-        FROM
-          sample_stat_tables_total st
-          JOIN samples s USING (server_id, sample_id)
-        WHERE
-          server_id = sserver_id
-          AND st.relsize_diff IS NOT NULL
-          AND sample_time > now() - qres.size_smp_interval;
-      END IF;
-    END IF;
-
     IF (server_properties #>> '{collect_timings}')::boolean THEN
       server_properties := jsonb_set(server_properties,'{timings,connect}',jsonb_build_object('start',clock_timestamp()));
       server_properties := jsonb_set(server_properties,'{timings,total}',jsonb_build_object('start',clock_timestamp()));
@@ -152,6 +105,122 @@ BEGIN
     LOOP
       server_properties := jsonb_insert(server_properties,'{"extensions",0}',to_jsonb(qres));
     END LOOP;
+
+    -- Check system identifier
+    WITH remote AS (
+      SELECT
+        dbl.system_identifier
+      FROM dblink('server_connection',
+        'SELECT system_identifier '
+        'FROM pg_catalog.pg_control_system()'
+      ) AS dbl (system_identifier bigint)
+    )
+    SELECT min(reset_val::bigint) != (
+        SELECT
+          system_identifier
+        FROM remote
+      ) AS sysid_changed,
+      (
+        SELECT
+          s.server_name = 'local' AND cs.system_identifier != r.system_identifier
+        FROM
+          pg_catalog.pg_control_system() cs
+          CROSS JOIN remote r
+          JOIN servers s ON (s.server_id = sserver_id)
+      ) AS local_missmatch
+      INTO STRICT qres
+    FROM sample_settings
+    WHERE server_id = sserver_id AND name = 'system_identifier';
+    IF qres.sysid_changed THEN
+      RAISE 'Server system_identifier has changed! '
+        'Ensure server connection string is correct. '
+        'Consider creating a new server for this cluster.';
+    END IF;
+    IF qres.local_missmatch THEN
+      RAISE 'Local system_identifier does not match '
+        'with server specified by connection string of '
+        '"local" server';
+    END IF;
+
+    RETURN server_properties;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE FUNCTION take_sample(IN sserver_id integer, IN skip_sizes boolean
+) RETURNS integer SET search_path=@extschema@ AS $$
+DECLARE
+    s_id              integer;
+    topn              integer;
+    ret               integer;
+    server_properties jsonb;
+    qres              record;
+    settings_refresh  boolean = true;
+    collect_timings   boolean = false;
+
+    server_query      text;
+BEGIN
+    -- Initialize sample
+    server_properties := init_sample(sserver_id);
+    ASSERT server_properties IS NOT NULL, 'lost properties';
+
+    -- Adding dblink extension schema to search_path if it does not already there
+    IF (SELECT count(*) = 0 FROM pg_catalog.pg_extension WHERE extname = 'dblink') THEN
+      RAISE 'dblink extension must be installed';
+    END IF;
+
+    SELECT extnamespace::regnamespace AS dblink_schema INTO STRICT qres FROM pg_catalog.pg_extension WHERE extname = 'dblink';
+    IF NOT string_to_array(current_setting('search_path'),', ') @> ARRAY[qres.dblink_schema::text] THEN
+      EXECUTE 'SET LOCAL search_path TO ' || current_setting('search_path')||','|| qres.dblink_schema;
+    END IF;
+
+    topn := (server_properties #>> '{properties,topn}')::integer;
+
+    -- Creating a new sample record
+    UPDATE servers SET last_sample_id = last_sample_id + 1 WHERE server_id = sserver_id
+      RETURNING last_sample_id INTO s_id;
+    INSERT INTO samples(sample_time,server_id,sample_id)
+      VALUES (now(),sserver_id,s_id);
+
+    -- Getting max_sample_age setting
+    BEGIN
+        ret := COALESCE(current_setting('{pg_profile}.max_sample_age')::integer);
+    EXCEPTION
+        WHEN OTHERS THEN ret := 7;
+    END;
+    -- Applying skip sizes policy
+    SELECT * INTO qres FROM servers WHERE server_id = sserver_id;
+    IF skip_sizes IS NULL THEN
+      IF num_nulls(qres.size_smp_wnd_start, qres.size_smp_wnd_dur, qres.size_smp_interval) > 0 THEN
+        skip_sizes := false;
+      ELSE
+        /*
+        Skip sizes collection if there was a sample with sizes recently
+        or if we are not in size collection time window
+        */
+        SELECT
+          count(*) > 0 OR
+          NOT
+          CASE WHEN timezone('UTC',current_time) > timezone('UTC',qres.size_smp_wnd_start) THEN
+            timezone('UTC',now()) <=
+            timezone('UTC',now())::date +
+            timezone('UTC',qres.size_smp_wnd_start) +
+            qres.size_smp_wnd_dur
+          ELSE
+            timezone('UTC',now()) <=
+            timezone('UTC',now() - interval '1 day')::date +
+            timezone('UTC',qres.size_smp_wnd_start) +
+            qres.size_smp_wnd_dur
+          END
+            INTO STRICT skip_sizes
+        FROM
+          sample_stat_tables_total st
+          JOIN samples s USING (server_id, sample_id)
+        WHERE
+          server_id = sserver_id
+          AND st.relsize_diff IS NOT NULL
+          AND sample_time > now() - qres.size_smp_interval;
+      END IF;
+    END IF;
 
     -- Collecting postgres parameters
     /* We might refresh all parameters if version() was changed
@@ -240,26 +309,6 @@ BEGIN
         OR lst.unit != cur.unit
       );
 
-    -- Check system identifier change
-    SELECT min(reset_val::bigint) != max(reset_val::bigint) AS sysid_changed INTO STRICT qres
-    FROM sample_settings
-    WHERE server_id = sserver_id AND name = 'system_identifier';
-    IF qres.sysid_changed THEN
-      RAISE 'Server system_identifier has changed! Ensure server connection string is correct. Consider creating a new server for this cluster.';
-    END IF;
-
-    -- for server named 'local' check system identifier match
-    IF (SELECT
-      count(*) > 0
-    FROM servers srv
-      JOIN sample_settings ss USING (server_id)
-      CROSS JOIN pg_catalog.pg_control_system() cs
-    WHERE server_id = sserver_id AND ss.name = 'system_identifier'
-      AND srv.server_name = 'local' AND reset_val::bigint != system_identifier)
-    THEN
-      RAISE 'Local system_identifier does not match with server specified by connection string of "local" server';
-    END IF;
-
     INSERT INTO sample_settings(
       server_id,
       first_seen,
@@ -333,7 +382,9 @@ BEGIN
             'dbs.stats_reset, '
             'pg_database_size(dbs.datid) as datsize, '
             '0 as datsize_delta, '
-            'db.datistemplate '
+            'db.datistemplate, '
+            'db.dattablespace, '
+            'db.datallowconn '
           'FROM pg_catalog.pg_stat_database dbs '
           'JOIN pg_catalog.pg_database db ON (dbs.datid = db.oid) '
           'WHERE dbs.datname IS NOT NULL';
@@ -374,7 +425,9 @@ BEGIN
             'dbs.stats_reset, '
             'pg_database_size(dbs.datid) as datsize, '
             '0 as datsize_delta, '
-            'db.datistemplate '
+            'db.datistemplate, '
+            'db.dattablespace, '
+            'db.datallowconn '
           'FROM pg_catalog.pg_stat_database dbs '
           'JOIN pg_catalog.pg_database db ON (dbs.datid = db.oid) '
           'WHERE dbs.datname IS NOT NULL';
@@ -415,7 +468,9 @@ BEGIN
             'dbs.stats_reset, '
             'pg_database_size(dbs.datid) as datsize, '
             '0 as datsize_delta, '
-            'db.datistemplate '
+            'db.datistemplate, '
+            'db.dattablespace, '
+            'db.datallowconn '
           'FROM pg_catalog.pg_stat_database dbs '
           'JOIN pg_catalog.pg_database db ON (dbs.datid = db.oid) '
           'WHERE dbs.datname IS NOT NULL';
@@ -454,7 +509,9 @@ BEGIN
         stats_reset,
         datsize,
         datsize_delta,
-        datistemplate)
+        datistemplate,
+        dattablespace,
+        datallowconn)
     SELECT
         sserver_id,
         s_id,
@@ -487,7 +544,9 @@ BEGIN
         stats_reset,
         datsize AS datsize,
         datsize_delta AS datsize_delta,
-        datistemplate AS datistemplate
+        datistemplate AS datistemplate,
+        dattablespace AS dattablespace,
+        datallowconn AS datallowconn
     FROM dblink('server_connection',server_query) AS rs (
         datid oid,
         datname name,
@@ -518,7 +577,9 @@ BEGIN
         stats_reset timestamp with time zone,
         datsize bigint,
         datsize_delta bigint,
-        datistemplate boolean
+        datistemplate boolean,
+        dattablespace oid,
+        datallowconn boolean
         );
 
     EXECUTE format('ANALYZE last_stat_database_srv%1$s',
@@ -598,9 +659,11 @@ BEGIN
         cur.datistemplate
     FROM last_stat_database cur
       LEFT OUTER JOIN last_stat_database lst ON
-        (lst.server_id, lst.sample_id, lst.datid, lst.datname, lst.stats_reset) =
-        (cur.server_id, cur.sample_id - 1, cur.datid, cur.datname, cur.stats_reset)
-    WHERE cur.sample_id = s_id AND cur.server_id = sserver_id;
+        (lst.server_id, lst.sample_id, lst.datid, lst.datname) =
+        (sserver_id, s_id - 1, cur.datid, cur.datname)
+        AND lst.stats_reset IS NOT DISTINCT FROM cur.stats_reset
+    WHERE
+      (cur.server_id, cur.sample_id) = (sserver_id, s_id);
 
     /*
     * In case of statistics reset full database size, and checksum checksum_failures
@@ -616,9 +679,9 @@ BEGIN
       last_stat_database cur
       JOIN last_stat_database lst ON
         (lst.server_id, lst.sample_id, lst.datid, lst.datname) =
-        (cur.server_id, cur.sample_id - 1, cur.datid, cur.datname)
-    WHERE cur.stats_reset != lst.stats_reset AND
-      cur.sample_id = s_id AND cur.server_id = sserver_id AND
+        (sserver_id, s_id - 1, cur.datid, cur.datname)
+    WHERE cur.stats_reset IS DISTINCT FROM lst.stats_reset AND
+      (cur.server_id, cur.sample_id) = (sserver_id, s_id) AND
       (sdb.server_id, sdb.sample_id, sdb.datid, sdb.datname) =
       (cur.server_id, cur.sample_id, cur.datid, cur.datname);
 
@@ -728,9 +791,15 @@ BEGIN
           'buffers_backend_fsync,'
           'buffers_alloc,'
           'stats_reset,'
-          'CASE WHEN pg_catalog.pg_is_in_recovery() THEN 0 '
-            'ELSE pg_catalog.pg_xlog_location_diff(pg_catalog.pg_current_xlog_location(),''0/00000000'') '
-          'END AS wal_size '
+          'CASE WHEN pg_catalog.pg_is_in_recovery() '
+          'THEN pg_catalog.pg_xlog_location_diff(pg_catalog.pg_last_xlog_replay_location(),''0/00000000'') '
+          'ELSE pg_catalog.pg_xlog_location_diff(pg_catalog.pg_current_xlog_location(),''0/00000000'') '
+          'END AS wal_size,'
+          'CASE WHEN pg_catalog.pg_is_in_recovery() '
+          'THEN pg_catalog.pg_last_xlog_replay_location() '
+          'ELSE pg_catalog.pg_current_xlog_location() '
+          'END AS wal_lsn,'
+          'pg_is_in_recovery() AS in_recovery '
           'FROM pg_catalog.pg_stat_bgwriter';
       WHEN (
         SELECT count(*) = 1 FROM jsonb_to_recordset(server_properties #> '{settings}')
@@ -751,9 +820,15 @@ BEGIN
           'buffers_backend_fsync,'
           'buffers_alloc,'
           'stats_reset,'
-          'CASE WHEN pg_catalog.pg_is_in_recovery() THEN 0 '
-              'ELSE pg_catalog.pg_wal_lsn_diff(pg_catalog.pg_current_wal_lsn(),''0/00000000'') '
-          'END AS wal_size '
+          'CASE WHEN pg_catalog.pg_is_in_recovery() '
+            'THEN pg_catalog.pg_wal_lsn_diff(pg_catalog.pg_last_wal_replay_lsn(),''0/00000000'') '
+            'ELSE pg_catalog.pg_wal_lsn_diff(pg_catalog.pg_current_wal_lsn(),''0/00000000'') '
+          'END AS wal_size,'
+          'CASE WHEN pg_catalog.pg_is_in_recovery() '
+            'THEN pg_catalog.pg_last_wal_replay_lsn() '
+            'ELSE pg_catalog.pg_current_wal_lsn() '
+          'END AS wal_lsn,'
+          'pg_catalog.pg_is_in_recovery() as in_recovery '
         'FROM pg_catalog.pg_stat_bgwriter';
     END CASE;
 
@@ -772,22 +847,26 @@ BEGIN
         buffers_backend_fsync,
         buffers_alloc,
         stats_reset,
-        wal_size)
+        wal_size,
+        wal_lsn,
+        in_recovery)
       SELECT
         sserver_id,
         s_id,
-        checkpoints_timed AS checkpoints_timed,
-        checkpoints_req AS checkpoints_req,
-        checkpoint_write_time AS checkpoint_write_time,
-        checkpoint_sync_time AS checkpoint_sync_time,
-        buffers_checkpoint AS buffers_checkpoint,
-        buffers_clean AS buffers_clean,
-        maxwritten_clean AS maxwritten_clean,
-        buffers_backend AS buffers_backend,
-        buffers_backend_fsync AS buffers_backend_fsync,
-        buffers_alloc AS buffers_alloc,
+        checkpoints_timed,
+        checkpoints_req,
+        checkpoint_write_time,
+        checkpoint_sync_time,
+        buffers_checkpoint,
+        buffers_clean,
+        maxwritten_clean,
+        buffers_backend,
+        buffers_backend_fsync,
+        buffers_alloc,
         stats_reset,
-        wal_size AS wal_size
+        wal_size,
+        wal_lsn,
+        in_recovery
       FROM dblink('server_connection',server_query) AS rs (
         checkpoints_timed bigint,
         checkpoints_req bigint,
@@ -800,7 +879,9 @@ BEGIN
         buffers_backend_fsync bigint,
         buffers_alloc bigint,
         stats_reset timestamp with time zone,
-        wal_size bigint);
+        wal_size bigint,
+        wal_lsn pg_lsn,
+        in_recovery boolean);
     END IF;
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
@@ -929,6 +1010,14 @@ BEGIN
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
       server_properties := jsonb_set(server_properties,'{timings,query pg_stat_archiver,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,disconnect}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
+    PERFORM dblink('server_connection', 'COMMIT');
+    PERFORM dblink_disconnect('server_connection');
+
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,disconnect,end}',to_jsonb(clock_timestamp()));
       server_properties := jsonb_set(server_properties,'{timings,collect object stats}',jsonb_build_object('start',clock_timestamp()));
     END IF;
 
@@ -938,14 +1027,6 @@ BEGIN
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
       server_properties := jsonb_set(server_properties,'{timings,collect object stats,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,disconnect}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
-
-    PERFORM dblink('server_connection', 'COMMIT');
-    PERFORM dblink_disconnect('server_connection');
-
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,disconnect,end}',to_jsonb(clock_timestamp()));
       server_properties := jsonb_set(server_properties,'{timings,maintain repository}',jsonb_build_object('start',clock_timestamp()));
     END IF;
 
@@ -954,27 +1035,26 @@ BEGIN
     UPDATE sample_stat_database AS db
     SET datname = lst.datname
     FROM last_stat_database AS lst
-    WHERE db.server_id = lst.server_id AND db.datid = lst.datid
-      AND db.datname != lst.datname
-      AND lst.sample_id = s_id;
+    WHERE
+      (db.server_id, lst.server_id, lst.sample_id, db.datid) =
+      (sserver_id, sserver_id, s_id, lst.datid)
+      AND db.datname != lst.datname;
     -- Tables
     UPDATE tables_list AS tl
     SET (schemaname, relname) = (lst.schemaname, lst.relname)
     FROM last_stat_tables AS lst
-    WHERE (tl.server_id, tl.datid, tl.relid, tl.relkind) =
-        (lst.server_id, lst.datid, lst.relid, lst.relkind)
-      AND (tl.schemaname, tl.relname) != (lst.schemaname, lst.relname)
-      AND lst.sample_id = s_id;
+    WHERE (tl.server_id, lst.server_id, lst.sample_id, tl.datid, tl.relid, tl.relkind) =
+        (sserver_id, sserver_id, s_id, lst.datid, lst.relid, lst.relkind)
+      AND (tl.schemaname, tl.relname) != (lst.schemaname, lst.relname);
     -- Functions
     UPDATE funcs_list AS fl
     SET (schemaname, funcname, funcargs) =
       (lst.schemaname, lst.funcname, lst.funcargs)
     FROM last_stat_user_functions AS lst
-    WHERE (fl.server_id, fl.datid, fl.funcid) =
-        (lst.server_id, lst.datid, lst.funcid)
+    WHERE (fl.server_id, lst.server_id, lst.sample_id, fl.datid, fl.funcid) =
+        (sserver_id, sserver_id, s_id, lst.datid, lst.funcid)
       AND (fl.schemaname, fl.funcname, fl.funcargs) !=
-        (lst.schemaname, lst.funcname, lst.funcargs)
-      AND lst.sample_id = s_id;
+        (lst.schemaname, lst.funcname, lst.funcargs);
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
       server_properties := jsonb_set(server_properties,'{timings,maintain repository,end}',to_jsonb(clock_timestamp()));
@@ -1022,9 +1102,9 @@ BEGIN
       cur.size - COALESCE(lst.size, 0) AS size_delta
     FROM last_stat_tablespaces cur
       LEFT OUTER JOIN last_stat_tablespaces lst ON
-        (cur.server_id, cur.sample_id - 1, cur.tablespaceid) =
-        (lst.server_id, lst.sample_id, lst.tablespaceid)
-    WHERE (cur.sample_id, cur.server_id) = (s_id, sserver_id);
+        (lst.server_id, lst.sample_id, cur.tablespaceid) =
+        (sserver_id, s_id - 1, lst.tablespaceid)
+    WHERE (cur.server_id, cur.sample_id) = ( sserver_id, s_id);
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
       server_properties := jsonb_set(server_properties,'{timings,calculate tablespace stats,end}',to_jsonb(clock_timestamp()));
@@ -1059,7 +1139,9 @@ BEGIN
       buffers_backend_fsync,
       buffers_alloc,
       stats_reset,
-      wal_size
+      wal_size,
+      wal_lsn,
+      in_recovery
     )
     SELECT
         cur.server_id,
@@ -1075,15 +1157,19 @@ BEGIN
         cur.buffers_backend_fsync - COALESCE(lst.buffers_backend_fsync,0),
         cur.buffers_alloc - COALESCE(lst.buffers_alloc,0),
         cur.stats_reset,
-        cur.wal_size - COALESCE(lst.wal_size,0)
+        cur.wal_size - COALESCE(lst.wal_size,0),
+        cur.wal_lsn,
+        cur.in_recovery
         /* We will overwrite this value in case of stats reset
          * (see below)
          */
     FROM last_stat_cluster cur
       LEFT OUTER JOIN last_stat_cluster lst ON
-        (cur.stats_reset, cur.server_id, cur.sample_id) =
-        (lst.stats_reset, lst.server_id, lst.sample_id + 1)
-    WHERE cur.sample_id = s_id AND cur.server_id = sserver_id;
+        (lst.server_id, lst.sample_id) =
+        (sserver_id, s_id - 1)
+        AND cur.stats_reset IS NOT DISTINCT FROM lst.stats_reset
+    WHERE
+      (cur.server_id, cur.sample_id) = (sserver_id, s_id);
 
     /* wal_size is calculated since 0 to current value when stats reset happened
      * so, we need to update it
@@ -1092,14 +1178,12 @@ BEGIN
     SET wal_size = cur.wal_size - lst.wal_size
     FROM last_stat_cluster cur
       JOIN last_stat_cluster lst ON
-        (cur.server_id, cur.sample_id) =
-        (lst.server_id, lst.sample_id + 1)
+        (lst.server_id, lst.sample_id) =
+        (sserver_id, s_id - 1)
     WHERE
-      (ssc.server_id, ssc.sample_id) =
-      (cur.server_id, cur.sample_id) AND
-      cur.sample_id = s_id AND
-      cur.server_id = sserver_id AND
-      cur.stats_reset != lst.stats_reset;
+      (ssc.server_id, ssc.sample_id) = (sserver_id, s_id) AND
+      (cur.server_id, cur.sample_id) = (sserver_id, s_id) AND
+      cur.stats_reset IS DISTINCT FROM lst.stats_reset;
 
     DELETE FROM last_stat_cluster WHERE server_id = sserver_id AND sample_id != s_id;
 
@@ -1136,8 +1220,9 @@ BEGIN
         cur.stats_reset
     FROM last_stat_wal cur
     LEFT OUTER JOIN last_stat_wal lst ON
-      (cur.stats_reset = lst.stats_reset AND cur.server_id = lst.server_id AND lst.sample_id = cur.sample_id - 1)
-    WHERE cur.sample_id = s_id AND cur.server_id = sserver_id;
+      (lst.server_id, lst.sample_id) = (sserver_id, s_id - 1)
+      AND cur.stats_reset IS NOT DISTINCT FROM lst.stats_reset
+    WHERE (cur.server_id, cur.sample_id) = (sserver_id, s_id);
 
     DELETE FROM last_stat_wal WHERE server_id = sserver_id AND sample_id != s_id;
 
@@ -1170,7 +1255,9 @@ BEGIN
         cur.stats_reset
     FROM last_stat_archiver cur
     LEFT OUTER JOIN last_stat_archiver lst ON
-      (cur.stats_reset = lst.stats_reset AND cur.server_id = lst.server_id AND lst.sample_id = cur.sample_id - 1)
+      (lst.server_id, lst.sample_id) =
+      (cur.server_id, cur.sample_id - 1)
+      AND cur.stats_reset IS NOT DISTINCT FROM lst.stats_reset
     WHERE cur.sample_id = s_id AND cur.server_id = sserver_id;
 
     DELETE FROM last_stat_archiver WHERE server_id = sserver_id AND sample_id != s_id;
@@ -1184,63 +1271,63 @@ BEGIN
     UPDATE tablespaces_list utl SET last_sample_id = s_id - 1
     FROM tablespaces_list tl LEFT JOIN sample_stat_tablespaces cur
       ON (cur.server_id, cur.sample_id, cur.tablespaceid) =
-        (tl.server_id, s_id, tl.tablespaceid)
+        (sserver_id, s_id, tl.tablespaceid)
     WHERE
       tl.last_sample_id IS NULL AND
-      (utl.server_id, utl.tablespaceid) = (tl.server_id, tl.tablespaceid) AND
+      (utl.server_id, utl.tablespaceid) = (sserver_id, tl.tablespaceid) AND
       tl.server_id = sserver_id AND cur.server_id IS NULL;
 
     UPDATE funcs_list ufl SET last_sample_id = s_id - 1
     FROM funcs_list fl LEFT JOIN sample_stat_user_functions cur
       ON (cur.server_id, cur.sample_id, cur.datid, cur.funcid) =
-        (fl.server_id, s_id, fl.datid, fl.funcid)
+        (sserver_id, s_id, fl.datid, fl.funcid)
     WHERE
       fl.last_sample_id IS NULL AND
       fl.server_id = sserver_id AND cur.server_id IS NULL AND
       (ufl.server_id, ufl.datid, ufl.funcid) =
-      (fl.server_id, fl.datid, fl.funcid);
+      (sserver_id, fl.datid, fl.funcid);
 
     UPDATE indexes_list uil SET last_sample_id = s_id - 1
     FROM indexes_list il LEFT JOIN sample_stat_indexes cur
       ON (cur.server_id, cur.sample_id, cur.datid, cur.indexrelid) =
-        (il.server_id, s_id, il.datid, il.indexrelid)
+        (sserver_id, s_id, il.datid, il.indexrelid)
     WHERE
       il.last_sample_id IS NULL AND
       il.server_id = sserver_id AND cur.server_id IS NULL AND
       (uil.server_id, uil.datid, uil.indexrelid) =
-      (il.server_id, il.datid, il.indexrelid);
+      (sserver_id, il.datid, il.indexrelid);
 
     UPDATE tables_list utl SET last_sample_id = s_id - 1
     FROM tables_list tl LEFT JOIN sample_stat_tables cur
       ON (cur.server_id, cur.sample_id, cur.datid, cur.relid) =
-        (tl.server_id, s_id, tl.datid, tl.relid)
+        (sserver_id, s_id, tl.datid, tl.relid)
     WHERE
       tl.last_sample_id IS NULL AND
       tl.server_id = sserver_id AND cur.server_id IS NULL AND
       (utl.server_id, utl.datid, utl.relid) =
-      (tl.server_id, tl.datid, tl.relid);
+      (sserver_id, tl.datid, tl.relid);
 
     UPDATE stmt_list slu SET last_sample_id = s_id - 1
     FROM sample_statements ss RIGHT JOIN stmt_list sl
       ON (ss.server_id, ss.sample_id, ss.queryid_md5) =
-        (sl.server_id, s_id, sl.queryid_md5)
+        (sserver_id, s_id, sl.queryid_md5)
     WHERE
       sl.server_id = sserver_id AND
       sl.last_sample_id IS NULL AND
       ss.server_id IS NULL AND
-      (slu.server_id, slu.queryid_md5) = (sl.server_id, sl.queryid_md5);
+      (slu.server_id, slu.queryid_md5) = (sserver_id, sl.queryid_md5);
 
     UPDATE roles_list rlu SET last_sample_id = s_id - 1
     FROM
         sample_statements ss
       RIGHT JOIN roles_list rl
       ON (ss.server_id, ss.sample_id, ss.userid) =
-        (rl.server_id, s_id, rl.userid)
+        (sserver_id, s_id, rl.userid)
     WHERE
       rl.server_id = sserver_id AND
       rl.last_sample_id IS NULL AND
       ss.server_id IS NULL AND
-      (rlu.server_id, rlu.userid) = (rl.server_id, rl.userid);
+      (rlu.server_id, rlu.userid) = (sserver_id, rl.userid);
 
     -- Deleting obsolete baselines
     DELETE FROM baselines
@@ -1273,16 +1360,48 @@ $$ LANGUAGE plpgsql;
 COMMENT ON FUNCTION take_sample(IN sserver_id integer, IN skip_sizes boolean) IS
   'Statistics sample creation function (by server_id)';
 
-CREATE FUNCTION take_sample(IN server name, IN skip_sizes boolean = NULL) RETURNS integer SET search_path=@extschema@ AS $$
+CREATE FUNCTION take_sample(IN server name, IN skip_sizes boolean = NULL)
+RETURNS TABLE (
+    result      text,
+    elapsed     interval day to second (2)
+)
+SET search_path=@extschema@ AS $$
 DECLARE
-    sserver_id    integer;
+    sserver_id          integer;
+    server_sampleres    integer;
+    etext               text := '';
+    edetail             text := '';
+    econtext            text := '';
+    start_clock         timestamp (2) with time zone;
 BEGIN
-    SELECT server_id INTO sserver_id FROM servers WHERE server_name = server;
+    SELECT server_id INTO sserver_id FROM servers WHERE server_name = take_sample.server;
     IF sserver_id IS NULL THEN
         RAISE 'Server not found';
     ELSE
-        RETURN take_sample(sserver_id, skip_sizes);
+        BEGIN
+            start_clock := clock_timestamp()::timestamp (2) with time zone;
+            server_sampleres := take_sample(sserver_id, take_sample.skip_sizes);
+            elapsed := clock_timestamp()::timestamp (2) with time zone - start_clock;
+            CASE server_sampleres
+              WHEN 0 THEN
+                result := 'OK';
+              ELSE
+                result := 'FAIL';
+            END CASE;
+            RETURN NEXT;
+        EXCEPTION
+            WHEN OTHERS THEN
+                BEGIN
+                    GET STACKED DIAGNOSTICS etext = MESSAGE_TEXT,
+                        edetail = PG_EXCEPTION_DETAIL,
+                        econtext = PG_EXCEPTION_CONTEXT;
+                    result := format (E'%s\n%s\n%s', etext, econtext, edetail);
+                    elapsed := clock_timestamp()::timestamp (2) with time zone - start_clock;
+                    RETURN NEXT;
+                END;
+        END;
     END IF;
+    RETURN;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -1302,7 +1421,7 @@ DECLARE
         FROM servers WHERE enabled
         ) AS t1
       WHERE srv_rn % sets_cnt = current_set;
-    server_sampleres        integer;
+    server_sampleres    integer;
     etext               text := '';
     edetail             text := '';
     econtext            text := '';
@@ -1363,15 +1482,18 @@ CREATE FUNCTION collect_obj_stats(IN properties jsonb, IN sserver_id integer, IN
   IN skip_sizes boolean
 ) RETURNS jsonb SET search_path=@extschema@ AS $$
 DECLARE
-    --Cursor for db stats
+    --Cursor over databases 
     c_dblist CURSOR FOR
-    SELECT datid,datname,tablespaceid FROM dblink('server_connection',
-    'select dbs.oid,dbs.datname,dbs.dattablespace from pg_catalog.pg_database dbs '
-    'where not dbs.datistemplate and dbs.datallowconn') AS dbl (
-        datid oid,
-        datname name,
-        tablespaceid oid
-    ) JOIN servers n ON (n.server_id = sserver_id AND array_position(n.db_exclude,dbl.datname) IS NULL);
+    SELECT
+      datid,
+      datname,
+      dattablespace AS tablespaceid
+    FROM last_stat_database ldb
+      JOIN servers n ON
+        (n.server_id = sserver_id AND array_position(n.db_exclude,ldb.datname) IS NULL)
+    WHERE
+      NOT ldb.datistemplate AND ldb.datallowconn AND
+      (ldb.server_id, ldb.sample_id) = (sserver_id, s_id);
 
     qres        record;
     db_connstr  text;
@@ -1383,7 +1505,7 @@ BEGIN
       RAISE 'dblink extension must be installed';
     END IF;
     SELECT extnamespace::regnamespace AS dblink_schema INTO STRICT qres FROM pg_catalog.pg_extension WHERE extname = 'dblink';
-    IF NOT string_to_array(current_setting('search_path'),',') @> ARRAY[qres.dblink_schema::text] THEN
+    IF NOT string_to_array(current_setting('search_path'),', ') @> ARRAY[qres.dblink_schema::text] THEN
       EXECUTE 'SET LOCAL search_path TO ' || current_setting('search_path')||','|| qres.dblink_schema;
     END IF;
 
@@ -1875,11 +1997,12 @@ BEGIN
             row_number() OVER (PARTITION BY cur.trg_fn ORDER BY cur.calls - COALESCE(lst.calls,0) DESC) calls_rank
         FROM last_stat_user_functions cur JOIN last_stat_database dbcur USING (server_id, sample_id, datid)
           LEFT OUTER JOIN last_stat_database dblst ON
-            (dblst.server_id, dblst.datid, dblst.sample_id, dblst.stats_reset) =
-            (dbcur.server_id, dbcur.datid, dbcur.sample_id - 1, dbcur.stats_reset)
+            (dblst.server_id, dblst.datid, dblst.sample_id) =
+            (sserver_id, dbcur.datid, s_id - 1)
+            AND dblst.stats_reset IS NOT DISTINCT FROM dbcur.stats_reset
           LEFT OUTER JOIN last_stat_user_functions lst ON
             (lst.server_id, lst.sample_id, lst.datid, lst.funcid) =
-            (dblst.server_id, dblst.sample_id, dblst.datid, cur.funcid)
+            (sserver_id, s_id - 1, dblst.datid, cur.funcid)
         WHERE
             (cur.server_id, cur.sample_id) =
             (sserver_id, s_id)
@@ -1917,14 +2040,15 @@ BEGIN
       FROM last_stat_indexes cur JOIN last_stat_tables tblcur USING (server_id, sample_id, datid, relid)
         JOIN last_stat_database dbcur USING (server_id, sample_id, datid)
         LEFT OUTER JOIN last_stat_database dblst ON
-          (dblst.server_id, dblst.datid, dblst.sample_id, dblst.stats_reset) =
-          (dbcur.server_id, dbcur.datid, dbcur.sample_id - 1, dbcur.stats_reset)
+          (dblst.server_id, dblst.datid, dblst.sample_id) =
+          (sserver_id, dbcur.datid, s_id - 1)
+          AND dblst.stats_reset IS NOT DISTINCT FROM dbcur.stats_reset
         LEFT OUTER JOIN last_stat_indexes lst ON
           (lst.server_id, lst.sample_id, lst.datid, lst.relid, lst.indexrelid) =
-          (dblst.server_id, dblst.sample_id, dblst.datid, cur.relid, cur.indexrelid)
+          (sserver_id, s_id - 1, dblst.datid, cur.relid, cur.indexrelid)
         LEFT OUTER JOIN last_stat_tables tbllst ON
           (tbllst.server_id, tbllst.sample_id, tbllst.datid, tbllst.relid) =
-          (dblst.server_id, dblst.sample_id, dblst.datid, lst.relid)
+          (sserver_id, s_id - 1, dblst.datid, lst.relid)
       WHERE
         (cur.server_id, cur.sample_id) =
         (sserver_id, s_id)
@@ -1956,7 +2080,7 @@ BEGIN
       FROM last_stat_indexes cur
         LEFT OUTER JOIN last_stat_indexes lst ON
           (lst.server_id, lst.sample_id, lst.datid, lst.relid, lst.indexrelid) =
-          (cur.server_id, cur.sample_id - 1, cur.datid, cur.relid, cur.indexrelid)
+          (sserver_id, s_id - 1, cur.datid, cur.relid, cur.indexrelid)
       WHERE
         (cur.server_id, cur.sample_id) =
         (sserver_id, s_id)
@@ -2015,18 +2139,19 @@ BEGIN
         -- main relations diff
         last_stat_tables cur JOIN last_stat_database dbcur USING (server_id, sample_id, datid)
         LEFT OUTER JOIN last_stat_database dblst ON
-          (dblst.server_id, dblst.datid, dblst.sample_id, dblst.stats_reset) =
-          (dbcur.server_id, dbcur.datid, dbcur.sample_id - 1, dbcur.stats_reset)
+          (dblst.server_id, dblst.datid, dblst.sample_id) =
+          (sserver_id, dbcur.datid, s_id - 1)
+          AND dblst.stats_reset IS NOT DISTINCT FROM dbcur.stats_reset
         LEFT OUTER JOIN last_stat_tables lst ON
           (lst.server_id, lst.sample_id, lst.datid, lst.relid) =
-          (dblst.server_id, dblst.sample_id, dblst.datid, cur.relid)
+          (sserver_id, s_id - 1, dblst.datid, cur.relid)
         -- toast relations diff
         LEFT OUTER JOIN last_stat_tables tcur ON
           (tcur.server_id, tcur.sample_id, tcur.datid, tcur.relid) =
-          (dbcur.server_id, dbcur.sample_id, dbcur.datid, cur.reltoastrelid)
+          (sserver_id, s_id, dbcur.datid, cur.reltoastrelid)
         LEFT OUTER JOIN last_stat_tables tlst ON
           (tlst.server_id, tlst.sample_id, tlst.datid, tlst.relid) =
-          (dblst.server_id, dblst.sample_id, dblst.datid, lst.reltoastrelid)
+          (sserver_id, s_id - 1, dblst.datid, lst.reltoastrelid)
       WHERE
         (cur.server_id, cur.sample_id, cur.in_sample) =
         (sserver_id, s_id, false)
@@ -2044,7 +2169,7 @@ BEGIN
         analyze_rank
       ) <= topn
       AND (ulst.server_id, ulst.sample_id, ulst.datid, ulst.in_sample) =
-        (diff.server_id, diff.sample_id, diff.datid, false)
+        (sserver_id, s_id, diff.datid, false)
       AND (ulst.relid = diff.relid OR ulst.relid = diff.toastrelid);
 
     -- Growth rank is to be calculated independently of database stats_reset value
@@ -2068,21 +2193,21 @@ BEGIN
         last_stat_tables cur
         LEFT OUTER JOIN last_stat_tables lst ON
           (lst.server_id, lst.sample_id, lst.datid, lst.relid) =
-          (cur.server_id, cur.sample_id - 1, cur.datid, cur.relid)
+          (sserver_id, s_id - 1, cur.datid, cur.relid)
         -- toast relations diff
         LEFT OUTER JOIN last_stat_tables tcur ON
           (tcur.server_id, tcur.sample_id, tcur.datid, tcur.relid) =
-          (cur.server_id, cur.sample_id, cur.datid, cur.reltoastrelid)
+          (sserver_id, s_id, cur.datid, cur.reltoastrelid)
         LEFT OUTER JOIN last_stat_tables tlst ON
           (tlst.server_id, tlst.sample_id, tlst.datid, tlst.relid) =
-          (lst.server_id, lst.sample_id, lst.datid, lst.reltoastrelid)
-      WHERE cur.sample_id=s_id AND cur.server_id=sserver_id
+          (sserver_id, s_id - 1, lst.datid, lst.reltoastrelid)
+      WHERE (cur.server_id, cur.sample_id) = (sserver_id, s_id)
         AND cur.relkind IN ('r','m')) diff
     WHERE
       ((relsize_avail AND growth_rank <= topn) OR
       ((NOT relsize_avail) AND relpages_avail AND pagegrowth_rank <= topn))
       AND (ulst.server_id, ulst.sample_id, ulst.datid, in_sample) =
-        (diff.server_id, diff.sample_id, diff.datid, false)
+        (sserver_id, s_id, diff.datid, false)
       AND (ulst.relid = diff.relid OR ulst.relid = diff.toastrelid);
 
     /* Also mark tables having marked indexes on them including main
@@ -2096,12 +2221,12 @@ BEGIN
       JOIN last_stat_tables tbl USING (server_id, sample_id, datid, relid)
       LEFT JOIN last_stat_tables mtbl ON
         (mtbl.server_id, mtbl.sample_id, mtbl.datid, mtbl.reltoastrelid) =
-        (tbl.server_id, tbl.sample_id, tbl.datid, tbl.relid)
+        (sserver_id, s_id, tbl.datid, tbl.relid)
     WHERE
       (ix.server_id, ix.sample_id, ix.in_sample) =
       (sserver_id, s_id, true)
       AND (ulst.server_id, ulst.sample_id, ulst.datid, ulst.in_sample) =
-        (tbl.server_id, tbl.sample_id, tbl.datid, false)
+        (sserver_id, s_id, tbl.datid, false)
       AND ulst.relid IN (tbl.relid, tbl.reltoastrelid, mtbl.relid);
 
     -- Insert marked objects statistics increments
@@ -2219,11 +2344,12 @@ BEGIN
     FROM
       last_stat_tables cur JOIN last_stat_database dbcur USING (server_id, sample_id, datid)
       LEFT JOIN last_stat_database dblst ON
-        (dblst.server_id, dblst.sample_id, dblst.datid, dblst.stats_reset) =
-        (dbcur.server_id, dbcur.sample_id - 1, dbcur.datid, dbcur.stats_reset)
+        (dblst.server_id, dblst.sample_id, dblst.datid) =
+        (sserver_id, s_id - 1, dbcur.datid)
+        AND dblst.stats_reset IS NOT DISTINCT FROM dbcur.stats_reset
       LEFT OUTER JOIN last_stat_tables lst ON
         (lst.server_id, lst.sample_id, lst.datid, lst.relid) =
-        (dblst.server_id, dblst.sample_id, dblst.datid, cur.relid)
+        (sserver_id, s_id - 1, dblst.datid, cur.relid)
     WHERE
       (cur.server_id, cur.sample_id, cur.in_sample) = (sserver_id, s_id, true);
 
@@ -2236,15 +2362,15 @@ BEGIN
       last_stat_tables cur JOIN last_stat_database dbcur USING (server_id, sample_id, datid)
       JOIN last_stat_database dblst ON
         (dblst.server_id, dblst.sample_id, dblst.datid) =
-        (dbcur.server_id, dbcur.sample_id - 1, dbcur.datid)
+        (sserver_id, s_id - 1, dbcur.datid)
       LEFT OUTER JOIN last_stat_tables lst ON
         (lst.server_id, lst.sample_id, lst.datid, lst.relid) =
-        (dblst.server_id, dblst.sample_id, dblst.datid, cur.relid)
+        (sserver_id, s_id - 1, dblst.datid, cur.relid)
     WHERE
       (cur.server_id, cur.sample_id, cur.in_sample) = (sserver_id, s_id, true)
-      AND dblst.stats_reset != dbcur.stats_reset
+      AND dblst.stats_reset IS DISTINCT FROM dbcur.stats_reset
       AND (usst.server_id, usst.sample_id, usst.datid, usst.relid) =
-        (cur.server_id, cur.sample_id, cur.datid, cur.relid);
+        (sserver_id, s_id, cur.datid, cur.relid);
 
     -- Total table stats
     INSERT INTO sample_stat_tables_total(
@@ -2307,11 +2433,12 @@ BEGIN
       END
     FROM last_stat_tables cur JOIN last_stat_database dbcur USING (server_id, sample_id, datid)
       LEFT OUTER JOIN last_stat_database dblst ON
-        (dblst.server_id, dblst.datid, dblst.sample_id, dblst.stats_reset) =
-        (dbcur.server_id, dbcur.datid, dbcur.sample_id - 1, dbcur.stats_reset)
+        (dblst.server_id, dblst.datid, dblst.sample_id) =
+        (sserver_id, dbcur.datid, s_id - 1)
+        AND dblst.stats_reset IS NOT DISTINCT FROM dbcur.stats_reset
       LEFT OUTER JOIN last_stat_tables lst ON
         (lst.server_id, lst.sample_id, lst.datid, lst.relid) =
-        (dblst.server_id, dblst.sample_id, dblst.datid, cur.relid)
+        (sserver_id, s_id - 1, dblst.datid, cur.relid)
     WHERE (cur.server_id, cur.sample_id) = (sserver_id, s_id)
     GROUP BY cur.server_id, cur.sample_id, cur.datid, cur.relkind, cur.tablespaceid;
 
@@ -2332,16 +2459,16 @@ BEGIN
           FROM last_stat_tables cur JOIN last_stat_database dbcur USING (server_id, sample_id, datid)
             JOIN last_stat_database dblst ON
               (dblst.server_id, dblst.sample_id, dblst.datid) =
-              (dbcur.server_id, dbcur.sample_id - 1, dbcur.datid)
+              (sserver_id, s_id - 1, dbcur.datid)
             LEFT OUTER JOIN last_stat_tables lst ON
               (lst.server_id, lst.sample_id, lst.datid, lst.relid) =
-              (dblst.server_id, dblst.sample_id, dblst.datid, cur.relid)
+              (sserver_id, s_id - 1, dblst.datid, cur.relid)
           WHERE (cur.server_id, cur.sample_id) = (sserver_id, s_id)
-            AND dblst.stats_reset != dbcur.stats_reset
+            AND dblst.stats_reset IS DISTINCT FROM dbcur.stats_reset
           GROUP BY cur.server_id, cur.sample_id, cur.datid, cur.relkind, cur.tablespaceid
         ) calc
       WHERE (usstt.server_id, usstt.sample_id, usstt.datid, usstt.relkind, usstt.tablespaceid) =
-        (calc.server_id, calc.sample_id, calc.datid, calc.relkind, calc.tablespaceid);
+        (sserver_id, s_id, calc.datid, calc.relkind, calc.tablespaceid);
 
     END IF;
     /*
@@ -2353,7 +2480,7 @@ BEGIN
     WHERE
       (cur.server_id, cur.sample_id) = (sserver_id, s_id)
       AND (lst.server_id, lst.sample_id, lst.datid, lst.relid) =
-      (cur.server_id, cur.sample_id - 1, cur.datid, cur.relid)
+      (cur.server_id, s_id - 1, cur.datid, cur.relid)
       AND cur.relsize IS NULL;
 
     IF (result #>> '{collect_timings}')::boolean THEN
@@ -2429,11 +2556,12 @@ BEGIN
     FROM
       last_stat_indexes cur JOIN last_stat_database dbcur USING (server_id, sample_id, datid)
       LEFT JOIN last_stat_database dblst ON
-        (dblst.server_id, dblst.sample_id, dblst.datid, dblst.stats_reset) =
-        (dbcur.server_id, dbcur.sample_id - 1, dbcur.datid, dbcur.stats_reset)
+        (dblst.server_id, dblst.sample_id, dblst.datid) =
+        (sserver_id, s_id - 1, dbcur.datid)
+        AND dblst.stats_reset IS NOT DISTINCT FROM dbcur.stats_reset
       LEFT OUTER JOIN last_stat_indexes lst ON
         (lst.server_id, lst.sample_id, lst.datid, lst.indexrelid) =
-        (dblst.server_id, dblst.sample_id, dblst.datid, cur.indexrelid)
+        (sserver_id, s_id - 1, dblst.datid, cur.indexrelid)
     WHERE
       (cur.server_id, cur.sample_id, cur.in_sample) = (sserver_id, s_id, true);
 
@@ -2446,15 +2574,15 @@ BEGIN
       last_stat_indexes cur JOIN last_stat_database dbcur USING (server_id, sample_id, datid)
       JOIN last_stat_database dblst ON
         (dblst.server_id, dblst.sample_id, dblst.datid) =
-        (dbcur.server_id, dbcur.sample_id - 1, dbcur.datid)
+        (sserver_id, s_id - 1, dbcur.datid)
       LEFT OUTER JOIN last_stat_indexes lst ON
         (lst.server_id, lst.sample_id, lst.datid, lst.indexrelid) =
-        (dblst.server_id, dblst.sample_id, dblst.datid, cur.indexrelid)
+        (sserver_id, s_id - 1, dblst.datid, cur.indexrelid)
     WHERE
       (cur.server_id, cur.sample_id, cur.in_sample) = (sserver_id, s_id, true)
-      AND dblst.stats_reset != dbcur.stats_reset
+      AND dblst.stats_reset IS DISTINCT FROM dbcur.stats_reset
       AND (ussi.server_id, ussi.sample_id, ussi.datid, ussi.indexrelid) =
-        (cur.server_id, cur.sample_id, cur.datid, cur.indexrelid);
+        (sserver_id, s_id, cur.datid, cur.indexrelid);
 
     -- Total indexes stats
     INSERT INTO sample_stat_indexes_total(
@@ -2485,11 +2613,12 @@ BEGIN
       END
     FROM last_stat_indexes cur JOIN last_stat_database dbcur USING (server_id, sample_id, datid)
       LEFT OUTER JOIN last_stat_database dblst ON
-        (dblst.server_id, dblst.sample_id, dblst.datid, dblst.stats_reset) =
-        (dbcur.server_id, dbcur.sample_id - 1, dbcur.datid, dbcur.stats_reset)
+        (dblst.server_id, dblst.sample_id, dblst.datid) =
+        (sserver_id, s_id - 1, dbcur.datid)
+        AND dblst.stats_reset IS NOT DISTINCT FROM dbcur.stats_reset
       LEFT OUTER JOIN last_stat_indexes lst ON
         (lst.server_id, lst.sample_id, lst.datid, lst.relid, lst.indexrelid) =
-        (dblst.server_id, dblst.sample_id, dblst.datid, cur.relid, cur.indexrelid)
+        (sserver_id, s_id - 1, dblst.datid, cur.relid, cur.indexrelid)
     WHERE
       (cur.server_id, cur.sample_id) = (sserver_id, s_id)
     GROUP BY cur.server_id, cur.sample_id, cur.datid, cur.tablespaceid;
@@ -2510,16 +2639,16 @@ BEGIN
           FROM last_stat_indexes cur JOIN last_stat_database dbcur USING (server_id, sample_id, datid)
             JOIN last_stat_database dblst ON
               (dblst.server_id, dblst.sample_id, dblst.datid) =
-              (dbcur.server_id, dbcur.sample_id - 1, dbcur.datid)
+              (sserver_id, s_id - 1, dbcur.datid)
             LEFT OUTER JOIN last_stat_indexes lst ON
               (lst.server_id, lst.sample_id, lst.datid, lst.indexrelid) =
-              (dblst.server_id, dblst.sample_id, dblst.datid, cur.indexrelid)
+              (sserver_id, s_id - 1, dblst.datid, cur.indexrelid)
           WHERE (cur.server_id, cur.sample_id) = (sserver_id, s_id)
-            AND dblst.stats_reset != dbcur.stats_reset
+            AND dblst.stats_reset IS DISTINCT FROM dbcur.stats_reset
           GROUP BY cur.server_id, cur.sample_id, cur.datid, cur.tablespaceid
         ) calc
       WHERE (ussit.server_id, ussit.sample_id, ussit.datid, ussit.tablespaceid) =
-        (calc.server_id, calc.sample_id, calc.datid, calc.tablespaceid);
+        (sserver_id, s_id, calc.datid, calc.tablespaceid);
     END IF;
     /*
     Preserve previous relation sizes in if we couldn't collect
@@ -2530,7 +2659,7 @@ BEGIN
     WHERE
       (cur.server_id, cur.sample_id) = (sserver_id, s_id)
       AND (lst.server_id, lst.sample_id, lst.datid, lst.indexrelid) =
-      (cur.server_id, cur.sample_id - 1, cur.datid, cur.indexrelid)
+      (sserver_id, s_id - 1, cur.datid, cur.indexrelid)
       AND cur.relsize IS NULL;
 
     IF (result #>> '{collect_timings}')::boolean THEN
@@ -2594,11 +2723,12 @@ BEGIN
       cur.trg_fn
     FROM last_stat_user_functions cur JOIN last_stat_database dbcur USING (server_id, sample_id, datid)
       LEFT OUTER JOIN last_stat_database dblst ON
-        (dblst.server_id, dblst.sample_id, dblst.datid, dblst.stats_reset) =
-        (dbcur.server_id, dbcur.sample_id - 1, dbcur.datid, dbcur.stats_reset)
+        (dblst.server_id, dblst.sample_id, dblst.datid) =
+        (sserver_id, s_id - 1, dbcur.datid)
+        AND dblst.stats_reset IS NOT DISTINCT FROM dbcur.stats_reset
       LEFT OUTER JOIN last_stat_user_functions lst ON
         (lst.server_id, lst.sample_id, lst.datid, lst.funcid) =
-        (dblst.server_id, dblst.sample_id, dblst.datid, cur.funcid)
+        (sserver_id, s_id - 1, dblst.datid, cur.funcid)
     WHERE
       (cur.server_id, cur.sample_id, cur.in_sample) = (sserver_id, s_id, true);
 
@@ -2620,11 +2750,12 @@ BEGIN
       cur.trg_fn
     FROM last_stat_user_functions cur JOIN last_stat_database dbcur USING (server_id, sample_id, datid)
       LEFT OUTER JOIN last_stat_database dblst ON
-        (dblst.server_id, dblst.sample_id, dblst.datid, dblst.stats_reset) =
-        (dbcur.server_id, dbcur.sample_id - 1, dbcur.datid, dbcur.stats_reset)
+        (dblst.server_id, dblst.sample_id, dblst.datid) =
+        (sserver_id, s_id - 1, dbcur.datid)
+        AND dblst.stats_reset IS NOT DISTINCT FROM dbcur.stats_reset
       LEFT OUTER JOIN last_stat_user_functions lst ON
         (lst.server_id, lst.sample_id, lst.datid, lst.funcid) =
-        (dblst.server_id, dblst.sample_id, dblst.datid, cur.funcid)
+        (sserver_id, s_id - 1, dblst.datid, cur.funcid)
     WHERE
       (cur.server_id, cur.sample_id) = (sserver_id, s_id)
     GROUP BY cur.server_id, cur.sample_id, cur.datid, cur.trg_fn;

@@ -40,6 +40,6 @@ CREATE TABLE sample_stat_database
 );
 COMMENT ON TABLE sample_stat_database IS 'Sample database statistics table (fields from pg_stat_database)';
 
-CREATE TABLE last_stat_database (LIKE sample_stat_database)
+CREATE TABLE last_stat_database (LIKE sample_stat_database, dattablespace oid, datallowconn boolean)
 PARTITION BY LIST (server_id);
 COMMENT ON TABLE last_stat_database IS 'Last sample data for calculating diffs in next sample';

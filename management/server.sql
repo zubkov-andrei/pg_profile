@@ -28,7 +28,8 @@ $$ LANGUAGE plpgsql;
 COMMENT ON FUNCTION create_server(IN server name, IN server_connstr text, IN server_enabled boolean,
 IN max_sample_age integer, IN description text) IS 'Create a new server';
 
-CREATE FUNCTION create_server_partitions(IN sserver_id integer) RETURNS integer SET search_path=@extschema@ AS $$
+CREATE FUNCTION create_server_partitions(IN sserver_id integer) RETURNS integer
+SET search_path=@extschema@ AS $$
 DECLARE
     in_extension      boolean;
 BEGIN
@@ -42,21 +43,7 @@ BEGIN
       'ALTER TABLE last_stat_statements_srv%1$s '
       'ADD CONSTRAINT pk_last_stat_satements_srv%1$s PRIMARY KEY (server_id, sample_id, userid, datid, queryid, toplevel)',
       sserver_id);
-    /*
-    * Check if partition is already in our extension. This happens when function
-    * is called during CREATE EXTENSION script execution
-    */
-    EXECUTE format('SELECT count(*) = 1 '
-      'FROM pg_depend dep '
-        'JOIN pg_extension ext ON (dep.refobjid = ext.oid) '
-        'JOIN pg_class rel ON (rel.oid = dep.objid AND rel.relkind= ''r'') '
-      'WHERE ext.extname= ''{pg_profile}'' AND rel.relname = ''last_stat_statements_srv%1$s''',
-      sserver_id) INTO in_extension;
-    -- Add partition to extension
-    IF NOT in_extension THEN
-      EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_statements_srv%1$s',
-        sserver_id);
-    END IF;
+
     -- Create last_stat_kcache table partition
     EXECUTE format(
       'CREATE TABLE last_stat_kcache_srv%1$s PARTITION OF last_stat_kcache '
@@ -70,10 +57,6 @@ BEGIN
         'last_stat_statements_srv%1$s(server_id, sample_id, datid, userid, queryid, toplevel) '
         'ON DELETE CASCADE',
       sserver_id);
-    IF NOT in_extension THEN
-      EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_kcache_srv%1$s',
-        sserver_id);
-    END IF;
 
     -- Create last_stat_database table partition
     EXECUTE format(
@@ -87,10 +70,6 @@ BEGIN
           'FOREIGN KEY (server_id, sample_id) '
           'REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT',
         sserver_id);
-    IF NOT in_extension THEN
-      EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_database_srv%1$s',
-        sserver_id);
-    END IF;
 
     -- Create last_stat_tablespaces table partition
     EXECUTE format(
@@ -104,10 +83,6 @@ BEGIN
           'FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) '
           'ON DELETE RESTRICT',
         sserver_id);
-    IF NOT in_extension THEN
-      EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_tablespaces_srv%1$s',
-        sserver_id);
-    END IF;
 
     -- Create last_stat_tables table partition
     EXECUTE format(
@@ -122,10 +97,6 @@ BEGIN
           'FOREIGN KEY (server_id, sample_id, datid) '
           'REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE RESTRICT',
         sserver_id);
-    IF NOT in_extension THEN
-      EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_tables_srv%1$s',
-        sserver_id);
-    END IF;
 
     -- Create last_stat_indexes table partition
     EXECUTE format(
@@ -140,10 +111,6 @@ BEGIN
         'FOREIGN KEY (server_id, sample_id, datid) '
           'REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE RESTRICT',
         sserver_id);
-    IF NOT in_extension THEN
-      EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_indexes_srv%1$s',
-        sserver_id);
-    END IF;
 
     -- Create last_stat_user_functions table partition
     EXECUTE format(
@@ -158,10 +125,36 @@ BEGIN
         'FOREIGN KEY (server_id, sample_id, datid) '
         'REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE RESTRICT',
         sserver_id);
+
+--<extension_start>
+    /*
+    * Check if partition is already in our extension. This happens when function
+    * is called during CREATE EXTENSION script execution
+    */
+    SELECT count(*) = 1 INTO in_extension
+    FROM pg_depend dep
+      JOIN pg_extension ext ON (dep.refobjid = ext.oid)
+      JOIN pg_class rel ON (rel.oid = dep.objid AND rel.relkind= 'r')
+    WHERE ext.extname='{pg_profile}'
+      AND rel.relname = format('last_stat_statements_srv%1$s', sserver_id);
+
     IF NOT in_extension THEN
+      EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_statements_srv%1$s',
+        sserver_id);
+      EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_kcache_srv%1$s',
+        sserver_id);
+      EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_database_srv%1$s',
+        sserver_id);
+      EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_tablespaces_srv%1$s',
+        sserver_id);
+      EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_tables_srv%1$s',
+        sserver_id);
+      EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_indexes_srv%1$s',
+        sserver_id);
       EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_user_functions_srv%1$s',
         sserver_id);
     END IF;
+--<extension_end>
 
     RETURN sserver_id;
 END;
@@ -354,9 +347,9 @@ COMMENT ON FUNCTION set_server_size_sampling(IN server name, IN window_start tim
 IS 'Set relation sizes sampling settings for a server';
 
 CREATE FUNCTION show_servers()
-RETURNS TABLE(server_name name, connstr text, enabled boolean, description text)
+RETURNS TABLE(server_name name, connstr text, enabled boolean, max_sample_age integer, description text)
 SET search_path=@extschema@ AS $$
-    SELECT server_name, connstr, enabled, server_description FROM servers;
+    SELECT server_name, connstr, enabled, max_sample_age, server_description FROM servers;
 $$ LANGUAGE sql;
 COMMENT ON FUNCTION show_servers() IS 'Displays all servers';
 

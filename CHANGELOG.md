@@ -1,5 +1,15 @@
 # pg_profile changelog
 
+## 4.2
+- Interactive reports.
+- _max_sample_age_ field added to the output of show_servers() function. (Reported by @bat-manav in #40)
+- WAL LSN of report bounds is now shown in "Cluster statistics" section
+- Fixed #62 reported by @portnov - incorrect values in V15 before sirst statistics reset
+- Support of temporary I/O time statistics for statements from _pg_stat_statements_ extension.
+- Fixed #65 reported by @pkonotopov - Idle in transaction timeout during a sample.
+- #66 implemented. Now the take_sample(text, boolean) function returns the result of the operation.
+- Manual objects creation script fixed. #64 reported by @ Poleon-Na
+
 ## 4.1
 - Avoid serialization of parallel samples (#48 by @xinferum) caused by locking due to analyze operations.
 - Fixed retention of last statements data. The new statements sample taking procedure implemented in 4.0 contained a bug - the obsolete data was not deleted from last_ tables. Update to 4.1 will fix this error and cleanup all obsolete data.

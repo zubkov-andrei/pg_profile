@@ -1,4 +1,4 @@
-PGPROFILE_VERSION = 4.1
+PGPROFILE_VERSION = 4.2
 EXTENSION = pg_profile
 
 TAR_pkg = $(EXTENSION)--$(PGPROFILE_VERSION).tar.gz $(EXTENSION)--$(PGPROFILE_VERSION)_manual.tar.gz
@@ -9,7 +9,8 @@ include migration/Makefile
 
 DATA_built = $(EXTENSION)--$(PGPROFILE_VERSION).sql $(EXTENSION).control $(MIGRATION)
 
-EXTRA_CLEAN = $(TAR_pkg) $(MIGRATION) $(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql $(schema) $(report)
+EXTRA_CLEAN = $(TAR_pkg) $(MIGRATION) $(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql $(schema) \
+	$(report) data/report_templates.sql
 
 REGRESS = \
 	create_extension \
@@ -70,11 +71,14 @@ functions_man = $(common) $(adm_funcs) $(sample) $(report)
 script_man = $(schema) $(functions_man) data/report_templates.sql
 
 # Common sed replacement script
-sed_extension = -e 's/{pg_profile}/$(EXTENSION)/; s/{extension_version}/$(PGPROFILE_VERSION)/; /--<manual_start>/,/--<manual_end>/d'
-sed_manual = -e 's/{pg_profile}/$(EXTENSION)/; s/{extension_version}/$(PGPROFILE_VERSION)/; /--<manual_start>/d; /--<manual_end>/d'
+sed_extension = -e 's/{pg_profile}/$(EXTENSION)/; s/{extension_version}/$(PGPROFILE_VERSION)/; /--<manual_start>/,/--<manual_end>/d; /--<extension_end>/d; /--<extension_start>/d'
+sed_manual = -e 's/{pg_profile}/$(EXTENSION)/; s/{extension_version}/$(PGPROFILE_VERSION)/; /--<extension_start>/,/--<extension_end>/d; /--<manual_start>/d; /--<manual_end>/d'
 
 schema/schema.sql:
 	${MAKE} -C schema
+
+data/report_templates.sql:
+	${MAKE} -C data
 
 report/report_build.sql:
 	${MAKE} -C report
@@ -82,7 +86,7 @@ report/report_build.sql:
 sqlfile: $(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql
 
 $(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql: $(script)
-	sed -e 's/SET search_path=@extschema@ //' \
+	sed -e 's/SET search_path=@extschema@//' \
 	$(sed_manual) \
 	$(script_man) \
 	> $(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql

@@ -2,7 +2,6 @@
 
 CREATE FUNCTION top_io_tables(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS TABLE(
-    server_id                     integer,
     datid                       oid,
     relid                       oid,
     dbname                      name,
@@ -36,7 +35,6 @@ RETURNS TABLE(
     WHERE server_id = sserver_id AND sample_id BETWEEN start_id + 1 AND end_id
     )
     SELECT
-        st.server_id,
         st.datid,
         st.relid,
         sample_db.datname AS dbname,
@@ -68,16 +66,241 @@ RETURNS TABLE(
         JOIN tablespaces_list USING(server_id,tablespaceid)
         CROSS JOIN total
     WHERE st.server_id = sserver_id
-      AND st.relkind IN ('r','m')
+      AND st.relkind IN ('r','m','t')
       AND NOT sample_db.datistemplate
       AND st.sample_id BETWEEN start_id + 1 AND end_id
-    GROUP BY st.server_id,st.datid,st.relid,sample_db.datname,tablespaces_list.tablespacename, st.schemaname,st.relname
-    HAVING min(sample_db.stats_reset) = max(sample_db.stats_reset)
+    GROUP BY st.datid,st.relid,sample_db.datname,tablespaces_list.tablespacename, st.schemaname,st.relname
+$$ LANGUAGE sql;
+
+CREATE FUNCTION top_io_tables_format(IN sserver_id integer, IN start_id integer, IN end_id integer)
+RETURNS TABLE (
+    datid                       oid,
+    relid                       oid,
+    dbname                      name,
+    tablespacename              name,
+    schemaname                  name,
+    relname                     name,
+
+    heap_blks_read              bigint,
+    heap_blks_read_pct          numeric,
+    heap_blks_fetch             bigint,
+    heap_blks_proc_pct          numeric,
+    idx_blks_read               bigint,
+    idx_blks_read_pct           numeric,
+    idx_blks_fetch              bigint,
+    idx_blks_fetch_pct          numeric,
+    toast_blks_read             bigint,
+    toast_blks_read_pct         numeric,
+    toast_blks_fetch            bigint,
+    toast_blks_fetch_pct        numeric,
+    tidx_blks_read              bigint,
+    tidx_blks_read_pct          numeric,
+    tidx_blks_fetch             bigint,
+    tidx_blks_fetch_pct         numeric,
+    seq_scan                    bigint,
+    idx_scan                    bigint,
+    hit_pct                     numeric,
+
+    ord_read                    integer,
+    ord_fetch                   integer
+) SET search_path=@extschema@ AS $$
+  SELECT
+    datid,
+    relid,
+    dbname,
+    tablespacename,
+    schemaname,
+    relname,
+
+    NULLIF(heap_blks_read, 0) AS heap_blks_read,
+    round(NULLIF(heap_blks_read_pct, 0.0), 2) AS heap_blks_read_pct,
+    NULLIF(heap_blks_fetch, 0) AS heap_blks_fetch,
+    round(NULLIF(heap_blks_proc_pct, 0.0), 2) AS heap_blks_proc_pct,
+    NULLIF(idx_blks_read, 0) AS idx_blks_read,
+    round(NULLIF(idx_blks_read_pct, 0.0), 2) AS idx_blks_read_pct,
+    NULLIF(idx_blks_fetch, 0) AS idx_blks_fetch,
+    round(NULLIF(idx_blks_fetch_pct, 0.0), 2) AS idx_blks_fetch_pct,
+    NULLIF(toast_blks_read, 0) AS toast_blks_read,
+    round(NULLIF(toast_blks_read_pct, 0.0), 2) AS toast_blks_read_pct,
+    NULLIF(toast_blks_fetch, 0) AS toast_blks_fetch,
+    round(NULLIF(toast_blks_fetch_pct, 0.0), 2) AS toast_blks_fetch_pct,
+    NULLIF(tidx_blks_read, 0) AS tidx_blks_read,
+    round(NULLIF(tidx_blks_read_pct, 0.0), 2) AS tidx_blks_read_pct,
+    NULLIF(tidx_blks_fetch, 0) AS tidx_blks_fetch,
+    round(NULLIF(tidx_blks_fetch_pct, 0.0), 2) AS tidx_blks_fetch_pct,
+    NULLIF(seq_scan, 0) AS seq_scan,
+    NULLIF(idx_scan, 0) AS idx_scan,
+    round(
+        100.0 - (COALESCE(heap_blks_read, 0) + COALESCE(idx_blks_read, 0) +
+        COALESCE(toast_blks_read, 0) + COALESCE(tidx_blks_read, 0)) * 100.0 /
+        NULLIF(heap_blks_fetch + idx_blks_fetch + toast_blks_fetch + tidx_blks_fetch, 0),2
+    ) AS hit_pct,
+
+    CASE WHEN
+      COALESCE(heap_blks_read, 0) + COALESCE(idx_blks_read, 0) + COALESCE(toast_blks_read, 0) + COALESCE(tidx_blks_read, 0) > 0
+    THEN
+      row_number() OVER (ORDER BY
+        COALESCE(heap_blks_read, 0) + COALESCE(idx_blks_read, 0) + COALESCE(toast_blks_read, 0) + COALESCE(tidx_blks_read, 0)
+      DESC NULLS LAST,
+      datid,
+      relid)::integer
+    ELSE NULL END AS ord_read,
+
+    CASE WHEN
+      COALESCE(heap_blks_fetch, 0) + COALESCE(idx_blks_fetch, 0) + COALESCE(toast_blks_fetch, 0) + COALESCE(tidx_blks_fetch, 0) > 0
+    THEN
+      row_number() OVER (ORDER BY
+        COALESCE(heap_blks_read, 0) + COALESCE(idx_blks_read, 0) + COALESCE(toast_blks_read, 0) + COALESCE(tidx_blks_read, 0)
+      DESC NULLS LAST,
+      datid,
+      relid)::integer
+    ELSE NULL END AS ord_fetch
+  FROM
+    top_io_tables(sserver_id, start_id, end_id)
+$$ LANGUAGE sql;
+
+CREATE FUNCTION top_io_tables_format_diff(IN sserver_id integer,
+  IN start1_id integer, IN end1_id integer,
+  IN start2_id integer, IN end2_id integer)
+RETURNS TABLE (
+    datid                       oid,
+    relid                       oid,
+    dbname                      name,
+    tablespacename              name,
+    schemaname                  name,
+    relname                     name,
+
+    heap_blks_read1             bigint,
+    heap_blks_read_pct1         numeric,
+    heap_blks_fetch1            bigint,
+    heap_blks_proc_pct1         numeric,
+    idx_blks_read1              bigint,
+    idx_blks_read_pct1          numeric,
+    idx_blks_fetch1             bigint,
+    idx_blks_fetch_pct1         numeric,
+    toast_blks_read1            bigint,
+    toast_blks_read_pct1        numeric,
+    toast_blks_fetch1           bigint,
+    toast_blks_fetch_pct1       numeric,
+    tidx_blks_read1             bigint,
+    tidx_blks_read_pct1         numeric,
+    tidx_blks_fetch1            bigint,
+    tidx_blks_fetch_pct1        numeric,
+    seq_scan1                   bigint,
+    idx_scan1                   bigint,
+    hit_pct1                    numeric,
+
+    heap_blks_read2             bigint,
+    heap_blks_read_pct2         numeric,
+    heap_blks_fetch2            bigint,
+    heap_blks_proc_pct2         numeric,
+    idx_blks_read2              bigint,
+    idx_blks_read_pct2          numeric,
+    idx_blks_fetch2             bigint,
+    idx_blks_fetch_pct2         numeric,
+    toast_blks_read2            bigint,
+    toast_blks_read_pct2        numeric,
+    toast_blks_fetch2           bigint,
+    toast_blks_fetch_pct2       numeric,
+    tidx_blks_read2             bigint,
+    tidx_blks_read_pct2         numeric,
+    tidx_blks_fetch2            bigint,
+    tidx_blks_fetch_pct2        numeric,
+    seq_scan2                   bigint,
+    idx_scan2                   bigint,
+    hit_pct2                    numeric,
+
+    ord_read                    integer,
+    ord_fetch                   integer
+) SET search_path=@extschema@ AS $$
+  SELECT
+    COALESCE(rel1.datid, rel2.datid) AS datid,
+    COALESCE(rel1.relid, rel2.relid) AS relid,
+    COALESCE(rel1.dbname, rel2.dbname) AS dbname,
+    COALESCE(rel1.tablespacename, rel2.tablespacename) AS tablespacename,
+    COALESCE(rel1.schemaname, rel2.schemaname) AS schemaname,
+    COALESCE(rel1.relname, rel2.relname) AS relname,
+
+    NULLIF(rel1.heap_blks_read, 0) AS heap_blks_read1,
+    round(NULLIF(rel1.heap_blks_read_pct, 0.0), 2) AS heap_blks_read_pct1,
+    NULLIF(rel1.heap_blks_fetch, 0) AS heap_blks_fetch1,
+    round(NULLIF(rel1.heap_blks_proc_pct, 0.0), 2) AS heap_blks_proc_pct1,
+    NULLIF(rel1.idx_blks_read, 0) AS idx_blks_read1,
+    round(NULLIF(rel1.idx_blks_read_pct, 0.0), 2) AS idx_blks_read_pct1,
+    NULLIF(rel1.idx_blks_fetch, 0) AS idx_blks_fetch1,
+    round(NULLIF(rel1.idx_blks_fetch_pct, 0.0), 2) AS idx_blks_fetch_pct1,
+    NULLIF(rel1.toast_blks_read, 0) AS toast_blks_read1,
+    round(NULLIF(rel1.toast_blks_read_pct, 0.0), 2) AS toast_blks_read_pct1,
+    NULLIF(rel1.toast_blks_fetch, 0) AS toast_blks_fetch1,
+    round(NULLIF(rel1.toast_blks_fetch_pct, 0.0), 2) AS toast_blks_fetch_pct1,
+    NULLIF(rel1.tidx_blks_read, 0) AS tidx_blks_read1,
+    round(NULLIF(rel1.tidx_blks_read_pct, 0.0), 2) AS tidx_blks_read_pct1,
+    NULLIF(rel1.tidx_blks_fetch, 0) AS tidx_blks_fetch1,
+    round(NULLIF(rel1.tidx_blks_fetch_pct, 0.0), 2) AS tidx_blks_fetch_pct1,
+    NULLIF(rel1.seq_scan, 0) AS seq_scan1,
+    NULLIF(rel1.idx_scan, 0) AS idx_scan1,
+    round(
+        100.0 - (COALESCE(rel1.heap_blks_read, 0) + COALESCE(rel1.idx_blks_read, 0) +
+        COALESCE(rel1.toast_blks_read, 0) + COALESCE(rel1.tidx_blks_read, 0)) * 100.0 /
+        NULLIF(rel1.heap_blks_fetch + rel1.idx_blks_fetch + rel1.toast_blks_fetch + rel1.tidx_blks_fetch, 0),2
+    ) AS hit_pct1,
+
+    NULLIF(rel2.heap_blks_read, 0) AS heap_blks_read2,
+    round(NULLIF(rel2.heap_blks_read_pct, 0.0), 2) AS heap_blks_read_pct2,
+    NULLIF(rel2.heap_blks_fetch, 0) AS heap_blks_fetch2,
+    round(NULLIF(rel2.heap_blks_proc_pct, 0.0), 2) AS heap_blks_proc_pct2,
+    NULLIF(rel2.idx_blks_read, 0) AS idx_blks_read2,
+    round(NULLIF(rel2.idx_blks_read_pct, 0.0), 2) AS idx_blks_read_pct2,
+    NULLIF(rel2.idx_blks_fetch, 0) AS idx_blks_fetch2,
+    round(NULLIF(rel2.idx_blks_fetch_pct, 0.0), 2) AS idx_blks_fetch_pct2,
+    NULLIF(rel2.toast_blks_read, 0) AS toast_blks_read2,
+    round(NULLIF(rel2.toast_blks_read_pct, 0.0), 2) AS toast_blks_read_pct2,
+    NULLIF(rel2.toast_blks_fetch, 0) AS toast_blks_fetch2,
+    round(NULLIF(rel2.toast_blks_fetch_pct, 0.0), 2) AS toast_blks_fetch_pct2,
+    NULLIF(rel2.tidx_blks_read, 0) AS tidx_blks_read2,
+    round(NULLIF(rel2.tidx_blks_read_pct, 0.0), 2) AS tidx_blks_read_pct2,
+    NULLIF(rel2.tidx_blks_fetch, 0) AS tidx_blks_fetch2,
+    round(NULLIF(rel2.tidx_blks_fetch_pct, 0.0), 2) AS tidx_blks_fetch_pct2,
+    NULLIF(rel2.seq_scan, 0) AS seq_scan2,
+    NULLIF(rel2.idx_scan, 0) AS idx_scan2,
+    round(
+        100.0 - (COALESCE(rel2.heap_blks_read, 0) + COALESCE(rel2.idx_blks_read, 0) +
+        COALESCE(rel2.toast_blks_read, 0) + COALESCE(rel2.tidx_blks_read, 0)) * 100.0 /
+        NULLIF(rel2.heap_blks_fetch + rel2.idx_blks_fetch + rel2.toast_blks_fetch + rel2.tidx_blks_fetch, 0),2
+    ) AS hit_pct2,
+
+    CASE WHEN
+      COALESCE(rel1.heap_blks_read, 0) + COALESCE(rel1.idx_blks_read, 0) + COALESCE(rel1.toast_blks_read, 0) + COALESCE(rel1.tidx_blks_read, 0) +
+      COALESCE(rel2.heap_blks_read, 0) + COALESCE(rel2.idx_blks_read, 0) + COALESCE(rel2.toast_blks_read, 0) + COALESCE(rel2.tidx_blks_read, 0) > 0
+    THEN
+      row_number() OVER (ORDER BY
+        COALESCE(rel1.heap_blks_read, 0) + COALESCE(rel1.idx_blks_read, 0) + COALESCE(rel1.toast_blks_read, 0) + COALESCE(rel1.tidx_blks_read, 0) +
+        COALESCE(rel2.heap_blks_read, 0) + COALESCE(rel2.idx_blks_read, 0) + COALESCE(rel2.toast_blks_read, 0) + COALESCE(rel2.tidx_blks_read, 0)
+      DESC NULLS LAST,
+      COALESCE(rel1.datid, rel2.datid),
+      COALESCE(rel1.relid, rel2.relid))::integer
+    ELSE NULL END AS ord_read,
+
+    CASE WHEN
+      COALESCE(rel1.heap_blks_fetch, 0) + COALESCE(rel1.idx_blks_fetch, 0) + COALESCE(rel1.toast_blks_fetch, 0) + COALESCE(rel1.tidx_blks_fetch, 0) +
+      COALESCE(rel2.heap_blks_fetch, 0) + COALESCE(rel2.idx_blks_fetch, 0) + COALESCE(rel2.toast_blks_fetch, 0) + COALESCE(rel2.tidx_blks_fetch, 0) > 0
+    THEN
+      row_number() OVER (ORDER BY
+        COALESCE(rel1.heap_blks_read, 0) + COALESCE(rel1.idx_blks_read, 0) + COALESCE(rel1.toast_blks_read, 0) + COALESCE(rel1.tidx_blks_read, 0) +
+        COALESCE(rel2.heap_blks_read, 0) + COALESCE(rel2.idx_blks_read, 0) + COALESCE(rel2.toast_blks_read, 0) + COALESCE(rel2.tidx_blks_read, 0)
+      DESC NULLS LAST,
+      COALESCE(rel1.datid, rel2.datid),
+      COALESCE(rel1.relid, rel2.relid))::integer
+    ELSE NULL END AS ord_fetch
+  FROM
+    top_io_tables(sserver_id, start1_id, end1_id) rel1
+    FULL OUTER JOIN
+    top_io_tables(sserver_id, start2_id, end2_id) rel2
+    USING (datid, relid)
 $$ LANGUAGE sql;
 
 CREATE FUNCTION top_io_indexes(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS TABLE(
-    server_id             integer,
     datid               oid,
     relid               oid,
     dbname              name,
@@ -90,8 +313,8 @@ RETURNS TABLE(
     idx_blks_read       bigint,
     idx_blks_read_pct   numeric,
     idx_blks_hit_pct    numeric,
-    idx_blks_fetch  bigint,
-    idx_blks_fetch_pct   numeric
+    idx_blks_fetch      bigint,
+    idx_blks_fetch_pct  numeric
 ) SET search_path=@extschema@ AS $$
     WITH total AS (SELECT
       COALESCE(sum(heap_blks_read)) + COALESCE(sum(idx_blks_read)) AS total_blks_read,
@@ -101,7 +324,6 @@ RETURNS TABLE(
     WHERE server_id = sserver_id AND sample_id BETWEEN start_id + 1 AND end_id
     )
     SELECT
-        st.server_id,
         st.datid,
         st.relid,
         sample_db.datname AS dbname,
@@ -128,911 +350,147 @@ RETURNS TABLE(
     GROUP BY st.server_id,st.datid,st.relid,sample_db.datname,
       COALESCE(mtbl.schemaname,st.schemaname), COALESCE(mtbl.relname||'(TOAST)',st.relname),
       st.schemaname,st.relname,tablespaces_list.tablespacename, st.indexrelid,st.indexrelname
-    HAVING min(sample_db.stats_reset) = max(sample_db.stats_reset)
 $$ LANGUAGE sql;
 
-CREATE FUNCTION tbl_top_io_htbl(IN report_context jsonb, IN sserver_id integer)
-RETURNS text SET search_path=@extschema@ AS $$
-DECLARE
-    report text := '';
-    jtab_tpl    jsonb;
+CREATE FUNCTION top_io_indexes_format(IN sserver_id integer,
+  IN start_id integer, IN end_id integer)
+RETURNS TABLE(
+    datid               oid,
+    relid               oid,
+    indexrelid          oid,
+    dbname              name,
+    tablespacename      name,
+    schemaname          name,
+    relname             name,
+    indexrelname        name,
+    
+    idx_scan            bigint,
+    idx_blks_read       bigint,
+    idx_blks_read_pct   numeric,
+    idx_blks_hit_pct    numeric,
+    idx_blks_fetch      bigint,
+    idx_blks_fetch_pct  numeric,
 
-    c_tbl_stats CURSOR(topn integer) FOR
-    SELECT
-        dbname,
-        tablespacename,
-        schemaname,
-        relname,
-        NULLIF(heap_blks_read, 0) as heap_blks_read,
-        NULLIF(heap_blks_read_pct, 0.0) as heap_blks_read_pct,
-        NULLIF(idx_blks_read, 0) as idx_blks_read,
-        NULLIF(idx_blks_read_pct, 0.0) as idx_blks_read_pct,
-        NULLIF(toast_blks_read, 0) as toast_blks_read,
-        NULLIF(toast_blks_read_pct, 0.0) as toast_blks_read_pct,
-        NULLIF(tidx_blks_read, 0) as tidx_blks_read,
-        NULLIF(tidx_blks_read_pct, 0.0) as tidx_blks_read_pct,
-        100.0 - (COALESCE(heap_blks_read, 0) + COALESCE(idx_blks_read, 0) +
-          COALESCE(toast_blks_read, 0) + COALESCE(tidx_blks_read, 0)) * 100.0 /
-        NULLIF(heap_blks_fetch + idx_blks_fetch +
-          toast_blks_fetch + tidx_blks_fetch, 0) as hit_pct
-    FROM top_io_tables1
-    WHERE COALESCE(heap_blks_read, 0) + COALESCE(idx_blks_read, 0) + COALESCE(toast_blks_read, 0) + COALESCE(tidx_blks_read, 0) > 0
-    ORDER BY
-      COALESCE(heap_blks_read, 0) + COALESCE(idx_blks_read, 0) + COALESCE(toast_blks_read, 0) + COALESCE(tidx_blks_read, 0) DESC,
-      datid ASC,
-      relid ASC
-    LIMIT topn;
+    ord_read            integer,
+    ord_fetch           integer
+) SET search_path=@extschema@ AS $$
+  SELECT
+    datid,
+    relid,
+    indexrelid,
+    dbname,
+    tablespacename,
+    schemaname,
+    relname,
+    indexrelname,
 
-    r_result RECORD;
-BEGIN
-    jtab_tpl := jsonb_build_object(
-      'tab_hdr',
-        '<table {stattbl}>'
-          '<tr>'
-            '<th rowspan="2">DB</th>'
-            '<th rowspan="2">Tablespace</th>'
-            '<th rowspan="2">Schema</th>'
-            '<th rowspan="2">Table</th>'
-            '<th colspan="2">Heap</th>'
-            '<th colspan="2">Ix</th>'
-            '<th colspan="2">TOAST</th>'
-            '<th colspan="2">TOAST-Ix</th>'
-            '<th rowspan="2" title="Number of heap, indexes, toast and toast index blocks '
-              'fetched from shared buffers as a percentage of all their blocks fetched from '
-              'shared buffers and file system">Hit(%)</th>'
-          '</tr>'
-          '<tr>'
-            '<th title="Number of disk blocks read from this table">Blks</th>'
-            '<th title="Heap block reads for this table as a percentage of all blocks read in a cluster">%Total</th>'
-            '<th title="Number of disk blocks read from all indexes on this table">Blks</th>'
-            '<th title="Indexes block reads for this table as a percentage of all blocks read in a cluster">%Total</th>'
-            '<th title="Number of disk blocks read from this table''s TOAST table (if any)">Blks</th>'
-            '<th title="TOAST block reads for this table as a percentage of all blocks read in a cluster">%Total</th>'
-            '<th title="Number of disk blocks read from this table''s TOAST table indexes (if any)">Blks</th>'
-            '<th title="TOAST table index block reads for this table as a percentage of all blocks read in a cluster">%Total</th>'
-          '</tr>'
-          '{rows}'
-        '</table>',
-      'row_tpl',
-        '<tr>'
-          '<td>%s</td>'
-          '<td>%s</td>'
-          '<td>%s</td>'
-          '<td>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-        '</tr>');
-    -- apply settings to templates
-    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
+    NULLIF(idx_scan, 0) as idx_scan,
+    NULLIF(idx_blks_read, 0) as idx_blks_read,
+    round(NULLIF(idx_blks_read_pct, 0.0), 2) AS idx_blks_read_pct,
+    round(NULLIF(idx_blks_hit_pct, 0.0), 2) AS idx_blks_hit_pct,
+    NULLIF(idx_blks_fetch, 0) as idx_blks_fetch,
+    round(NULLIF(idx_blks_fetch_pct, 0.0), 2) AS idx_blks_fetch_pct,
 
-    FOR r_result IN c_tbl_stats(
-        (report_context #>> '{report_properties,topn}')::integer
-      )
-    LOOP
-        report := report||format(
-            jtab_tpl #>> ARRAY['row_tpl'],
-            r_result.dbname,
-            r_result.tablespacename,
-            r_result.schemaname,
-            r_result.relname,
-            r_result.heap_blks_read,
-            round(r_result.heap_blks_read_pct,2),
-            r_result.idx_blks_read,
-            round(r_result.idx_blks_read_pct,2),
-            r_result.toast_blks_read,
-            round(r_result.toast_blks_read_pct,2),
-            r_result.tidx_blks_read,
-            round(r_result.tidx_blks_read_pct,2),
-            round(r_result.hit_pct,2)
-        );
-    END LOOP;
+    CASE WHEN
+      COALESCE(idx_blks_read, 0) > 0
+    THEN
+      row_number() OVER (ORDER BY
+        COALESCE(idx_blks_read, 0)
+      DESC NULLS LAST,
+      datid,
+      indexrelid)::integer
+    ELSE NULL END AS ord_read,
+    
+    CASE WHEN
+      COALESCE(idx_blks_fetch, 0) > 0
+    THEN
+      row_number() OVER (ORDER BY
+        COALESCE(idx_blks_fetch, 0)
+      DESC NULLS LAST,
+      datid,
+      indexrelid)::integer
+    ELSE NULL END AS ord_fetch
+  FROM
+    top_io_indexes(sserver_id, start_id, end_id)
+$$ LANGUAGE sql;
 
-    IF report != '' THEN
-        RETURN replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
-    ELSE
-        RETURN '';
-    END IF;
-END;
-$$ LANGUAGE plpgsql;
 
-CREATE FUNCTION tbl_top_io_diff_htbl(IN report_context jsonb, IN sserver_id integer)
-RETURNS text SET search_path=@extschema@ AS $$
-DECLARE
-    report text := '';
+CREATE FUNCTION top_io_indexes_format_diff(IN sserver_id integer,
+  IN start1_id integer, IN end1_id integer,
+  IN start2_id integer, IN end2_id integer)
+RETURNS TABLE(
+    datid               oid,
+    relid               oid,
+    indexrelid          oid,
+    dbname              name,
+    tablespacename      name,
+    schemaname          name,
+    relname             name,
+    indexrelname        name,
+    
+    idx_scan1           bigint,
+    idx_blks_read1      bigint,
+    idx_blks_read_pct1  numeric,
+    idx_blks_hit_pct1   numeric,
+    idx_blks_fetch1     bigint,
+    idx_blks_fetch_pct1 numeric,
 
-    -- Table elements template collection
-    jtab_tpl    jsonb;
+    idx_scan2           bigint,
+    idx_blks_read2      bigint,
+    idx_blks_read_pct2  numeric,
+    idx_blks_hit_pct2   numeric,
+    idx_blks_fetch2     bigint,
+    idx_blks_fetch_pct2 numeric,
 
-    c_tbl_stats CURSOR(topn integer) FOR
-    SELECT * FROM (SELECT
-        COALESCE(st1.dbname,st2.dbname) AS dbname,
-        COALESCE(st1.schemaname,st2.schemaname) AS schemaname,
-        COALESCE(st1.relname,st2.relname) AS relname,
-        NULLIF(st1.heap_blks_read, 0) AS heap_blks_read1,
-        NULLIF(st1.heap_blks_read_pct, 0.0) AS heap_blks_read_pct1,
-        NULLIF(st1.idx_blks_read, 0) AS idx_blks_read1,
-        NULLIF(st1.idx_blks_read_pct, 0.0) AS idx_blks_read_pct1,
-        NULLIF(st1.toast_blks_read, 0) AS toast_blks_read1,
-        NULLIF(st1.toast_blks_read_pct, 0.0) AS toast_blks_read_pct1,
-        NULLIF(st1.tidx_blks_read, 0) AS tidx_blks_read1,
-        NULLIF(st1.tidx_blks_read_pct, 0.0) AS tidx_blks_read_pct1,
-        100.0 - (COALESCE(st1.heap_blks_read, 0) + COALESCE(st1.idx_blks_read, 0) +
-          COALESCE(st1.toast_blks_read, 0) + COALESCE(st1.tidx_blks_read, 0)) * 100.0 /
-        NULLIF(st1.heap_blks_fetch + st1.idx_blks_fetch +
-          st1.toast_blks_fetch + st1.tidx_blks_fetch, 0) as hit_pct1,
-        NULLIF(st2.heap_blks_read, 0) AS heap_blks_read2,
-        NULLIF(st2.heap_blks_read_pct, 0.0) AS heap_blks_read_pct2,
-        NULLIF(st2.idx_blks_read, 0) AS idx_blks_read2,
-        NULLIF(st2.idx_blks_read_pct, 0.0) AS idx_blks_read_pct2,
-        NULLIF(st2.toast_blks_read, 0) AS toast_blks_read2,
-        NULLIF(st2.toast_blks_read_pct, 0.0) AS toast_blks_read_pct2,
-        NULLIF(st2.tidx_blks_read, 0) AS tidx_blks_read2,
-        NULLIF(st2.tidx_blks_read_pct, 0.0) AS tidx_blks_read_pct2,
-        100.0 - (COALESCE(st2.heap_blks_read, 0) + COALESCE(st2.idx_blks_read, 0) +
-          COALESCE(st2.toast_blks_read, 0) + COALESCE(st2.tidx_blks_read, 0)) * 100.0 /
-        NULLIF(st2.heap_blks_fetch + st2.idx_blks_fetch +
-          st2.toast_blks_fetch + st2.tidx_blks_fetch, 0) as hit_pct2,
-        row_number() OVER (ORDER BY COALESCE(st1.heap_blks_read, 0) + COALESCE(st1.idx_blks_read, 0) +
-          COALESCE(st1.toast_blks_read, 0) + COALESCE(st1.tidx_blks_read, 0) DESC NULLS LAST) rn_read1,
-        row_number() OVER (ORDER BY COALESCE(st2.heap_blks_read, 0) + COALESCE(st2.idx_blks_read, 0) +
-          COALESCE(st2.toast_blks_read, 0) + COALESCE(st2.tidx_blks_read, 0) DESC NULLS LAST) rn_read2
-    FROM top_io_tables1 st1
-        FULL OUTER JOIN top_io_tables2 st2 USING (server_id, datid, relid)
-    WHERE COALESCE(st1.heap_blks_read, 0) + COALESCE(st1.idx_blks_read, 0) +
-          COALESCE(st1.toast_blks_read, 0) + COALESCE(st1.tidx_blks_read, 0) +
-          COALESCE(st2.heap_blks_read, 0) + COALESCE(st2.idx_blks_read, 0) +
-          COALESCE(st2.toast_blks_read, 0) + COALESCE(st2.tidx_blks_read, 0) > 0
-    ORDER BY
-      COALESCE(st1.heap_blks_read, 0) + COALESCE(st1.idx_blks_read, 0) +
-      COALESCE(st1.toast_blks_read, 0) + COALESCE(st1.tidx_blks_read, 0) +
-      COALESCE(st2.heap_blks_read, 0) + COALESCE(st2.idx_blks_read, 0) +
-      COALESCE(st2.toast_blks_read, 0) + COALESCE(st2.tidx_blks_read, 0) DESC,
-      COALESCE(st1.datid,st2.datid) ASC,
-      COALESCE(st1.relid,st2.relid) ASC
-    ) t1
-    WHERE least(
-        rn_read1,
-        rn_read2
-      ) <= topn;
+    ord_read            integer,
+    ord_fetch           integer
+) SET search_path=@extschema@ AS $$
+  SELECT
+    COALESCE(rel1.datid, rel2.datid) AS datid,
+    COALESCE(rel1.relid, rel2.relid) AS relid,
+    COALESCE(rel1.indexrelid, rel2.indexrelid) AS indexrelid,
+    COALESCE(rel1.dbname, rel2.dbname) AS dbname,
+    COALESCE(rel1.tablespacename, rel2.tablespacename) AS tablespacename,
+    COALESCE(rel1.schemaname, rel2.schemaname) AS schemaname,
+    COALESCE(rel1.relname, rel2.relname) AS relname,
+    COALESCE(rel1.indexrelname, rel2.indexrelname) AS indexrelname,
 
-    r_result RECORD;
-BEGIN
-    -- Tables stats template
-    jtab_tpl := jsonb_build_object(
-      'tab_hdr',
-        '<table {difftbl}>'
-          '<tr>'
-            '<th rowspan="2">DB</th>'
-            '<th rowspan="2">Schema</th>'
-            '<th rowspan="2">Table</th>'
-            '<th rowspan="2">I</th>'
-            '<th colspan="2">Heap</th>'
-            '<th colspan="2">Ix</th>'
-            '<th colspan="2">TOAST</th>'
-            '<th colspan="2">TOAST-Ix</th>'
-            '<th rowspan="2" title="Number of heap, indexes, toast and toast index blocks '
-              'fetched from shared buffers as a percentage of all their blocks fetched from '
-              'shared buffers and file system">Hit(%)</th>'
-          '</tr>'
-          '<tr>'
-            '<th title="Number of disk blocks read from this table">Blks</th>'
-            '<th title="Heap block reads for this table as a percentage of all blocks read in a cluster">%Total</th>'
-            '<th title="Number of disk blocks read from all indexes on this table">Blks</th>'
-            '<th title="Indexes block reads for this table as a percentage of all blocks read in a cluster">%Total</th>'
-            '<th title="Number of disk blocks read from this table''s TOAST table (if any)">Blks</th>'
-            '<th title="TOAST block reads for this table as a percentage of all blocks read in a cluster">%Total</th>'
-            '<th title="Number of disk blocks read from this table''s TOAST table indexes (if any)">Blks</th>'
-            '<th title="TOAST table index block reads for this table as a percentage of all blocks read in a cluster">%Total</th>'
-          '</tr>'
-          '{rows}'
-        '</table>',
-      'row_tpl',
-        '<tr {interval1}>'
-          '<td {rowtdspanhdr}>%s</td>'
-          '<td {rowtdspanhdr}>%s</td>'
-          '<td {rowtdspanhdr}>%s</td>'
-          '<td {label} {title1}>1</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-        '</tr>'
-        '<tr {interval2}>'
-          '<td {label} {title2}>2</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-        '</tr>'
-        '<tr style="visibility:collapse"></tr>');
-    -- apply settings to templates
-    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
+    NULLIF(rel1.idx_scan, 0) as idx_scan1,
+    NULLIF(rel1.idx_blks_read, 0) as idx_blks_read1,
+    round(NULLIF(rel1.idx_blks_read_pct, 0.0), 2) AS idx_blks_read_pct1,
+    round(NULLIF(rel1.idx_blks_hit_pct, 0.0), 2) AS idx_blks_hit_pct1,
+    NULLIF(rel1.idx_blks_fetch, 0) as idx_blks_fetch1,
+    round(NULLIF(rel1.idx_blks_fetch_pct, 0.0), 2) AS idx_blks_fetch_pct1,
 
-    FOR r_result IN c_tbl_stats(
-        (report_context #>> '{report_properties,topn}')::integer
-      )
-    LOOP
-        report := report||format(
-            jtab_tpl #>> ARRAY['row_tpl'],
-            r_result.dbname,
-            r_result.schemaname,
-            r_result.relname,
-            r_result.heap_blks_read1,
-            round(r_result.heap_blks_read_pct1,2),
-            r_result.idx_blks_read1,
-            round(r_result.idx_blks_read_pct1,2),
-            r_result.toast_blks_read1,
-            round(r_result.toast_blks_read_pct1,2),
-            r_result.tidx_blks_read1,
-            round(r_result.tidx_blks_read_pct1,2),
-            round(r_result.hit_pct1,2),
-            r_result.heap_blks_read2,
-            round(r_result.heap_blks_read_pct2,2),
-            r_result.idx_blks_read2,
-            round(r_result.idx_blks_read_pct2,2),
-            r_result.toast_blks_read2,
-            round(r_result.toast_blks_read_pct2,2),
-            r_result.tidx_blks_read2,
-            round(r_result.tidx_blks_read_pct2,2),
-            round(r_result.hit_pct2,2)
-        );
-    END LOOP;
+    NULLIF(rel2.idx_scan, 0) as idx_scan2,
+    NULLIF(rel2.idx_blks_read, 0) as idx_blks_read2,
+    round(NULLIF(rel2.idx_blks_read_pct, 0.0), 2) AS idx_blks_read_pct2,
+    round(NULLIF(rel2.idx_blks_hit_pct, 0.0), 2) AS idx_blks_hit_pct2,
+    NULLIF(rel2.idx_blks_fetch, 0) as idx_blks_fetch2,
+    round(NULLIF(rel2.idx_blks_fetch_pct, 0.0), 2) AS idx_blks_fetch_pct2,
 
-    IF report != '' THEN
-        RETURN replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
-    ELSE
-        RETURN '';
-    END IF;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE FUNCTION tbl_top_fetch_htbl(IN report_context jsonb, IN sserver_id integer)
-RETURNS text SET search_path=@extschema@ AS $$
-DECLARE
-    report text := '';
-    jtab_tpl    jsonb;
-
-    c_tbl_stats CURSOR(topn integer) FOR
-    SELECT
-        dbname,
-        tablespacename,
-        schemaname,
-        relname,
-        NULLIF(heap_blks_fetch, 0) as heap_blks_fetch,
-        NULLIF(heap_blks_proc_pct, 0.0) as heap_blks_proc_pct,
-        NULLIF(idx_blks_fetch, 0) as idx_blks_fetch,
-        NULLIF(idx_blks_fetch_pct, 0.0) as idx_blks_fetch_pct,
-        NULLIF(toast_blks_fetch, 0) as toast_blks_fetch,
-        NULLIF(toast_blks_fetch_pct, 0.0) as toast_blks_fetch_pct,
-        NULLIF(tidx_blks_fetch, 0) as tidx_blks_fetch,
-        NULLIF(tidx_blks_fetch_pct, 0.0) as tidx_blks_fetch_pct
-    FROM top_io_tables1
-    WHERE COALESCE(heap_blks_fetch, 0) + COALESCE(idx_blks_fetch, 0) + COALESCE(toast_blks_fetch, 0) + COALESCE(tidx_blks_fetch, 0) > 0
-    ORDER BY
-      COALESCE(heap_blks_fetch, 0) + COALESCE(idx_blks_fetch, 0) + COALESCE(toast_blks_fetch, 0) + COALESCE(tidx_blks_fetch, 0) DESC,
-      datid ASC,
-      relid ASC
-    LIMIT topn;
-
-    r_result RECORD;
-BEGIN
-    jtab_tpl := jsonb_build_object(
-      'tab_hdr',
-        '<table {stattbl}>'
-          '<tr>'
-            '<th rowspan="2">DB</th>'
-            '<th rowspan="2">Tablespace</th>'
-            '<th rowspan="2">Schema</th>'
-            '<th rowspan="2">Table</th>'
-            '<th colspan="2">Heap</th>'
-            '<th colspan="2">Ix</th>'
-            '<th colspan="2">TOAST</th>'
-            '<th colspan="2">TOAST-Ix</th>'
-          '</tr>'
-          '<tr>'
-            '<th title="Number of blocks fetched (read+hit) from this table">Blks</th>'
-            '<th title="Heap blocks fetched for this table as a percentage of all blocks fetched in a cluster">%Total</th>'
-            '<th title="Number of blocks fetched (read+hit) from all indexes on this table">Blks</th>'
-            '<th title="Indexes blocks fetched for this table as a percentage of all blocks fetched in a cluster">%Total</th>'
-            '<th title="Number of blocks fetched (read+hit) from this table''s TOAST table (if any)">Blks</th>'
-            '<th title="TOAST blocks fetched for this table as a percentage of all blocks fetched in a cluster">%Total</th>'
-            '<th title="Number of blocks fetched (read+hit) from this table''s TOAST table indexes (if any)">Blks</th>'
-            '<th title="TOAST table index blocks fetched for this table as a percentage of all blocks fetched in a cluster">%Total</th>'
-          '</tr>'
-          '{rows}'
-        '</table>',
-      'row_tpl',
-        '<tr>'
-          '<td>%s</td>'
-          '<td>%s</td>'
-          '<td>%s</td>'
-          '<td>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-        '</tr>');
-    -- apply settings to templates
-    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
-
-    FOR r_result IN c_tbl_stats(
-        (report_context #>> '{report_properties,topn}')::integer
-      )
-    LOOP
-        report := report||format(
-            jtab_tpl #>> ARRAY['row_tpl'],
-            r_result.dbname,
-            r_result.tablespacename,
-            r_result.schemaname,
-            r_result.relname,
-            r_result.heap_blks_fetch,
-            round(r_result.heap_blks_proc_pct,2),
-            r_result.idx_blks_fetch,
-            round(r_result.idx_blks_fetch_pct,2),
-            r_result.toast_blks_fetch,
-            round(r_result.toast_blks_fetch_pct,2),
-            r_result.tidx_blks_fetch,
-            round(r_result.tidx_blks_fetch_pct,2)
-        );
-    END LOOP;
-
-    IF report != '' THEN
-        RETURN replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
-    ELSE
-        RETURN '';
-    END IF;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE FUNCTION tbl_top_fetch_diff_htbl(IN report_context jsonb, IN sserver_id integer)
-RETURNS text SET search_path=@extschema@ AS $$
-DECLARE
-    report text := '';
-
-    -- Table elements template collection
-    jtab_tpl    jsonb;
-
-    c_tbl_stats CURSOR(topn integer) FOR
-    SELECT * FROM (SELECT
-        COALESCE(st1.dbname,st2.dbname) AS dbname,
-        COALESCE(st1.tablespacename,st2.tablespacename) AS tablespacename,
-        COALESCE(st1.schemaname,st2.schemaname) AS schemaname,
-        COALESCE(st1.relname,st2.relname) AS relname,
-        NULLIF(st1.heap_blks_fetch, 0) AS heap_blks_fetch1,
-        NULLIF(st1.heap_blks_proc_pct, 0.0) AS heap_blks_proc_pct1,
-        NULLIF(st1.idx_blks_fetch, 0) AS idx_blks_fetch1,
-        NULLIF(st1.idx_blks_fetch_pct, 0.0) AS idx_blks_fetch_pct1,
-        NULLIF(st1.toast_blks_fetch, 0) AS toast_blks_fetch1,
-        NULLIF(st1.toast_blks_fetch_pct, 0.0) AS toast_blks_fetch_pct1,
-        NULLIF(st1.tidx_blks_fetch, 0) AS tidx_blks_fetch1,
-        NULLIF(st1.tidx_blks_fetch_pct, 0.0) AS tidx_blks_fetch_pct1,
-        NULLIF(st2.heap_blks_fetch, 0) AS heap_blks_fetch2,
-        NULLIF(st2.heap_blks_proc_pct, 0.0) AS heap_blks_proc_pct2,
-        NULLIF(st2.idx_blks_fetch, 0) AS idx_blks_fetch2,
-        NULLIF(st2.idx_blks_fetch_pct, 0.0) AS idx_blks_fetch_pct2,
-        NULLIF(st2.toast_blks_fetch, 0) AS toast_blks_fetch2,
-        NULLIF(st2.toast_blks_fetch_pct, 0.0) AS toast_blks_fetch_pct2,
-        NULLIF(st2.tidx_blks_fetch, 0) AS tidx_blks_fetch2,
-        NULLIF(st2.tidx_blks_fetch_pct, 0.0) AS tidx_blks_fetch_pct2,
-        row_number() OVER (ORDER BY COALESCE(st1.heap_blks_fetch, 0) + COALESCE(st1.idx_blks_fetch, 0) +
-          COALESCE(st1.toast_blks_fetch, 0) + COALESCE(st1.tidx_blks_fetch, 0) DESC NULLS LAST) rn_fetched1,
-        row_number() OVER (ORDER BY COALESCE(st2.heap_blks_fetch, 0) + COALESCE(st2.idx_blks_fetch, 0) +
-          COALESCE(st2.toast_blks_fetch, 0) + COALESCE(st2.tidx_blks_fetch, 0) DESC NULLS LAST) rn_fetched2
-    FROM top_io_tables1 st1
-        FULL OUTER JOIN top_io_tables2 st2 USING (server_id, datid, relid)
-    WHERE COALESCE(st1.heap_blks_fetch, 0) + COALESCE(st1.idx_blks_fetch, 0) + COALESCE(st1.toast_blks_fetch, 0) + COALESCE(st1.tidx_blks_fetch, 0) +
-        COALESCE(st2.heap_blks_fetch, 0) + COALESCE(st2.idx_blks_fetch, 0) + COALESCE(st2.toast_blks_fetch, 0) + COALESCE(st2.tidx_blks_fetch, 0) > 0
-    ORDER BY
-      COALESCE(st1.heap_blks_fetch, 0) + COALESCE(st1.idx_blks_fetch, 0) + COALESCE(st1.toast_blks_fetch, 0) + COALESCE(st1.tidx_blks_fetch, 0) +
-      COALESCE(st2.heap_blks_fetch, 0) + COALESCE(st2.idx_blks_fetch, 0) + COALESCE(st2.toast_blks_fetch, 0) + COALESCE(st2.tidx_blks_fetch, 0) DESC,
-      COALESCE(st1.datid,st2.datid) ASC,
-      COALESCE(st1.relid,st2.relid) ASC
-    ) t1
-    WHERE least(
-        rn_fetched1,
-        rn_fetched2
-      ) <= topn;
-
-    r_result RECORD;
-BEGIN
-    -- Tables stats template
-    jtab_tpl := jsonb_build_object(
-      'tab_hdr',
-        '<table {difftbl}>'
-          '<tr>'
-            '<th rowspan="2">DB</th>'
-            '<th rowspan="2">Tablespace</th>'
-            '<th rowspan="2">Schema</th>'
-            '<th rowspan="2">Table</th>'
-            '<th rowspan="2">I</th>'
-            '<th colspan="2">Heap</th>'
-            '<th colspan="2">Ix</th>'
-            '<th colspan="2">TOAST</th>'
-            '<th colspan="2">TOAST-Ix</th>'
-          '</tr>'
-          '<tr>'
-            '<th title="Number of blocks fetched (read+hit) from this table">Blks</th>'
-            '<th title="Heap blocks fetched for this table as a percentage of all blocks fetched in a cluster">%Total</th>'
-            '<th title="Number of blocks fetched (read+hit) from all indexes on this table">Blks</th>'
-            '<th title="Indexes blocks fetched for this table as a percentage of all blocks fetched in a cluster">%Total</th>'
-            '<th title="Number of blocks fetched (read+hit) from this table''s TOAST table (if any)">Blks</th>'
-            '<th title="TOAST blocks fetched for this table as a percentage of all blocks fetched in a cluster">%Total</th>'
-            '<th title="Number of blocks fetched (read+hit) from this table''s TOAST table indexes (if any)">Blks</th>'
-            '<th title="TOAST table index blocks fetched for this table as a percentage of all blocks fetched in a cluster">%Total</th>'
-          '</tr>'
-          '{rows}'
-        '</table>',
-      'row_tpl',
-        '<tr {interval1}>'
-          '<td {rowtdspanhdr}>%s</td>'
-          '<td {rowtdspanhdr}>%s</td>'
-          '<td {rowtdspanhdr}>%s</td>'
-          '<td {rowtdspanhdr}>%s</td>'
-          '<td {label} {title1}>1</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-        '</tr>'
-        '<tr {interval2}>'
-          '<td {label} {title2}>2</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-        '</tr>'
-        '<tr style="visibility:collapse"></tr>');
-    -- apply settings to templates
-    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
-
-    FOR r_result IN c_tbl_stats(
-        (report_context #>> '{report_properties,topn}')::integer
-      )
-    LOOP
-        report := report||format(
-            jtab_tpl #>> ARRAY['row_tpl'],
-            r_result.dbname,
-            r_result.tablespacename,
-            r_result.schemaname,
-            r_result.relname,
-            r_result.heap_blks_fetch1,
-            round(r_result.heap_blks_proc_pct1,2),
-            r_result.idx_blks_fetch1,
-            round(r_result.idx_blks_fetch_pct1,2),
-            r_result.toast_blks_fetch1,
-            round(r_result.toast_blks_fetch_pct1,2),
-            r_result.tidx_blks_fetch1,
-            round(r_result.tidx_blks_fetch_pct1,2),
-            r_result.heap_blks_fetch2,
-            round(r_result.heap_blks_proc_pct2,2),
-            r_result.idx_blks_fetch2,
-            round(r_result.idx_blks_fetch_pct2,2),
-            r_result.toast_blks_fetch2,
-            round(r_result.toast_blks_fetch_pct2,2),
-            r_result.tidx_blks_fetch2,
-            round(r_result.tidx_blks_fetch_pct2,2)
-        );
-    END LOOP;
-
-    IF report != '' THEN
-        RETURN replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
-    ELSE
-        RETURN '';
-    END IF;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE FUNCTION ix_top_io_htbl(IN report_context jsonb, IN sserver_id integer)
-RETURNS text SET search_path=@extschema@ AS $$
-DECLARE
-    report text := '';
-    jtab_tpl    jsonb;
-
-    c_tbl_stats CURSOR(topn integer) FOR
-    SELECT
-        dbname,
-        tablespacename,
-        schemaname,
-        relname,
-        indexrelname,
-        NULLIF(idx_scan, 0) as idx_scan,
-        NULLIF(idx_blks_read, 0) as idx_blks_read,
-        NULLIF(idx_blks_read_pct, 0.0) as idx_blks_read_pct,
-        NULLIF(idx_blks_hit_pct, 0.0) as idx_blks_hit_pct
-    FROM top_io_indexes1
-    WHERE idx_blks_read > 0
-    ORDER BY
-      idx_blks_read DESC,
-      datid ASC,
-      relid ASC,
-      indexrelid ASC
-    LIMIT topn;
-
-    r_result RECORD;
-BEGIN
-    jtab_tpl := jsonb_build_object(
-      'tab_hdr',
-        '<table {stattbl}>'
-          '<tr>'
-            '<th>DB</th>'
-            '<th>Tablespace</th>'
-            '<th>Schema</th>'
-            '<th>Table</th>'
-            '<th>Index</th>'
-            '<th title="Number of scans performed on index">Scans</th>'
-            '<th title="Number of disk blocks read from this index">Blk Reads</th>'
-            '<th title="Disk blocks read from this index as a percentage of all blocks read in a cluster">%Total</th>'
-            '<th title="Index blocks buffer cache hit percentage">Hits(%)</th>'
-          '</tr>'
-          '{rows}'
-        '</table>',
-      'row_tpl',
-        '<tr>'
-          '<td>%s</td>'
-          '<td>%s</td>'
-          '<td>%s</td>'
-          '<td>%s</td>'
-          '<td>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-        '</tr>');
-    -- apply settings to templates
-    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
-
-    FOR r_result IN c_tbl_stats(
-        (report_context #>> '{report_properties,topn}')::integer
-      )
-    LOOP
-    report := report||format(
-        jtab_tpl #>> ARRAY['row_tpl'],
-        r_result.dbname,
-        r_result.tablespacename,
-        r_result.schemaname,
-        r_result.relname,
-        r_result.indexrelname,
-        r_result.idx_scan,
-        r_result.idx_blks_read,
-        round(r_result.idx_blks_read_pct,2),
-        round(r_result.idx_blks_hit_pct,2)
-    );
-    END LOOP;
-
-    IF report != '' THEN
-        RETURN replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
-    ELSE
-        RETURN '';
-    END IF;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE FUNCTION ix_top_io_diff_htbl(IN report_context jsonb, IN sserver_id integer)
-RETURNS text SET search_path=@extschema@ AS $$
-DECLARE
-    report text := '';
-
-    -- Table elements template collection
-    jtab_tpl    jsonb;
-
-    c_tbl_stats CURSOR(topn integer) FOR
-    SELECT * FROM (SELECT
-        COALESCE(st1.dbname,st2.dbname) as dbname,
-        COALESCE(st1.tablespacename,st2.tablespacename) as tablespacename,
-        COALESCE(st1.schemaname,st2.schemaname) as schemaname,
-        COALESCE(st1.relname,st2.relname) as relname,
-        COALESCE(st1.indexrelname,st2.indexrelname) as indexrelname,
-        NULLIF(st1.idx_scan, 0) as idx_scan1,
-        NULLIF(st1.idx_blks_read, 0) as idx_blks_read1,
-        NULLIF(st1.idx_blks_read_pct, 0.0) as idx_blks_read_pct1,
-        NULLIF(st1.idx_blks_hit_pct, 0.0) as idx_blks_hit_pct1,
-        NULLIF(st2.idx_scan, 0) as idx_scan2,
-        NULLIF(st2.idx_blks_read, 0) as idx_blks_read2,
-        NULLIF(st2.idx_blks_read_pct, 0.0) as idx_blks_read_pct2,
-        NULLIF(st2.idx_blks_hit_pct, 0.0) as idx_blks_hit_pct2,
-        row_number() OVER (ORDER BY st1.idx_blks_read DESC NULLS LAST) as rn_read1,
-        row_number() OVER (ORDER BY st2.idx_blks_read DESC NULLS LAST) as rn_read2
-    FROM
-        top_io_indexes1 st1
-        FULL OUTER JOIN top_io_indexes2 st2 USING (server_id, datid, relid, indexrelid)
-    WHERE COALESCE(st1.idx_blks_read, 0) + COALESCE(st2.idx_blks_read, 0) > 0
-    ORDER BY
-      COALESCE(st1.idx_blks_read, 0) + COALESCE(st2.idx_blks_read, 0) DESC,
-      COALESCE(st1.datid,st2.datid) ASC,
-      COALESCE(st1.relid,st2.relid) ASC,
-      COALESCE(st1.indexrelid,st2.indexrelid) ASC
-    ) t1
-    WHERE least(
-        rn_read1,
-        rn_read2
-      ) <= topn;
-
-    r_result RECORD;
-BEGIN
-    jtab_tpl := jsonb_build_object(
-      'tab_hdr',
-        '<table {difftbl}>'
-          '<tr>'
-            '<th>DB</th>'
-            '<th>Tablespace</th>'
-            '<th>Schema</th>'
-            '<th>Table</th>'
-            '<th>Index</th>'
-            '<th>I</th>'
-            '<th title="Number of scans performed on index">Scans</th>'
-            '<th title="Number of disk blocks read from this index">Blk Reads</th>'
-            '<th title="Disk blocks read from this index as a percentage of all blocks read in a cluster">%Total</th>'
-            '<th title="Index blocks buffer cache hit percentage">Hits(%)</th>'
-          '</tr>'
-          '{rows}'
-        '</table>',
-      'row_tpl',
-        '<tr {interval1}>'
-          '<td {rowtdspanhdr}>%s</td>'
-          '<td {rowtdspanhdr}>%s</td>'
-          '<td {rowtdspanhdr}>%s</td>'
-          '<td {rowtdspanhdr}>%s</td>'
-          '<td {rowtdspanhdr}>%s</td>'
-          '<td {label} {title1}>1</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-        '</tr>'
-        '<tr {interval2}>'
-          '<td {label} {title2}>2</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-        '</tr>'
-        '<tr style="visibility:collapse"></tr>');
-    -- apply settings to templates
-    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
-
-    FOR r_result IN c_tbl_stats(
-        (report_context #>> '{report_properties,topn}')::integer
-      )
-    LOOP
-    report := report||format(
-        jtab_tpl #>> ARRAY['row_tpl'],
-        r_result.dbname,
-        r_result.tablespacename,
-        r_result.schemaname,
-        r_result.relname,
-        r_result.indexrelname,
-        r_result.idx_scan1,
-        r_result.idx_blks_read1,
-        round(r_result.idx_blks_read_pct1,2),
-        round(r_result.idx_blks_hit_pct1,2),
-        r_result.idx_scan2,
-        r_result.idx_blks_read2,
-        round(r_result.idx_blks_read_pct2,2),
-        round(r_result.idx_blks_hit_pct2,2)
-    );
-    END LOOP;
-
-    IF report != '' THEN
-        RETURN replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
-    ELSE
-        RETURN '';
-    END IF;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE FUNCTION ix_top_fetch_htbl(IN report_context jsonb, IN sserver_id integer)
-RETURNS text SET search_path=@extschema@ AS $$
-DECLARE
-    report text := '';
-    jtab_tpl    jsonb;
-
-    c_tbl_stats CURSOR(topn integer) FOR
-    SELECT
-        dbname,
-        tablespacename,
-        schemaname,
-        relname,
-        indexrelname,
-        NULLIF(idx_scan, 0) as idx_scan,
-        NULLIF(idx_blks_fetch, 0) as idx_blks_fetch,
-        NULLIF(idx_blks_fetch_pct, 0.0) as idx_blks_fetch_pct
-    FROM top_io_indexes1
-    WHERE idx_blks_fetch > 0
-    ORDER BY
-      idx_blks_fetch DESC,
-      datid ASC,
-      relid ASC,
-      indexrelid ASC
-    LIMIT topn;
-
-    r_result RECORD;
-BEGIN
-    jtab_tpl := jsonb_build_object(
-      'tab_hdr',
-        '<table {stattbl}>'
-          '<tr>'
-            '<th>DB</th>'
-            '<th>Tablespace</th>'
-            '<th>Schema</th>'
-            '<th>Table</th>'
-            '<th>Index</th>'
-            '<th title="Number of scans performed on index">Scans</th>'
-            '<th title="Number of blocks fetched (read+hit) from this index">Blks</th>'
-            '<th title="Blocks fetched from this index as a percentage of all blocks fetched in a cluster">%Total</th>'
-          '</tr>'
-          '{rows}'
-        '</table>',
-      'row_tpl',
-        '<tr>'
-          '<td>%s</td>'
-          '<td>%s</td>'
-          '<td>%s</td>'
-          '<td>%s</td>'
-          '<td>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-        '</tr>');
-    -- apply settings to templates
-    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
-
-    FOR r_result IN c_tbl_stats(
-        (report_context #>> '{report_properties,topn}')::integer
-      )
-    LOOP
-    report := report||format(
-        jtab_tpl #>> ARRAY['row_tpl'],
-        r_result.dbname,
-        r_result.tablespacename,
-        r_result.schemaname,
-        r_result.relname,
-        r_result.indexrelname,
-        r_result.idx_scan,
-        r_result.idx_blks_fetch,
-        round(r_result.idx_blks_fetch_pct,2)
-    );
-    END LOOP;
-
-    IF report != '' THEN
-        RETURN replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
-    ELSE
-        RETURN '';
-    END IF;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE FUNCTION ix_top_fetch_diff_htbl(IN report_context jsonb, IN sserver_id integer)
-RETURNS text SET search_path=@extschema@ AS $$
-DECLARE
-    report text := '';
-
-    -- Table elements template collection
-    jtab_tpl    jsonb;
-
-    c_tbl_stats CURSOR(topn integer) FOR
-    SELECT * FROM (SELECT
-        COALESCE(st1.dbname,st2.dbname) as dbname,
-        COALESCE(st1.tablespacename,st2.tablespacename) as tablespacename,
-        COALESCE(st1.schemaname,st2.schemaname) as schemaname,
-        COALESCE(st1.relname,st2.relname) as relname,
-        COALESCE(st1.indexrelname,st2.indexrelname) as indexrelname,
-        NULLIF(st1.idx_scan, 0) as idx_scan1,
-        NULLIF(st1.idx_blks_fetch, 0) as idx_blks_fetch1,
-        NULLIF(st1.idx_blks_fetch_pct, 0.0) as idx_blks_fetch_pct1,
-        NULLIF(st2.idx_scan, 0) as idx_scan2,
-        NULLIF(st2.idx_blks_fetch, 0) as idx_blks_fetch2,
-        NULLIF(st2.idx_blks_fetch_pct, 0.0) as idx_blks_fetch_pct2,
-        row_number() OVER (ORDER BY st1.idx_blks_fetch DESC NULLS LAST) as rn_fetched1,
-        row_number() OVER (ORDER BY st2.idx_blks_fetch DESC NULLS LAST) as rn_fetched2
-    FROM
-        top_io_indexes1 st1
-        FULL OUTER JOIN top_io_indexes2 st2 USING (server_id, datid, relid, indexrelid)
-    WHERE COALESCE(st1.idx_blks_fetch, 0) + COALESCE(st2.idx_blks_fetch, 0) > 0
-    ORDER BY
-      COALESCE(st1.idx_blks_fetch, 0) + COALESCE(st2.idx_blks_fetch, 0) DESC,
-      COALESCE(st1.datid,st2.datid) ASC,
-      COALESCE(st1.relid,st2.relid) ASC,
-      COALESCE(st1.indexrelid,st2.indexrelid) ASC
-    ) t1
-    WHERE least(
-        rn_fetched1,
-        rn_fetched2
-      ) <= topn;
-
-    r_result RECORD;
-BEGIN
-    jtab_tpl := jsonb_build_object(
-      'tab_hdr',
-        '<table {difftbl}>'
-          '<tr>'
-            '<th>DB</th>'
-            '<th>Tablespace</th>'
-            '<th>Schema</th>'
-            '<th>Table</th>'
-            '<th>Index</th>'
-            '<th>I</th>'
-            '<th title="Number of scans performed on index">Scans</th>'
-            '<th title="Number of blocks fetched (read+hit) from this index">Blks</th>'
-            '<th title="Blocks fetched from this index as a percentage of all blocks fetched in a cluster">%Total</th>'
-          '</tr>'
-          '{rows}'
-        '</table>',
-      'row_tpl',
-        '<tr {interval1}>'
-          '<td {rowtdspanhdr}>%s</td>'
-          '<td {rowtdspanhdr}>%s</td>'
-          '<td {rowtdspanhdr}>%s</td>'
-          '<td {rowtdspanhdr}>%s</td>'
-          '<td {rowtdspanhdr}>%s</td>'
-          '<td {label} {title1}>1</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-        '</tr>'
-        '<tr {interval2}>'
-          '<td {label} {title2}>2</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-        '</tr>'
-        '<tr style="visibility:collapse"></tr>');
-    -- apply settings to templates
-
-    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
-
-    FOR r_result IN c_tbl_stats(
-        (report_context #>> '{report_properties,topn}')::integer
-      )
-    LOOP
-    report := report||format(
-        jtab_tpl #>> ARRAY['row_tpl'],
-        r_result.dbname,
-        r_result.tablespacename,
-        r_result.schemaname,
-        r_result.relname,
-        r_result.indexrelname,
-        r_result.idx_scan1,
-        r_result.idx_blks_fetch1,
-        round(r_result.idx_blks_fetch_pct1,2),
-        r_result.idx_scan2,
-        r_result.idx_blks_fetch2,
-        round(r_result.idx_blks_fetch_pct2,2)
-    );
-    END LOOP;
-
-    IF report != '' THEN
-        RETURN replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
-    ELSE
-        RETURN '';
-    END IF;
-END;
-$$ LANGUAGE plpgsql;
+    CASE WHEN
+      COALESCE(rel1.idx_blks_read, 0) + COALESCE(rel2.idx_blks_read, 0) > 0
+    THEN
+      row_number() OVER (ORDER BY
+        COALESCE(rel1.idx_blks_read, 0) + COALESCE(rel2.idx_blks_read, 0)
+      DESC NULLS LAST,
+      COALESCE(rel1.datid, rel2.datid),
+      COALESCE(rel1.indexrelid, rel2.indexrelid))::integer
+    ELSE NULL END AS ord_read,
+    
+    CASE WHEN
+      COALESCE(rel1.idx_blks_fetch, 0) + COALESCE(rel2.idx_blks_fetch, 0) > 0
+    THEN
+      row_number() OVER (ORDER BY
+        COALESCE(rel1.idx_blks_fetch, 0) + COALESCE(rel2.idx_blks_fetch, 0)
+      DESC NULLS LAST,
+      COALESCE(rel1.datid, rel2.datid),
+      COALESCE(rel1.indexrelid, rel2.indexrelid))::integer
+    ELSE NULL END AS ord_fetch
+  FROM
+    top_io_indexes(sserver_id, start1_id, end1_id) rel1
+    FULL OUTER JOIN
+    top_io_indexes(sserver_id, start2_id, end2_id) rel2
+    USING (datid, relid, indexrelid)
+$$ LANGUAGE sql;

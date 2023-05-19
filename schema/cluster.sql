@@ -16,13 +16,17 @@ CREATE TABLE sample_stat_cluster
     buffers_alloc               bigint,
     stats_reset                timestamp with time zone,
     wal_size                   bigint,
+    wal_lsn                    pg_lsn,
+    in_recovery                boolean,
     CONSTRAINT fk_statcluster_samples FOREIGN KEY (server_id, sample_id)
       REFERENCES samples (server_id, sample_id) ON DELETE CASCADE,
     CONSTRAINT pk_sample_stat_cluster PRIMARY KEY (server_id, sample_id)
 );
 COMMENT ON TABLE sample_stat_cluster IS 'Sample cluster statistics table (fields from pg_stat_bgwriter, etc.)';
 
-CREATE TABLE last_stat_cluster AS SELECT * FROM sample_stat_cluster WHERE 0=1;
+CREATE TABLE last_stat_cluster(LIKE sample_stat_cluster);
+ALTER TABLE last_stat_cluster ADD CONSTRAINT pk_last_stat_cluster_samples
+  PRIMARY KEY (server_id, sample_id);
 ALTER TABLE last_stat_cluster ADD CONSTRAINT fk_last_stat_cluster_samples
   FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT;
 COMMENT ON TABLE last_stat_cluster IS 'Last sample data for calculating diffs in next sample';
@@ -47,6 +51,8 @@ CREATE TABLE sample_stat_wal
 COMMENT ON TABLE sample_stat_wal IS 'Sample WAL statistics table';
 
 CREATE TABLE last_stat_wal AS SELECT * FROM sample_stat_wal WHERE false;
+ALTER TABLE last_stat_wal ADD CONSTRAINT pk_last_stat_wal_samples
+  PRIMARY KEY (server_id, sample_id);
 ALTER TABLE last_stat_wal ADD CONSTRAINT fk_last_stat_wal_samples
   FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT;
 COMMENT ON TABLE last_stat_wal IS 'Last WAL sample data for calculating diffs in next sample';
@@ -69,6 +75,8 @@ CREATE TABLE sample_stat_archiver
 COMMENT ON TABLE sample_stat_archiver IS 'Sample archiver statistics table (fields from pg_stat_archiver)';
 
 CREATE TABLE last_stat_archiver AS SELECT * FROM sample_stat_archiver WHERE 0=1;
+ALTER TABLE last_stat_archiver ADD CONSTRAINT pk_last_stat_archiver_samples
+  PRIMARY KEY (server_id, sample_id);
 ALTER TABLE last_stat_archiver ADD CONSTRAINT fk_last_stat_archiver_samples
   FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT;
 COMMENT ON TABLE last_stat_archiver IS 'Last sample data for calculating diffs in next sample';

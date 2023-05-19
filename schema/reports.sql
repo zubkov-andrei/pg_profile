@@ -26,6 +26,7 @@ CREATE TABLE report_struct (
   function_name   text,
   href            text,
   content         text DEFAULT NULL,
+  sect_struct     jsonb,
   CONSTRAINT pk_report_struct PRIMARY KEY (report_id, sect_id),
   CONSTRAINT fk_report_struct_report FOREIGN KEY (report_id)
     REFERENCES report(report_id) ON UPDATE CASCADE,

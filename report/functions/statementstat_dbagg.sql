@@ -35,9 +35,17 @@ SET search_path=@extschema@ AS $$
     WHERE server_id = sserver_id AND sample_id BETWEEN start_id + 1 AND end_id
 $$ LANGUAGE sql;
 
+CREATE FUNCTION profile_checkavail_statements_temp_io_times(IN sserver_id integer, IN start_id integer, IN end_id integer)
+RETURNS BOOLEAN
+SET search_path=@extschema@ AS $$
+-- Check if we have planning times collected for report interval
+  SELECT COALESCE(sum(temp_blk_read_time), 0) + COALESCE(sum(temp_blk_write_time), 0) > 0
+  FROM sample_statements_total sn
+  WHERE sn.server_id = sserver_id AND sn.sample_id BETWEEN start_id + 1 AND end_id
+$$ LANGUAGE sql;
 /* ========= Statement stats functions ========= */
 
-CREATE FUNCTION statements_stats(IN sserver_id integer, IN start_id integer, IN end_id integer, IN topn integer)
+CREATE FUNCTION statements_dbstats(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS TABLE(
         dbname              name,
         datid               oid,
@@ -54,6 +62,8 @@ RETURNS TABLE(
         local_blks_dirtied  bigint,
         temp_blks_read      bigint,
         temp_blks_written   bigint,
+        temp_blk_read_time  double precision,
+        temp_blk_write_time double precision,
         local_blks_read     bigint,
         local_blks_written  bigint,
         statements          bigint,
@@ -84,6 +94,8 @@ SET search_path=@extschema@ AS $$
         sum(st.local_blks_dirtied)::bigint AS local_blks_dirtied,
         sum(st.temp_blks_read)::bigint AS temp_blks_read,
         sum(st.temp_blks_written)::bigint AS temp_blks_written,
+        sum(st.temp_blk_read_time)/1000::double precision AS temp_blk_read_time,
+        sum(st.temp_blk_write_time)/1000::double precision AS temp_blk_write_time,
         sum(st.local_blks_read)::bigint AS local_blks_read,
         sum(st.local_blks_written)::bigint AS local_blks_written,
         sum(st.statements)::bigint AS statements,
@@ -106,627 +118,206 @@ SET search_path=@extschema@ AS $$
     GROUP BY sample_db.datname, sample_db.datid;
 $$ LANGUAGE sql;
 
-CREATE FUNCTION statements_stats_htbl(IN report_context jsonb, IN sserver_id integer)
-RETURNS text SET search_path=@extschema@ AS $$
-DECLARE
-    report text := '';
-    jtab_tpl    jsonb;
+CREATE FUNCTION statements_dbstats_format(IN sserver_id integer, IN start_id integer, IN end_id integer)
+RETURNS TABLE(
+    datid               oid,
+    dbname              name,
+    calls               numeric,
+    plans               numeric,
+    total_exec_time     numeric,
+    total_plan_time     numeric,
+    blk_read_time       numeric,
+    blk_write_time      numeric,
+    trg_fn_total_time   numeric,
+    shared_gets         numeric,
+    local_gets          numeric,
+    shared_blks_dirtied numeric,
+    local_blks_dirtied  numeric,
+    temp_blks_read      numeric,
+    temp_blks_written   numeric,
+    temp_blk_read_time  numeric,
+    temp_blk_write_time numeric,
+    local_blks_read     numeric,
+    local_blks_written  numeric,
+    statements          numeric,
+    wal_bytes           numeric,
+    wal_bytes_fmt       text,
+    jit_functions       numeric,
+    jit_generation_time numeric,
+    jit_inlining_count  numeric,
+    jit_inlining_time   numeric,
+    jit_optimization_count  numeric,
+    jit_optimization_time   numeric,
+    jit_emission_count  numeric,
+    jit_emission_time   numeric,
+    -- ordering fields
+    ord_db              integer
+) AS $$
+  SELECT
+    datid,
+    COALESCE(dbname,'Total') AS dbname,
+    NULLIF(sum(calls), 0) AS calls,
+    NULLIF(sum(plans), 0) AS plans,
+    round(CAST(NULLIF(sum(total_exec_time), 0.0) AS numeric),2) AS total_exec_time,
+    round(CAST(NULLIF(sum(total_plan_time), 0.0) AS numeric),2) AS total_plan_time,
+    round(CAST(NULLIF(sum(blk_read_time), 0.0) AS numeric),2) AS blk_read_time,
+    round(CAST(NULLIF(sum(blk_write_time), 0.0) AS numeric),2) AS blk_write_time,
+    round(CAST(NULLIF(sum(trg_fn_total_time), 0.0) AS numeric),2) AS trg_fn_total_time,
+    NULLIF(sum(shared_gets), 0) AS shared_gets,
+    NULLIF(sum(local_gets), 0) AS local_gets,
+    NULLIF(sum(shared_blks_dirtied), 0) AS shared_blks_dirtied,
+    NULLIF(sum(local_blks_dirtied), 0) AS local_blks_dirtied,
+    NULLIF(sum(temp_blks_read), 0) AS temp_blks_read,
+    NULLIF(sum(temp_blks_written), 0) AS temp_blks_written,
+    round(CAST(NULLIF(sum(temp_blk_read_time), 0.0) AS numeric),2) AS temp_blk_read_time,
+    round(CAST(NULLIF(sum(temp_blk_write_time), 0.0) AS numeric),2) AS temp_blk_write_time,
+    NULLIF(sum(local_blks_read), 0) AS local_blks_read,
+    NULLIF(sum(local_blks_written), 0) AS local_blks_written,
+    NULLIF(sum(statements), 0) AS statements,
+    sum(wal_bytes) AS wal_bytes,
+    pg_size_pretty(NULLIF(sum(wal_bytes), 0)) AS wal_bytes_fmt,
+    NULLIF(sum(jit_functions), 0) AS jit_functions,
+    round(CAST(NULLIF(sum(jit_generation_time), 0.0) AS numeric),2) AS jit_generation_time,
+    NULLIF(sum(jit_inlining_count), 0) AS jit_inlining_count,
+    round(CAST(NULLIF(sum(jit_inlining_time), 0.0) AS numeric),2) AS jit_inlining_time,
+    NULLIF(sum(jit_optimization_count), 0) AS jit_optimization_count,
+    round(CAST(NULLIF(sum(jit_optimization_time), 0.0) AS numeric),2) AS jit_optimization_time,
+    NULLIF(sum(jit_emission_count), 0) AS jit_emission_count,
+    round(CAST(NULLIF(sum(jit_emission_time), 0.0) AS numeric),2) AS jit_emission_time,
+    -- ordering fields
+    row_number() OVER (ORDER BY dbname NULLS LAST)::integer AS ord_db
+  FROM statements_dbstats(sserver_id, start_id, end_id)
+  GROUP BY GROUPING SETS ((datid, dbname), ())
+$$ LANGUAGE sql;
 
-    --Cursor for db stats
-    c_dbstats CURSOR(start1_id integer, end1_id integer, topn integer) FOR
-    SELECT
-        COALESCE(dbname,'Total') as dbname_t,
-        NULLIF(sum(calls), 0) as calls,
-        NULLIF(sum(total_exec_time), 0.0) as total_exec_time,
-        NULLIF(sum(total_plan_time), 0.0) as total_plan_time,
-        NULLIF(sum(blk_read_time), 0.0) as blk_read_time,
-        NULLIF(sum(blk_write_time), 0.0) as blk_write_time,
-        NULLIF(sum(trg_fn_total_time), 0.0) as trg_fn_total_time,
-        NULLIF(sum(shared_gets), 0) as shared_gets,
-        NULLIF(sum(local_gets), 0) as local_gets,
-        NULLIF(sum(shared_blks_dirtied), 0) as shared_blks_dirtied,
-        NULLIF(sum(local_blks_dirtied), 0) as local_blks_dirtied,
-        NULLIF(sum(temp_blks_read), 0) as temp_blks_read,
-        NULLIF(sum(temp_blks_written), 0) as temp_blks_written,
-        NULLIF(sum(local_blks_read), 0) as local_blks_read,
-        NULLIF(sum(local_blks_written), 0) as local_blks_written,
-        NULLIF(sum(statements), 0) as statements,
-        NULLIF(sum(wal_bytes), 0) as wal_bytes
-    FROM statements_stats(sserver_id,start1_id,end1_id,topn)
-    GROUP BY ROLLUP(dbname)
-    ORDER BY dbname NULLS LAST;
-
-    r_result RECORD;
-BEGIN
-    -- Database stats TPLs
-    jtab_tpl := jsonb_build_object(
-      'tab_hdr',
-        '<table {stattbl}>'
-          '<tr>'
-            '<th rowspan="2">Database</th>'
-            '<th rowspan="2"title="Number of query executions">Calls</th>'
-            '{planning_times?time_hdr}'
-            '<th colspan="2" title="Number of blocks fetched (hit + read)">Fetched (blk)</th>'
-            '<th colspan="2" title="Number of blocks dirtied">Dirtied (blk)</th>'
-            '<th colspan="2" title="Number of blocks, used in operations (like sorts and joins)">Temp (blk)</th>'
-            '<th colspan="2" title="Number of blocks, used for temporary tables">Local (blk)</th>'
-            '<th rowspan="2">Statements</th>'
-            '{statement_wal_bytes?wal_bytes_hdr}'
-          '</tr>'
-          '<tr>'
-            '{planning_times?plan_time_hdr}'
-            '<th title="Time spent executing queries">Exec</th>'
-            '<th title="Time spent reading blocks">Read</th>'   -- I/O time
-            '<th title="Time spent writing blocks">Write</th>'
-            '<th title="Time spent in trigger functions">Trg</th>'    -- Trigger functions time
-            '<th>Shared</th>' -- Fetched
-            '<th>Local</th>'
-            '<th>Shared</th>' -- Dirtied
-            '<th>Local</th>'
-            '<th>Read</th>'   -- Work area read blks
-            '<th>Write</th>'  -- Work area write blks
-            '<th>Read</th>'   -- Local read blks
-            '<th>Write</th>'  -- Local write blks
-          '</tr>'
-          '{rows}'
-        '</table>',
-      'stdb_tpl',
-        '<tr>'
-          '<td>%1$s</td>'
-          '<td {value}>%2$s</td>'
-          '{planning_times?plan_time_cell}'
-          '<td {value}>%4$s</td>'
-          '<td {value}>%5$s</td>'
-          '<td {value}>%6$s</td>'
-          '<td {value}>%7$s</td>'
-          '<td {value}>%8$s</td>'
-          '<td {value}>%9$s</td>'
-          '<td {value}>%10$s</td>'
-          '<td {value}>%11$s</td>'
-          '<td {value}>%12$s</td>'
-          '<td {value}>%13$s</td>'
-          '<td {value}>%14$s</td>'
-          '<td {value}>%15$s</td>'
-          '<td {value}>%16$s</td>'
-          '{statement_wal_bytes?wal_bytes_cell}'
-        '</tr>',
-      '!planning_times?time_hdr', -- Time header for stat_statements less then v1.8
-        '<th colspan="4">Time (s)</th>',
-      'planning_times?time_hdr', -- Time header for stat_statements v1.8 - added plan time field
-        '<th colspan="5">Time (s)</th>',
-      'planning_times?plan_time_hdr',
-        '<th title="Time spent planning queries">Plan</th>',
-      'planning_times?plan_time_cell',
-        '<td {value}>%3$s</td>',
-      'statement_wal_bytes?wal_bytes_hdr',
-        '<th rowspan="2">WAL size</th>',
-      'statement_wal_bytes?wal_bytes_cell',
-        '<td {value}>%17$s</td>'
-    );
-
-    -- apply settings to templates
-    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
-
-    -- Reporting summary databases stats
-    FOR r_result IN c_dbstats(
-        (report_context #>> '{report_properties,start1_id}')::integer,
-        (report_context #>> '{report_properties,end1_id}')::integer,
-        (report_context #>> '{report_properties,topn}')::integer
-      )
-    LOOP
-        report := report||format(
-            jtab_tpl #>> ARRAY['stdb_tpl'],
-            r_result.dbname_t,
-            r_result.calls,
-            round(CAST(r_result.total_plan_time AS numeric),2),
-            round(CAST(r_result.total_exec_time AS numeric),2),
-            round(CAST(r_result.blk_read_time AS numeric),2),
-            round(CAST(r_result.blk_write_time AS numeric),2),
-            round(CAST(r_result.trg_fn_total_time AS numeric),2),
-            r_result.shared_gets,
-            r_result.local_gets,
-            r_result.shared_blks_dirtied,
-            r_result.local_blks_dirtied,
-            r_result.temp_blks_read,
-            r_result.temp_blks_written,
-            r_result.local_blks_read,
-            r_result.local_blks_written,
-            r_result.statements,
-            pg_size_pretty(r_result.wal_bytes)
-        );
-    END LOOP;
-
-    IF report != '' THEN
-        report := replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
-    END IF;
-
-    RETURN report;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE FUNCTION statements_stats_diff_htbl(IN report_context jsonb, IN sserver_id integer)
-RETURNS text SET search_path=@extschema@ AS $$
-DECLARE
-    report text := '';
-    jtab_tpl    jsonb;
-
-    --Cursor for db stats
-    c_dbstats CURSOR(start1_id integer, end1_id integer,
-      start2_id integer, end2_id integer, topn integer)
-    FOR
-    SELECT
-        COALESCE(COALESCE(st1.dbname,st2.dbname),'Total') as dbname,
-        NULLIF(sum(st1.calls), 0) as calls1,
-        NULLIF(sum(st1.total_exec_time), 0.0) as total_exec_time1,
-        NULLIF(sum(st1.total_plan_time), 0.0) as total_plan_time1,
-        NULLIF(sum(st1.blk_read_time), 0.0) as blk_read_time1,
-        NULLIF(sum(st1.blk_write_time), 0.0) as blk_write_time1,
-        NULLIF(sum(st1.trg_fn_total_time), 0.0) as trg_fn_total_time1,
-        NULLIF(sum(st1.shared_gets), 0) as shared_gets1,
-        NULLIF(sum(st1.local_gets), 0) as local_gets1,
-        NULLIF(sum(st1.shared_blks_dirtied), 0) as shared_blks_dirtied1,
-        NULLIF(sum(st1.local_blks_dirtied), 0) as local_blks_dirtied1,
-        NULLIF(sum(st1.temp_blks_read), 0) as temp_blks_read1,
-        NULLIF(sum(st1.temp_blks_written), 0) as temp_blks_written1,
-        NULLIF(sum(st1.local_blks_read), 0) as local_blks_read1,
-        NULLIF(sum(st1.local_blks_written), 0) as local_blks_written1,
-        NULLIF(sum(st1.statements), 0) as statements1,
-        NULLIF(sum(st1.wal_bytes), 0) as wal_bytes1,
-        NULLIF(sum(st2.calls), 0) as calls2,
-        NULLIF(sum(st2.total_exec_time), 0.0) as total_exec_time2,
-        NULLIF(sum(st2.total_plan_time), 0.0) as total_plan_time2,
-        NULLIF(sum(st2.blk_read_time), 0.0) as blk_read_time2,
-        NULLIF(sum(st2.blk_write_time), 0.0) as blk_write_time2,
-        NULLIF(sum(st2.trg_fn_total_time), 0.0) as trg_fn_total_time2,
-        NULLIF(sum(st2.shared_gets), 0) as shared_gets2,
-        NULLIF(sum(st2.local_gets), 0) as local_gets2,
-        NULLIF(sum(st2.shared_blks_dirtied), 0) as shared_blks_dirtied2,
-        NULLIF(sum(st2.local_blks_dirtied), 0) as local_blks_dirtied2,
-        NULLIF(sum(st2.temp_blks_read), 0) as temp_blks_read2,
-        NULLIF(sum(st2.temp_blks_written), 0) as temp_blks_written2,
-        NULLIF(sum(st2.local_blks_read), 0) as local_blks_read2,
-        NULLIF(sum(st2.local_blks_written), 0) as local_blks_written2,
-        NULLIF(sum(st2.statements), 0) as statements2,
-        NULLIF(sum(st2.wal_bytes), 0) as wal_bytes2
-    FROM statements_stats(sserver_id,start1_id,end1_id,topn) st1
-        FULL OUTER JOIN statements_stats(sserver_id,start2_id,end2_id,topn) st2 USING (datid)
-    GROUP BY ROLLUP(COALESCE(st1.dbname,st2.dbname))
-    ORDER BY COALESCE(st1.dbname,st2.dbname) NULLS LAST;
-
-    r_result RECORD;
-BEGIN
-    -- Statements stats per database TPLs
-    jtab_tpl := jsonb_build_object(
-      'tab_hdr',
-        '<table {difftbl}>'
-          '<tr>'
-            '<th rowspan="2">Database</th>'
-            '<th rowspan="2">I</th>'
-            '<th rowspan="2" title="Number of query executions">Calls</th>'
-            '{planning_times?time_hdr}'
-            '<th colspan="2" title="Number of blocks fetched (hit + read)">Fetched (blk)</th>'
-            '<th colspan="2" title="Number of blocks dirtied">Dirtied (blk)</th>'
-            '<th colspan="2" title="Number of blocks, used in operations (like sorts and joins)">Temp (blk)</th>'
-            '<th colspan="2" title="Number of blocks, used for temporary tables">Local (blk)</th>'
-            '<th rowspan="2">Statements</th>'
-            '{statement_wal_bytes?wal_bytes_hdr}'
-          '</tr>'
-          '<tr>'
-            '{planning_times?plan_time_hdr}'
-            '<th title="Time spent executing queries">Exec</th>'
-            '<th title="Time spent reading blocks">Read</th>'   -- I/O time
-            '<th title="Time spent writing blocks">Write</th>'
-            '<th title="Time spent in trigger functions">Trg</th>'    -- Trigger functions time
-            '<th>Shared</th>' -- Fetched (blk)
-            '<th>Local</th>'
-            '<th>Shared</th>' -- Dirtied (blk)
-            '<th>Local</th>'
-            '<th>Read</th>'   -- Work area  blocks
-            '<th>Write</th>'
-            '<th>Read</th>'   -- Local blocks
-            '<th>Write</th>'
-          '</tr>'
-          '{rows}'
-        '</table>',
-      'stdb_tpl',
-        '<tr {interval1}>'
-          '<td {rowtdspanhdr}>%1$s</td>'
-          '<td {label} {title1}>1</td>'
-          '<td {value}>%2$s</td>'
-          '{planning_times?plan_time_cell1}'
-          '<td {value}>%4$s</td>'
-          '<td {value}>%5$s</td>'
-          '<td {value}>%6$s</td>'
-          '<td {value}>%7$s</td>'
-          '<td {value}>%8$s</td>'
-          '<td {value}>%9$s</td>'
-          '<td {value}>%10$s</td>'
-          '<td {value}>%11$s</td>'
-          '<td {value}>%12$s</td>'
-          '<td {value}>%13$s</td>'
-          '<td {value}>%14$s</td>'
-          '<td {value}>%15$s</td>'
-          '<td {value}>%16$s</td>'
-          '{statement_wal_bytes?wal_bytes_cell1}'
-        '</tr>'
-        '<tr {interval2}>'
-          '<td {label} {title2}>2</td>'
-          '<td {value}>%18$s</td>'
-          '{planning_times?plan_time_cell2}'
-          '<td {value}>%20$s</td>'
-          '<td {value}>%21$s</td>'
-          '<td {value}>%22$s</td>'
-          '<td {value}>%23$s</td>'
-          '<td {value}>%24$s</td>'
-          '<td {value}>%25$s</td>'
-          '<td {value}>%26$s</td>'
-          '<td {value}>%27$s</td>'
-          '<td {value}>%28$s</td>'
-          '<td {value}>%29$s</td>'
-          '<td {value}>%30$s</td>'
-          '<td {value}>%31$s</td>'
-          '<td {value}>%32$s</td>'
-          '{statement_wal_bytes?wal_bytes_cell2}'
-        '</tr>'
-        '<tr style="visibility:collapse"></tr>',
-      '!planning_times?time_hdr', -- Time header for stat_statements less then v1.8
-        '<th colspan="4">Time (s)</th>',
-      'planning_times?time_hdr', -- Time header for stat_statements v1.8 - added plan time field
-        '<th colspan="5">Time (s)</th>',
-      'planning_times?plan_time_hdr',
-        '<th title="Time spent planning queries">Plan</th>',
-      'planning_times?plan_time_cell1',
-        '<td {value}>%3$s</td>',
-      'planning_times?plan_time_cell2',
-        '<td {value}>%19$s</td>',
-      'statement_wal_bytes?wal_bytes_hdr',
-        '<th rowspan="2">WAL size</th>',
-      'statement_wal_bytes?wal_bytes_cell1',
-        '<td {value}>%17$s</td>',
-      'statement_wal_bytes?wal_bytes_cell2',
-        '<td {value}>%33$s</td>'
-    );
-    -- apply settings to templates
-    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
-
-    -- Reporting summary databases stats
-    FOR r_result IN c_dbstats(
-        (report_context #>> '{report_properties,start1_id}')::integer,
-        (report_context #>> '{report_properties,end1_id}')::integer,
-        (report_context #>> '{report_properties,start2_id}')::integer,
-        (report_context #>> '{report_properties,end2_id}')::integer,
-        (report_context #>> '{report_properties,topn}')::integer
-      )
-    LOOP
-        report := report||format(
-            jtab_tpl #>> ARRAY['stdb_tpl'],
-            r_result.dbname,
-            r_result.calls1,
-            round(CAST(r_result.total_plan_time1 AS numeric),2),
-            round(CAST(r_result.total_exec_time1 AS numeric),2),
-            round(CAST(r_result.blk_read_time1 AS numeric),2),
-            round(CAST(r_result.blk_write_time1 AS numeric),2),
-            round(CAST(r_result.trg_fn_total_time1 AS numeric),2),
-            r_result.shared_gets1,
-            r_result.local_gets1,
-            r_result.shared_blks_dirtied1,
-            r_result.local_blks_dirtied1,
-            r_result.temp_blks_read1,
-            r_result.temp_blks_written1,
-            r_result.local_blks_read1,
-            r_result.local_blks_written1,
-            r_result.statements1,
-            pg_size_pretty(r_result.wal_bytes1),
-            r_result.calls2,
-            round(CAST(r_result.total_plan_time2 AS numeric),2),
-            round(CAST(r_result.total_exec_time2 AS numeric),2),
-            round(CAST(r_result.blk_read_time2 AS numeric),2),
-            round(CAST(r_result.blk_write_time2 AS numeric),2),
-            round(CAST(r_result.trg_fn_total_time2 AS numeric),2),
-            r_result.shared_gets2,
-            r_result.local_gets2,
-            r_result.shared_blks_dirtied2,
-            r_result.local_blks_dirtied2,
-            r_result.temp_blks_read2,
-            r_result.temp_blks_written2,
-            r_result.local_blks_read2,
-            r_result.local_blks_written2,
-            r_result.statements2,
-            pg_size_pretty(r_result.wal_bytes2)
-        );
-    END LOOP;
-
-    IF report != '' THEN
-        report := replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
-    END IF;
-
-    RETURN report;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE FUNCTION dbagg_jit_stats_htbl(IN report_context jsonb, IN sserver_id integer)
-RETURNS text SET search_path=@extschema@ AS $$
-DECLARE
-    report text := '';
-    jtab_tpl    jsonb;
-
-    --Cursor for db stats
-    c_dbstats CURSOR(start1_id integer, end1_id integer, topn integer) FOR
-    SELECT
-        COALESCE(dbname,'Total') as dbname_t,
-        NULLIF(sum(calls), 0) as calls,
-        NULLIF(sum(total_exec_time), 0.0) as total_exec_time,
-        NULLIF(sum(total_plan_time), 0.0) as total_plan_time,
-        NULLIF(sum(jit_functions), 0) as jit_functions,
-        NULLIF(sum(jit_generation_time), 0.0) as jit_generation_time,
-        NULLIF(sum(jit_inlining_count), 0) as jit_inlining_count,
-        NULLIF(sum(jit_inlining_time), 0.0) as jit_inlining_time,
-        NULLIF(sum(jit_optimization_count), 0) as jit_optimization_count,
-        NULLIF(sum(jit_optimization_time), 0.0) as jit_optimization_time,
-        NULLIF(sum(jit_emission_count), 0) as jit_emission_count,
-        NULLIF(sum(jit_emission_time), 0.0) as jit_emission_time
-    FROM statements_stats(sserver_id,start1_id,end1_id,topn)
-    WHERE
-        jit_functions +
-        jit_inlining_count +
-        jit_optimization_count +
-        jit_emission_count > 0
-    GROUP BY ROLLUP(dbname)
-    ORDER BY dbname NULLS LAST;
-
-    r_result RECORD;
-BEGIN
-    -- Database stats TPLs
-    jtab_tpl := jsonb_build_object(
-      'tab_hdr',
-        '<table {stattbl}>'
-          '<tr>'
-            '<th rowspan="2">Database</th>'
-            '<th rowspan="2"title="Number of query executions">Calls</th>'
-            '{planning_times?time_hdr}'
-            '<th colspan="2">Generation</th>'
-            '<th colspan="2">Inlining</th>'
-            '<th colspan="2">Optimization</th>'
-            '<th colspan="2">Emission</th>'
-          '</tr>'
-          '<tr>'
-            '{planning_times?plan_time_hdr}'
-            '<th title="Time spent executing queries">Exec</th>'
-            '<th title="Total number of functions JIT-compiled by the statements">Count</th>'
-            '<th title="Total time spent by the statements on generating JIT code">Gen. time</th>'
-            '<th title="Number of times functions have been inlined">Count</th>'
-            '<th title="Total time spent by statements on inlining functions">Time</th>'
-            '<th title="Number of times statements has been optimized">Count</th>'
-            '<th title="Total time spent by statements on optimizing">Time</th>'
-            '<th title="Number of times code has been emitted">Count</th>'
-            '<th title="Total time spent by statements on emitting code">Time</th>'
-          '</tr>'
-          '{rows}'
-        '</table>',
-      'stdb_tpl',
-        '<tr>'
-          '<td>%1$s</td>'
-          '<td {value}>%2$s</td>'
-          '{planning_times?plan_time_cell}'
-          '<td {value}>%4$s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-        '</tr>',
-      '!planning_times?time_hdr', -- Time header for stat_statements less then v1.8
-        '<th colspan="1">Time (s)</th>',
-      'planning_times?time_hdr', -- Time header for stat_statements v1.8 - added plan time field
-        '<th colspan="2">Time (s)</th>',
-      'planning_times?plan_time_hdr',
-        '<th title="Time spent planning queries">Plan</th>',
-      'planning_times?plan_time_cell',
-        '<td {value}>%3$s</td>'
-    );
-
-    -- apply settings to templates
-    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
-
-    -- Reporting summary databases stats
-    FOR r_result IN c_dbstats(
-        (report_context #>> '{report_properties,start1_id}')::integer,
-        (report_context #>> '{report_properties,end1_id}')::integer,
-        (report_context #>> '{report_properties,topn}')::integer
-      )
-    LOOP
-        report := report||format(
-            jtab_tpl #>> ARRAY['stdb_tpl'],
-            r_result.dbname_t,
-            r_result.calls,
-            round(CAST(r_result.total_plan_time AS numeric),2),
-            round(CAST(r_result.total_exec_time AS numeric),2),
-            r_result.jit_functions,
-            round(CAST(r_result.jit_generation_time AS numeric),2),
-            r_result.jit_inlining_count,
-            round(CAST(r_result.jit_inlining_time AS numeric),2),
-            r_result.jit_optimization_count,
-            round(CAST(r_result.jit_optimization_time AS numeric),2),
-            r_result.jit_emission_count,
-            round(CAST(r_result.jit_emission_time AS numeric),2)
-        );
-    END LOOP;
-
-    IF report != '' THEN
-        report := replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
-    END IF;
-
-    RETURN report;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE FUNCTION dbagg_jit_stats_diff_htbl(IN report_context jsonb, IN sserver_id integer)
-RETURNS text SET search_path=@extschema@ AS $$
-DECLARE
-    report text := '';
-    jtab_tpl    jsonb;
-
-    --Cursor for db stats
-    c_dbstats CURSOR(start1_id integer, end1_id integer,
-      start2_id integer, end2_id integer, topn integer)
-    FOR
-    SELECT
-        COALESCE(COALESCE(st1.dbname,st2.dbname),'Total') as dbname,
-        NULLIF(sum(st1.calls), 0) as calls1,
-        NULLIF(sum(st1.total_exec_time), 0.0) as total_exec_time1,
-        NULLIF(sum(st1.total_plan_time), 0.0) as total_plan_time1,
-        NULLIF(sum(st1.jit_functions), 0) as jit_functions1,
-        NULLIF(sum(st1.jit_generation_time), 0.0) as jit_generation_time1,
-        NULLIF(sum(st1.jit_inlining_count), 0) as jit_inlining_count1,
-        NULLIF(sum(st1.jit_inlining_time), 0.0) as jit_inlining_time1,
-        NULLIF(sum(st1.jit_optimization_count), 0) as jit_optimization_count1,
-        NULLIF(sum(st1.jit_optimization_time), 0.0) as jit_optimization_time1,
-        NULLIF(sum(st1.jit_emission_count), 0) as jit_emission_count1,
-        NULLIF(sum(st1.jit_emission_time), 0.0) as jit_emission_time1,
-        NULLIF(sum(st2.calls), 0) as calls2,
-        NULLIF(sum(st2.total_exec_time), 0.0) as total_exec_time2,
-        NULLIF(sum(st2.total_plan_time), 0.0) as total_plan_time2,
-        NULLIF(sum(st2.jit_functions), 0) as jit_functions2,
-        NULLIF(sum(st2.jit_generation_time), 0.0) as jit_generation_time2,
-        NULLIF(sum(st2.jit_inlining_count), 0) as jit_inlining_count2,
-        NULLIF(sum(st2.jit_inlining_time), 0.0) as jit_inlining_time2,
-        NULLIF(sum(st2.jit_optimization_count), 0) as jit_optimization_count2,
-        NULLIF(sum(st2.jit_optimization_time), 0.0) as jit_optimization_time2,
-        NULLIF(sum(st2.jit_emission_count), 0) as jit_emission_count2,
-        NULLIF(sum(st2.jit_emission_time), 0.0) as jit_emission_time2
-    FROM statements_stats(sserver_id,start1_id,end1_id,topn) st1
-        FULL OUTER JOIN statements_stats(sserver_id,start2_id,end2_id,topn) st2 USING (datid)
-    WHERE
-        COALESCE(st1.jit_functions +
-        st1.jit_inlining_count +
-        st1.jit_optimization_count +
-        st1.jit_emission_count, 0) +
-        COALESCE(st2.jit_functions +
-        st2.jit_inlining_count +
-        st2.jit_optimization_count +
-        st2.jit_emission_count, 0) > 0
-    GROUP BY ROLLUP(COALESCE(st1.dbname,st2.dbname))
-    ORDER BY COALESCE(st1.dbname,st2.dbname) NULLS LAST;
-
-    r_result RECORD;
-BEGIN
-    -- Statements stats per database TPLs
-    jtab_tpl := jsonb_build_object(
-      'tab_hdr',
-        '<table {difftbl}>'
-          '<tr>'
-            '<th rowspan="2">Database</th>'
-            '<th rowspan="2">I</th>'
-            '<th rowspan="2" title="Number of query executions">Calls</th>'
-            '{planning_times?time_hdr}'
-            '<th colspan="2">Generation</th>'
-            '<th colspan="2">Inlining</th>'
-            '<th colspan="2">Optimization</th>'
-            '<th colspan="2">Emission</th>'
-          '</tr>'
-          '<tr>'
-            '{planning_times?plan_time_hdr}'
-            '<th title="Time spent executing queries">Exec</th>'
-            '<th title="Total number of functions JIT-compiled by the statements">Count</th>'
-            '<th title="Total time spent by the statements on generating JIT code">Gen. time</th>'
-            '<th title="Number of times functions have been inlined">Count</th>'
-            '<th title="Total time spent by statements on inlining functions">Time</th>'
-            '<th title="Number of times statements has been optimized">Count</th>'
-            '<th title="Total time spent by statements on optimizing">Time</th>'
-            '<th title="Number of times code has been emitted">Count</th>'
-            '<th title="Total time spent by statements on emitting code">Time</th>'
-          '</tr>'
-          '{rows}'
-        '</table>',
-      'stdb_tpl',
-        '<tr {interval1}>'
-          '<td {rowtdspanhdr}>%1$s</td>'
-          '<td {label} {title1}>1</td>'
-          '<td {value}>%2$s</td>'
-          '{planning_times?plan_time_cell1}'
-          '<td {value}>%4$s</td>'
-          '<td {value}>%5$s</td>'
-          '<td {value}>%6$s</td>'
-          '<td {value}>%7$s</td>'
-          '<td {value}>%8$s</td>'
-          '<td {value}>%9$s</td>'
-          '<td {value}>%10$s</td>'
-          '<td {value}>%11$s</td>'
-          '<td {value}>%12$s</td>'
-        '</tr>'
-        '<tr {interval2}>'
-          '<td {label} {title2}>2</td>'
-          '<td {value}>%13$s</td>'
-          '{planning_times?plan_time_cell2}'
-          '<td {value}>%15$s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-          '<td {value}>%s</td>'
-        '</tr>'
-        '<tr style="visibility:collapse"></tr>',
-      '!planning_times?time_hdr', -- Time header for stat_statements less then v1.8
-        '<th colspan="1">Time (s)</th>',
-      'planning_times?time_hdr', -- Time header for stat_statements v1.8 - added plan time field
-        '<th colspan="2">Time (s)</th>',
-      'planning_times?plan_time_hdr',
-        '<th title="Time spent planning queries">Plan</th>',
-      'planning_times?plan_time_cell1',
-        '<td {value}>%3$s</td>',
-      'planning_times?plan_time_cell2',
-        '<td {value}>%14$s</td>'
-    );
-    -- apply settings to templates
-    jtab_tpl := jsonb_replace(report_context, jtab_tpl);
-
-    -- Reporting summary databases stats
-    FOR r_result IN c_dbstats(
-        (report_context #>> '{report_properties,start1_id}')::integer,
-        (report_context #>> '{report_properties,end1_id}')::integer,
-        (report_context #>> '{report_properties,start2_id}')::integer,
-        (report_context #>> '{report_properties,end2_id}')::integer,
-        (report_context #>> '{report_properties,topn}')::integer
-      )
-    LOOP
-        report := report||format(
-            jtab_tpl #>> ARRAY['stdb_tpl'],
-            r_result.dbname,
-            r_result.calls1,
-            round(CAST(r_result.total_plan_time1 AS numeric),2),
-            round(CAST(r_result.total_exec_time1 AS numeric),2),
-            r_result.jit_functions1,
-            round(CAST(r_result.jit_generation_time1 AS numeric),2),
-            r_result.jit_inlining_count1,
-            round(CAST(r_result.jit_inlining_time1 AS numeric),2),
-            r_result.jit_optimization_count1,
-            round(CAST(r_result.jit_optimization_time1 AS numeric),2),
-            r_result.jit_emission_count1,
-            round(CAST(r_result.jit_emission_time1 AS numeric),2),
-            r_result.calls2,
-            round(CAST(r_result.total_plan_time2 AS numeric),2),
-            round(CAST(r_result.total_exec_time2 AS numeric),2),
-            r_result.jit_functions2,
-            round(CAST(r_result.jit_generation_time2 AS numeric),2),
-            r_result.jit_inlining_count2,
-            round(CAST(r_result.jit_inlining_time2 AS numeric),2),
-            r_result.jit_optimization_count2,
-            round(CAST(r_result.jit_optimization_time2 AS numeric),2),
-            r_result.jit_emission_count2,
-            round(CAST(r_result.jit_emission_time2 AS numeric),2)
-        );
-    END LOOP;
-
-    IF report != '' THEN
-        report := replace(jtab_tpl #>> ARRAY['tab_hdr'],'{rows}',report);
-    END IF;
-
-    RETURN report;
-END;
-$$ LANGUAGE plpgsql;
+CREATE FUNCTION statements_dbstats_format_diff(IN sserver_id integer,
+  IN start1_id integer, IN end1_id integer,
+  IN start2_id integer, IN end2_id integer)
+RETURNS TABLE(
+    datid                oid,
+    dbname               name,
+    calls1               numeric,
+    plans1               numeric,
+    total_exec_time1     numeric,
+    total_plan_time1     numeric,
+    blk_read_time1       numeric,
+    blk_write_time1      numeric,
+    trg_fn_total_time1   numeric,
+    shared_gets1         numeric,
+    local_gets1          numeric,
+    shared_blks_dirtied1 numeric,
+    local_blks_dirtied1  numeric,
+    temp_blks_read1      numeric,
+    temp_blks_written1   numeric,
+    temp_blk_read_time1  numeric,
+    temp_blk_write_time1 numeric,
+    local_blks_read1     numeric,
+    local_blks_written1  numeric,
+    statements1          numeric,
+    wal_bytes1           numeric,
+    wal_bytes_fmt1       text,
+    jit_functions1       numeric,
+    jit_generation_time1 numeric,
+    jit_inlining_count1  numeric,
+    jit_inlining_time1   numeric,
+    jit_optimization_count1  numeric,
+    jit_optimization_time1   numeric,
+    jit_emission_count1  numeric,
+    jit_emission_time1   numeric,
+    calls2               numeric,
+    plans2               numeric,
+    total_exec_time2     numeric,
+    total_plan_time2     numeric,
+    blk_read_time2       numeric,
+    blk_write_time2      numeric,
+    trg_fn_total_time2   numeric,
+    shared_gets2         numeric,
+    local_gets2          numeric,
+    shared_blks_dirtied2 numeric,
+    local_blks_dirtied2  numeric,
+    temp_blks_read2      numeric,
+    temp_blks_written2   numeric,
+    temp_blk_read_time2  numeric,
+    temp_blk_write_time2 numeric,
+    local_blks_read2     numeric,
+    local_blks_written2  numeric,
+    statements2          numeric,
+    wal_bytes2           numeric,
+    wal_bytes_fmt2       text,
+    jit_functions2       numeric,
+    jit_generation_time2 numeric,
+    jit_inlining_count2  numeric,
+    jit_inlining_time2   numeric,
+    jit_optimization_count2  numeric,
+    jit_optimization_time2   numeric,
+    jit_emission_count2  numeric,
+    jit_emission_time2   numeric,
+    -- ordering fields
+    ord_db              integer
+) AS $$
+  SELECT
+    COALESCE(st1.datid,st2.datid) AS datid,
+    COALESCE(COALESCE(st1.dbname,st2.dbname),'Total') AS dbname,
+    NULLIF(sum(st1.calls), 0) AS calls1,
+    NULLIF(sum(st1.plans), 0) AS plans1,
+    round(CAST(NULLIF(sum(st1.total_exec_time), 0.0) AS numeric),2) AS total_exec_time1,
+    round(CAST(NULLIF(sum(st1.total_plan_time), 0.0) AS numeric),2) AS total_plan_time1,
+    round(CAST(NULLIF(sum(st1.blk_read_time), 0.0) AS numeric),2) AS blk_read_time1,
+    round(CAST(NULLIF(sum(st1.blk_write_time), 0.0) AS numeric),2) AS blk_write_time1,
+    round(CAST(NULLIF(sum(st1.trg_fn_total_time), 0.0) AS numeric),2) AS trg_fn_total_time1,
+    NULLIF(sum(st1.shared_gets), 0) AS shared_gets1,
+    NULLIF(sum(st1.local_gets), 0) AS local_gets1,
+    NULLIF(sum(st1.shared_blks_dirtied), 0) AS shared_blks_dirtied1,
+    NULLIF(sum(st1.local_blks_dirtied), 0) AS local_blks_dirtied1,
+    NULLIF(sum(st1.temp_blks_read), 0) AS temp_blks_read1,
+    NULLIF(sum(st1.temp_blks_written), 0) AS temp_blks_written1,
+    round(CAST(NULLIF(sum(st1.temp_blk_read_time), 0.0) AS numeric),2) AS temp_blk_read_time1,
+    round(CAST(NULLIF(sum(st1.temp_blk_write_time), 0.0) AS numeric),2) AS temp_blk_write_time1,
+    NULLIF(sum(st1.local_blks_read), 0) AS local_blks_read1,
+    NULLIF(sum(st1.local_blks_written), 0) AS local_blks_written1,
+    NULLIF(sum(st1.statements), 0) AS statements1,
+    sum(st1.wal_bytes) AS wal_bytes1,
+    pg_size_pretty(NULLIF(sum(st1.wal_bytes), 0)) AS wal_bytes_fmt1,
+    NULLIF(sum(st1.jit_functions), 0) AS jit_functions1,
+    round(CAST(NULLIF(sum(st1.jit_generation_time), 0.0) AS numeric),2) AS jit_generation_time1,
+    NULLIF(sum(st1.jit_inlining_count), 0) AS jit_inlining_count1,
+    round(CAST(NULLIF(sum(st1.jit_inlining_time), 0.0) AS numeric),2) AS jit_inlining_time1,
+    NULLIF(sum(st1.jit_optimization_count), 0) AS jit_optimization_count1,
+    round(CAST(NULLIF(sum(st1.jit_optimization_time), 0.0) AS numeric),2) AS jit_optimization_time1,
+    NULLIF(sum(st1.jit_emission_count), 0) AS jit_emission_count1,
+    round(CAST(NULLIF(sum(st1.jit_emission_time), 0.0) AS numeric),2) AS jit_emission_time1,
+    NULLIF(sum(st2.calls), 0) AS calls2,
+    NULLIF(sum(st2.plans), 0) AS plans2,
+    round(CAST(NULLIF(sum(st2.total_exec_time), 0.0) AS numeric),2) AS total_exec_time2,
+    round(CAST(NULLIF(sum(st2.total_plan_time), 0.0) AS numeric),2) AS total_plan_time2,
+    round(CAST(NULLIF(sum(st2.blk_read_time), 0.0) AS numeric),2) AS blk_read_time2,
+    round(CAST(NULLIF(sum(st2.blk_write_time), 0.0) AS numeric),2) AS blk_write_time2,
+    round(CAST(NULLIF(sum(st2.trg_fn_total_time), 0.0) AS numeric),2) AS trg_fn_total_time2,
+    NULLIF(sum(st2.shared_gets), 0) AS shared_gets2,
+    NULLIF(sum(st2.local_gets), 0) AS local_gets2,
+    NULLIF(sum(st2.shared_blks_dirtied), 0) AS shared_blks_dirtied2,
+    NULLIF(sum(st2.local_blks_dirtied), 0) AS local_blks_dirtied2,
+    NULLIF(sum(st2.temp_blks_read), 0) AS temp_blks_read2,
+    NULLIF(sum(st2.temp_blks_written), 0) AS temp_blks_written2,
+    round(CAST(NULLIF(sum(st2.temp_blk_read_time), 0.0) AS numeric),2) AS temp_blk_read_time2,
+    round(CAST(NULLIF(sum(st2.temp_blk_write_time), 0.0) AS numeric),2) AS temp_blk_write_time2,
+    NULLIF(sum(st2.local_blks_read), 0) AS local_blks_read2,
+    NULLIF(sum(st2.local_blks_written), 0) AS local_blks_written2,
+    NULLIF(sum(st2.statements), 0) AS statements2,
+    sum(st2.wal_bytes) AS wal_bytes2,
+    pg_size_pretty(NULLIF(sum(st2.wal_bytes), 0)) AS wal_bytes_fmt2,
+    NULLIF(sum(st2.jit_functions), 0) AS jit_functions2,
+    round(CAST(NULLIF(sum(st2.jit_generation_time), 0.0) AS numeric),2) AS jit_generation_time2,
+    NULLIF(sum(st2.jit_inlining_count), 0) AS jit_inlining_count2,
+    round(CAST(NULLIF(sum(st2.jit_inlining_time), 0.0) AS numeric),2) AS jit_inlining_time2,
+    NULLIF(sum(st2.jit_optimization_count), 0) AS jit_optimization_count2,
+    round(CAST(NULLIF(sum(st2.jit_optimization_time), 0.0) AS numeric),2) AS jit_optimization_time2,
+    NULLIF(sum(st2.jit_emission_count), 0) AS jit_emission_count2,
+    round(CAST(NULLIF(sum(st2.jit_emission_time), 0.0) AS numeric),2) AS jit_emission_time2,
+    -- ordering fields
+    row_number() OVER (ORDER BY COALESCE(st1.dbname,st2.dbname) NULLS LAST)::integer AS ord_db
+  FROM statements_dbstats(sserver_id, start1_id, end1_id) st1
+    FULL OUTER JOIN statements_dbstats(sserver_id, start2_id, end2_id) st2 USING (datid)
+  GROUP BY GROUPING SETS ((COALESCE(st1.datid,st2.datid), COALESCE(st1.dbname,st2.dbname)),
+    ())
+$$ LANGUAGE sql;
