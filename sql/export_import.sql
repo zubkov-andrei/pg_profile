@@ -21,8 +21,13 @@ SELECT profile.import_data('profile.export') > 0;
 WITH res AS (
   SELECT
     profile.get_report('local',1,4) AS imported,
-    replace(profile.get_report('src_local',1,4),'<p>Server name: <strong>src_local</strong></p>',
-        '<p>Server name: <strong>local</strong></p>') AS exported
+    replace(
+        replace(
+        profile.get_report('src_local',1,4),'"server_name": "src_local"',
+        '"server_name": "local"'),
+        '<p>Server name: <strong>src_local</strong>',
+        '<p>Server name: <strong>local</strong>'
+    ) AS exported
 )
 SELECT
   CASE

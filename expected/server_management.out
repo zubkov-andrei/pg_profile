@@ -80,9 +80,9 @@ FROM profile.servers WHERE server_name != 'local';
 (1 row)
 
 SELECT * FROM profile.show_servers() where server_name != 'local';
-  server_name   |                 connstr                  | enabled |     description      
-----------------+------------------------------------------+---------+----------------------
- srvtestrenamed | dbname=postgres host=localhost port=5433 | t       | Server description 2
+  server_name   |                 connstr                  | enabled | max_sample_age |     description      
+----------------+------------------------------------------+---------+----------------+----------------------
+ srvtestrenamed | dbname=postgres host=localhost port=5433 | t       |              3 | Server description 2
 (1 row)
 
 SELECT * FROM profile.drop_server('srvtestrenamed');
