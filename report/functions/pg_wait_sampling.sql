@@ -34,7 +34,7 @@ CREATE FUNCTION wait_sampling_total_stats_format(IN sserver_id integer,
   IN start_id integer, IN end_id integer)
 RETURNS TABLE(
   event_type        text,
-  event_type_order  numeric,
+  event_type_order  bigint,
   tot_waited        numeric,
   tot_waited_pct    numeric,
   stmt_waited       numeric,
@@ -60,7 +60,7 @@ CREATE FUNCTION wait_sampling_total_stats_format_diff(IN sserver_id integer,
   IN start2_id integer, IN end2_id integer)
 RETURNS TABLE(
   event_type        text,
-  event_type_order  numeric,
+  event_type_order  bigint,
   tot_waited1       numeric,
   tot_waited_pct1   numeric,
   stmt_waited1      numeric,
@@ -133,8 +133,8 @@ RETURNS TABLE(
   event             text,
   total_filter      boolean,
   stmt_filter       boolean,
-  tot_ord           integer,
-  stmt_ord          integer,
+  tot_ord           bigint,
+  stmt_ord          bigint,
   tot_waited1       numeric,
   tot_waited_pct1   numeric,
   tot_waited2       numeric,

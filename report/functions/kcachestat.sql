@@ -147,8 +147,8 @@ RETURNS TABLE(
     sum_cpu_time             numeric,
     sum_io_bytes             bigint,
 
-    ord_cpu_time             integer,
-    ord_io_bytes             integer
+    ord_cpu_time             bigint,
+    ord_io_bytes             bigint
 )
 SET search_path=@extschema@ AS $$
   SELECT
@@ -197,13 +197,13 @@ SET search_path=@extschema@ AS $$
       row_number() OVER (ORDER BY COALESCE(st.plan_user_time, 0.0) +
         COALESCE(st.plan_system_time, 0.0) + COALESCE(st.exec_user_time, 0.0) +
         COALESCE(st.exec_system_time, 0.0) DESC NULLS LAST,
-        datid, userid, queryid, toplevel)::integer
+        datid, userid, queryid, toplevel)
     ELSE NULL END AS ord_cpu_time,
     CASE WHEN COALESCE(st.plan_reads, 0) + COALESCE(st.plan_writes, 0) +
         COALESCE(st.exec_reads, 0) + COALESCE(st.exec_writes, 0) > 0 THEN
       row_number() OVER (ORDER BY COALESCE(st.plan_reads, 0) + COALESCE(st.plan_writes, 0) +
         COALESCE(st.exec_reads, 0) + COALESCE(st.exec_writes, 0) DESC NULLS LAST,
-        datid, userid, queryid, toplevel)::integer
+        datid, userid, queryid, toplevel)
     ELSE NULL END AS ord_io_bytes
   FROM
     top_kcache_statements(sserver_id, start_id, end_id) st
@@ -280,10 +280,10 @@ RETURNS TABLE(
     plan_nvcsws2             bigint,
     plan_nivcsws2            bigint,
     -- Filter and ordering fields
-    sum_cpu_time             numeric,
+    sum_cpu_time             double precision,
     sum_io_bytes             bigint,
-    ord_cpu_time             integer,
-    ord_io_bytes             integer
+    ord_cpu_time             bigint,
+    ord_io_bytes             bigint
 )
 SET search_path=@extschema@ AS $$
   SELECT

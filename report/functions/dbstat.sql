@@ -281,7 +281,7 @@ RETURNS TABLE(
         NULLIF(sum(dbs2.sessions_fatal), 0) AS sessions_fatal2,
         NULLIF(sum(dbs2.sessions_killed), 0) AS sessions_killed2,
         -- ordering fields
-        row_number() OVER (ORDER BY COALESCE(dbs1.dbname,dbs2.dbname) NULLS LAST) AS ord_db
+        row_number() OVER (ORDER BY COALESCE(dbs1.dbname,dbs2.dbname) NULLS LAST)::integer AS ord_db
     FROM dbstats(sserver_id,start1_id,end1_id) dbs1
       FULL OUTER JOIN dbstats(sserver_id,start2_id,end2_id) dbs2
         USING (server_id, datid)
