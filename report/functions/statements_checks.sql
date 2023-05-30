@@ -26,12 +26,18 @@ RETURNS TABLE(
   stmt_cnt      integer,
   max_cnt       text
 )
---SET search_path=@extschema@
+SET search_path=@extschema@
 AS $$
-    SELECT sample_id,sample_time,stmt_cnt,prm.setting AS max_cnt
+    SELECT
+      sample_id,
+      sample_time,
+      stmt_cnt,
+      prm.setting AS max_cnt
     FROM samples
         JOIN (
-            SELECT sample_id,sum(statements) stmt_cnt
+            SELECT
+              sample_id,
+              sum(statements)::integer AS stmt_cnt
             FROM sample_statements_total
             WHERE server_id = sserver_id
               AND ((start_id, end_id) = (0,0) OR sample_id BETWEEN start_id + 1 AND end_id)

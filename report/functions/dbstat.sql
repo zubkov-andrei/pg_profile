@@ -354,7 +354,7 @@ $$
   SELECT
     interval_num,
     datname,
-    stats_reset,
+    stats_reset::text as stats_reset,
     sample_id
   FROM
     (SELECT 1 AS interval_num, datname, stats_reset, sample_id

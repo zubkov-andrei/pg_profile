@@ -242,8 +242,8 @@ $$
   SELECT
     interval_num,
     sample_id,
-    bgwriter_stats_reset,
-    archiver_stats_reset
+    bgwriter_stats_reset::text,
+    archiver_stats_reset::text
   FROM
     (SELECT 1 AS interval_num, sample_id, bgwriter_stats_reset, archiver_stats_reset
       FROM cluster_stats_reset(sserver_id, start1_id, end1_id)
