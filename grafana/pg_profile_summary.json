@@ -1,65 +1,10 @@
 {
-  "__inputs": [
-    {
-      "name": "DS_PG15_PROFILE",
-      "label": "PG15_profile",
-      "description": "",
-      "type": "datasource",
-      "pluginId": "postgres",
-      "pluginName": "PostgreSQL"
-    }
-  ],
-  "__elements": {},
-  "__requires": [
-    {
-      "type": "panel",
-      "id": "gauge",
-      "name": "Gauge",
-      "version": ""
-    },
-    {
-      "type": "grafana",
-      "id": "grafana",
-      "name": "Grafana",
-      "version": "9.3.1"
-    },
-    {
-      "type": "datasource",
-      "id": "postgres",
-      "name": "PostgreSQL",
-      "version": "1.0.0"
-    },
-    {
-      "type": "panel",
-      "id": "stat",
-      "name": "Stat",
-      "version": ""
-    },
-    {
-      "type": "panel",
-      "id": "table",
-      "name": "Table",
-      "version": ""
-    },
-    {
-      "type": "panel",
-      "id": "text",
-      "name": "Text",
-      "version": ""
-    },
-    {
-      "type": "panel",
-      "id": "timeseries",
-      "name": "Time series",
-      "version": ""
-    }
-  ],
   "annotations": {
     "list": [
       {
         "datasource": {
           "type": "postgres",
-          "uid": "${DS_PG15_PROFILE}"
+          "uid": "${ProfileDB}"
         },
         "enable": true,
         "iconColor": "semi-dark-green",
@@ -92,7 +37,7 @@
       {
         "datasource": {
           "type": "postgres",
-          "uid": "${DS_PG15_PROFILE}"
+          "uid": "${ProfileDB}"
         },
         "enable": true,
         "iconColor": "semi-dark-yellow",
@@ -179,7 +124,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Use provided pg_profile function call to get report of observable interval",
       "gridPos": {
@@ -203,12 +148,12 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT sample_id as StartID\nFROM samples\nWHERE\n  server_id = $profile_servers AND\n  sample_time < '${__from:date:iso}'\nORDER BY sample_id DESC\nLIMIT 1",
+          "rawSql": "SELECT COALESCE(\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time < '${__from:date:iso}'\n  ORDER BY sample_id DESC\n  LIMIT 1),\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time > '${__from:date:iso}'\n  ORDER BY sample_id ASC\n  LIMIT 1)\n) as StartID",
           "refId": "StartID",
           "sql": {
             "columns": [
@@ -231,13 +176,13 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "table",
           "hide": false,
           "rawQuery": true,
-          "rawSql": "SELECT sample_id as EndID\nFROM samples\nWHERE\n  server_id = $profile_servers AND\n  sample_time > '${__to:date:iso}'\nORDER BY sample_id ASC\nLIMIT 1",
+          "rawSql": "SELECT COALESCE(\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time < '${__to:date:iso}'\n  ORDER BY sample_id DESC\n  LIMIT 1),\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time > '${__to:date:iso}'\n  ORDER BY sample_id ASC\n  LIMIT 1)\n) as StartID",
           "refId": "EndID",
           "sql": {
             "columns": [
@@ -264,7 +209,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "",
       "fieldConfig": {
@@ -312,7 +257,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "table",
@@ -357,7 +302,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "LSN and pg_stat_archiver increment",
       "fieldConfig": {
@@ -454,7 +399,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "table",
@@ -486,7 +431,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Summary pg_stat_statements  extension data",
       "fieldConfig": {
@@ -547,7 +492,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "table",
@@ -579,7 +524,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "fieldConfig": {
         "defaults": {
@@ -638,7 +583,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "table",
@@ -670,7 +615,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Summary transaction data from pg_stat_database view",
       "fieldConfig": {
@@ -730,7 +675,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "table",
@@ -762,7 +707,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Summary transaction data from pg_stat_database view",
       "fieldConfig": {
@@ -834,7 +779,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "table",
@@ -866,7 +811,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Commit rate data from pg_stat_database view",
       "fieldConfig": {
@@ -945,7 +890,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -990,7 +935,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Sum of cluster database sizes",
       "fieldConfig": {
@@ -1066,7 +1011,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -1111,7 +1056,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Commit rate data from pg_stat_database view",
       "fieldConfig": {
@@ -1155,8 +1100,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1191,7 +1135,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -1223,7 +1167,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Rollback rate data from pg_stat_database view",
       "fieldConfig": {
@@ -1267,8 +1211,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "yellow",
-                "value": null
+                "color": "yellow"
               }
             ]
           },
@@ -1299,7 +1242,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -1331,7 +1274,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Cluster session statistics from pg_stat_database. Available since Postgres 14",
       "fieldConfig": {
@@ -1374,8 +1317,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1410,7 +1352,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -1442,7 +1384,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Cluster session timing statistics from pg_stat_database. Available since Postgres 14",
       "fieldConfig": {
@@ -1485,8 +1427,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1521,7 +1462,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -1566,7 +1507,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Buffers write rate from pg_stat_bgwriter view",
       "fieldConfig": {
@@ -1612,8 +1553,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1648,7 +1588,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -1680,7 +1620,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Time spent writing buffers from pg_stat_database view",
       "fieldConfig": {
@@ -1724,8 +1664,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               }
             ]
           },
@@ -1756,7 +1695,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -1788,7 +1727,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Read rate from pg_stat_database view",
       "fieldConfig": {
@@ -1832,8 +1771,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1868,7 +1806,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -1900,7 +1838,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Time spent reading buffers from pg_stat_database view",
       "fieldConfig": {
@@ -1944,8 +1882,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1980,7 +1917,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -2012,7 +1949,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Buffer hits rate from pg_stat_database view",
       "fieldConfig": {
@@ -2056,8 +1993,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -2092,7 +2028,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -2124,7 +2060,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Hit ratio (calculated on pg_stat_database data)",
       "fieldConfig": {
@@ -2171,8 +2107,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -2207,7 +2142,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -2252,7 +2187,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "LSN increment and wal_bytes summary of pg_stat_statements",
       "fieldConfig": {
@@ -2295,8 +2230,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               }
             ]
           },
@@ -2327,7 +2261,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -2355,7 +2289,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -2388,7 +2322,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Based on pg_stat_archiver view",
       "fieldConfig": {
@@ -2431,8 +2365,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -2483,7 +2416,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -2515,7 +2448,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "WAL records rate from pg_stat_wal view. Available since Postgres 14",
       "fieldConfig": {
@@ -2558,8 +2491,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -2594,7 +2526,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -2626,7 +2558,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "WAL FPI rate from pg_stat_wal view. Available since Postgres 14",
       "fieldConfig": {
@@ -2669,8 +2601,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -2705,7 +2636,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -2737,7 +2668,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "WAL write and sync rate from pg_stat_wal view. Available since Postgres 14",
       "fieldConfig": {
@@ -2780,8 +2711,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               }
             ]
           },
@@ -2812,7 +2742,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -2844,7 +2774,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "WAL write and sync time elapsed from pg_stat_wal view. Available since Postgres 14 if track_wal_io_timing setting is on.",
       "fieldConfig": {
@@ -2887,8 +2817,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               }
             ]
           },
@@ -2919,7 +2848,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -2964,7 +2893,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Temporary size rate from pg_stat_database view",
       "fieldConfig": {
@@ -3008,8 +2937,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               }
             ]
           },
@@ -3040,7 +2968,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -3072,7 +3000,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Temporary files generation rate from pg_stat_database view",
       "fieldConfig": {
@@ -3116,8 +3044,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               }
             ]
           },
@@ -3148,7 +3075,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -3193,7 +3120,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Times spent by statements on planning, execution, reading and writing from pg_stat_statements",
       "fieldConfig": {
@@ -3236,8 +3163,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               }
             ]
           },
@@ -3268,7 +3194,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -3300,7 +3226,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Planning and executions count from pg_stat_statements",
       "fieldConfig": {
@@ -3343,8 +3269,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -3379,7 +3304,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -3411,7 +3336,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Temp blocks read and write rate from pg_stat_statements",
       "fieldConfig": {
@@ -3454,8 +3379,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -3490,7 +3414,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -3522,7 +3446,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Shared blocks read and write rate from pg_stat_statements",
       "fieldConfig": {
@@ -3565,8 +3489,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -3601,7 +3524,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -3633,7 +3556,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Local blocks read and write rate from pg_stat_statements",
       "fieldConfig": {
@@ -3676,8 +3599,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -3712,7 +3634,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -3757,7 +3679,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Time waited in each wait event type per second from pg_wait_sampling extension (for waits with queryid)",
       "fieldConfig": {
@@ -3801,8 +3723,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               }
             ]
           },
@@ -3833,7 +3754,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -3865,7 +3786,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "${DS_PG15_PROFILE}"
+        "uid": "${ProfileDB}"
       },
       "description": "Time waited in each wait event type per second from pg_wait_sampling extension (for all waits)",
       "fieldConfig": {
@@ -3909,8 +3830,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               }
             ]
           },
@@ -3941,7 +3861,7 @@
         {
           "datasource": {
             "type": "postgres",
-            "uid": "${DS_PG15_PROFILE}"
+            "uid": "${ProfileDB}"
           },
           "editorMode": "code",
           "format": "time_series",
@@ -4000,7 +3920,7 @@
         "current": {},
         "datasource": {
           "type": "postgres",
-          "uid": "${DS_PG15_PROFILE}"
+          "uid": "${ProfileDB}"
         },
         "definition": "select server_id as __value, server_name as __text FROM servers",
         "hide": 0,
@@ -4020,9 +3940,9 @@
         "current": {},
         "datasource": {
           "type": "postgres",
-          "uid": "${DS_PG15_PROFILE}"
+          "uid": "${ProfileDB}"
         },
-        "definition": "SELECT sample_id as StartID\nFROM samples\nWHERE\n  server_id = $profile_servers AND\n  sample_time < '${__from:date:iso}'\nORDER BY sample_id DESC\nLIMIT 1",
+        "definition": "SELECT COALESCE(\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time < '${__from:date:iso}'\n  ORDER BY sample_id DESC\n  LIMIT 1),\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time > '${__from:date:iso}'\n  ORDER BY sample_id ASC\n  LIMIT 1)\n) as StartID",
         "description": "Sample identifier of range start",
         "hide": 2,
         "includeAll": false,
@@ -4030,7 +3950,7 @@
         "multi": false,
         "name": "startid",
         "options": [],
-        "query": "SELECT sample_id as StartID\nFROM samples\nWHERE\n  server_id = $profile_servers AND\n  sample_time < '${__from:date:iso}'\nORDER BY sample_id DESC\nLIMIT 1",
+        "query": "SELECT COALESCE(\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time < '${__from:date:iso}'\n  ORDER BY sample_id DESC\n  LIMIT 1),\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time > '${__from:date:iso}'\n  ORDER BY sample_id ASC\n  LIMIT 1)\n) as StartID",
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
@@ -4041,9 +3961,9 @@
         "current": {},
         "datasource": {
           "type": "postgres",
-          "uid": "${DS_PG15_PROFILE}"
+          "uid": "${ProfileDB}"
         },
-        "definition": "SELECT sample_id as EndID\nFROM samples\nWHERE\n  server_id = $profile_servers AND\n  sample_time > '${__to:date:iso}'\nORDER BY sample_id ASC\nLIMIT 1",
+        "definition": "SELECT COALESCE(\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time < '${__to:date:iso}'\n  ORDER BY sample_id DESC\n  LIMIT 1),\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time > '${__to:date:iso}'\n  ORDER BY sample_id ASC\n  LIMIT 1)\n) as StartID",
         "description": "Sample identifier of the current range end",
         "hide": 2,
         "includeAll": false,
@@ -4051,7 +3971,7 @@
         "multi": false,
         "name": "endid",
         "options": [],
-        "query": "SELECT sample_id as EndID\nFROM samples\nWHERE\n  server_id = $profile_servers AND\n  sample_time > '${__to:date:iso}'\nORDER BY sample_id ASC\nLIMIT 1",
+        "query": "SELECT COALESCE(\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time < '${__to:date:iso}'\n  ORDER BY sample_id DESC\n  LIMIT 1),\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time > '${__to:date:iso}'\n  ORDER BY sample_id ASC\n  LIMIT 1)\n) as StartID",
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
@@ -4062,7 +3982,7 @@
         "current": {},
         "datasource": {
           "type": "postgres",
-          "uid": "${DS_PG15_PROFILE}"
+          "uid": "${ProfileDB}"
         },
         "definition": "SELECT extract(epoch from min(sample_time))*1000 + 1 as min_from\nFROM samples\nWHERE\n  server_id = $profile_servers",
         "description": "Minimal time for the current server",
@@ -4082,16 +4002,16 @@
         "current": {},
         "datasource": {
           "type": "postgres",
-          "uid": "${DS_PG15_PROFILE}"
+          "uid": "${ProfileDB}"
         },
-        "definition": "SELECT extract(epoch from max(sample_time))*1000 - 1 as max_to\nFROM samples\nWHERE\n  server_id = $profile_servers",
+        "definition": "SELECT extract(epoch from max(sample_time))*1000 + 1 as max_to\nFROM samples\nWHERE\n  server_id = $profile_servers",
         "description": "Maximum time for the current server",
         "hide": 2,
         "includeAll": false,
         "multi": false,
         "name": "max_to",
         "options": [],
-        "query": "SELECT extract(epoch from max(sample_time))*1000 - 1 as max_to\nFROM samples\nWHERE\n  server_id = $profile_servers",
+        "query": "SELECT extract(epoch from max(sample_time))*1000 + 1 as max_to\nFROM samples\nWHERE\n  server_id = $profile_servers",
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
@@ -4100,13 +4020,8 @@
       }
     ]
   },
-  "time": {
-    "from": "2022-03-31T12:54:44.001Z",
-    "to": "2022-04-14T07:10:00.999Z"
-  },
   "timepicker": {
     "refresh_intervals": [
-      "5m",
       "15m",
       "30m",
       "1h",
@@ -4114,7 +4029,6 @@
       "1d"
     ]
   },
-  "timezone": "utc",
   "title": "pg_profile summary",
   "uid": "5ClQqjK4l",
   "version": 7,
