@@ -18,6 +18,9 @@ If *pg_wait_sampling* extension is available, _pg_profile_ will collect summary 
 
 *pg_profile*, installed in one cluster is able to collect statistics from other clusters, called *servers*. You just need to define some servers, providing names and connection strings and make sure connection can be established to all databases of all *servers*. Now you can track, for example, statistics on your standbys from master, or from any other server. Once extension is installed, a *local* server is automatically created - this is a server for cluster where *pg_profile* resides.
 
+## Grafana dashboard ##
+There are some grafana dashboards provided in the grafana folder of the project. They have separate [documentation](../grafana/README.md).
+
 ## Extension architecture
 
 Extension consists of four parts:

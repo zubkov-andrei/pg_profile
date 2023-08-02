@@ -17,6 +17,9 @@ Report examples:
 * [Regular report from Postgres 15 database](https://zubkov-andrei.github.io/pg_profile/report_examples/pg15.html)
 * [Differential report from Postgres 15 database](https://zubkov-andrei.github.io/pg_profile/report_examples/pg15_diff.html)
 
+## Grafana dashboard ##
+There are some grafana dashboards provided in the grafana folder of the project. They have separate [documentation](grafana/README.md).
+
 ## Prerequisites
 
 Although pg_profile is usually installed in the target cluster, it also can collect performance data from other clusters. Hence, we have prerequisites for *pg_profile* database, and for *servers*.
