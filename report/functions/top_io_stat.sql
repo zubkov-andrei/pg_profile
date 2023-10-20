@@ -150,7 +150,7 @@ RETURNS TABLE (
       COALESCE(heap_blks_fetch, 0) + COALESCE(idx_blks_fetch, 0) + COALESCE(toast_blks_fetch, 0) + COALESCE(tidx_blks_fetch, 0) > 0
     THEN
       row_number() OVER (ORDER BY
-        COALESCE(heap_blks_read, 0) + COALESCE(idx_blks_read, 0) + COALESCE(toast_blks_read, 0) + COALESCE(tidx_blks_read, 0)
+        COALESCE(heap_blks_fetch, 0) + COALESCE(idx_blks_fetch, 0) + COALESCE(toast_blks_fetch, 0) + COALESCE(tidx_blks_fetch, 0)
       DESC NULLS LAST,
       datid,
       relid)::integer
@@ -286,8 +286,8 @@ RETURNS TABLE (
       COALESCE(rel2.heap_blks_fetch, 0) + COALESCE(rel2.idx_blks_fetch, 0) + COALESCE(rel2.toast_blks_fetch, 0) + COALESCE(rel2.tidx_blks_fetch, 0) > 0
     THEN
       row_number() OVER (ORDER BY
-        COALESCE(rel1.heap_blks_read, 0) + COALESCE(rel1.idx_blks_read, 0) + COALESCE(rel1.toast_blks_read, 0) + COALESCE(rel1.tidx_blks_read, 0) +
-        COALESCE(rel2.heap_blks_read, 0) + COALESCE(rel2.idx_blks_read, 0) + COALESCE(rel2.toast_blks_read, 0) + COALESCE(rel2.tidx_blks_read, 0)
+        COALESCE(rel1.heap_blks_fetch, 0) + COALESCE(rel1.idx_blks_fetch, 0) + COALESCE(rel1.toast_blks_fetch, 0) + COALESCE(rel1.tidx_blks_fetch, 0) +
+        COALESCE(rel2.heap_blks_fetch, 0) + COALESCE(rel2.idx_blks_fetch, 0) + COALESCE(rel2.toast_blks_fetch, 0) + COALESCE(rel2.tidx_blks_fetch, 0)
       DESC NULLS LAST,
       COALESCE(rel1.datid, rel2.datid),
       COALESCE(rel1.relid, rel2.relid))::integer

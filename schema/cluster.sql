@@ -80,3 +80,64 @@ ALTER TABLE last_stat_archiver ADD CONSTRAINT pk_last_stat_archiver_samples
 ALTER TABLE last_stat_archiver ADD CONSTRAINT fk_last_stat_archiver_samples
   FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT;
 COMMENT ON TABLE last_stat_archiver IS 'Last sample data for calculating diffs in next sample';
+
+CREATE TABLE sample_stat_io
+(
+    server_id                   integer,
+    sample_id                   integer,
+    backend_type                text,
+    object                      text,
+    context                     text,
+    reads                       bigint,
+    read_time                   double precision,
+    writes                      bigint,
+    write_time                  double precision,
+    writebacks                  bigint,
+    writeback_time              double precision,
+    extends                     bigint,
+    extend_time                 double precision,
+    op_bytes                    bigint,
+    hits                        bigint,
+    evictions                   bigint,
+    reuses                      bigint,
+    fsyncs                      bigint,
+    fsync_time                  double precision,
+    stats_reset                 timestamp with time zone,
+    CONSTRAINT pk_sample_stat_io PRIMARY KEY (server_id, sample_id, backend_type, object, context),
+    CONSTRAINT fk_sample_stat_io_samples FOREIGN KEY (server_id, sample_id)
+      REFERENCES samples (server_id, sample_id) ON DELETE CASCADE
+);
+COMMENT ON TABLE sample_stat_io IS 'Sample IO statistics table (fields from pg_stat_io)';
+
+CREATE TABLE last_stat_io (LIKE sample_stat_io);
+ALTER TABLE last_stat_io ADD CONSTRAINT pk_last_stat_io_samples
+  PRIMARY KEY (server_id, sample_id, backend_type, object, context);
+ALTER TABLE last_stat_io ADD CONSTRAINT fk_last_stat_io_samples
+  FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT;
+COMMENT ON TABLE last_stat_io IS 'Last sample data for calculating diffs in next sample';
+
+CREATE TABLE sample_stat_slru
+(
+    server_id     integer,
+    sample_id     integer,
+    name          text,
+    blks_zeroed   bigint,
+    blks_hit      bigint,
+    blks_read     bigint,
+    blks_written  bigint,
+    blks_exists   bigint,
+    flushes       bigint,
+    truncates     bigint,
+    stats_reset   timestamp with time zone,
+    CONSTRAINT pk_sample_stat_slru PRIMARY KEY (server_id, sample_id, name),
+    CONSTRAINT fk_sample_stat_slru_samples FOREIGN KEY (server_id, sample_id)
+      REFERENCES samples (server_id, sample_id) ON DELETE CASCADE
+);
+COMMENT ON TABLE sample_stat_slru IS 'Sample SLRU statistics table (fields from pg_stat_slru)';
+
+CREATE TABLE last_stat_slru (LIKE sample_stat_slru);
+ALTER TABLE last_stat_slru ADD CONSTRAINT pk_last_stat_slru_samples
+  PRIMARY KEY (server_id, sample_id, name);
+ALTER TABLE last_stat_slru ADD CONSTRAINT fk_last_stat_slru_samples
+  FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT;
+COMMENT ON TABLE last_stat_slru IS 'Last sample data for calculating diffs in next sample';

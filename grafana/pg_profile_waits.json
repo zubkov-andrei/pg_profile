@@ -1,0 +1,1050 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "target": {
+          "limit": 100,
+          "matchAny": false,
+          "tags": [],
+          "type": "dashboard"
+        },
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 31,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Interval",
+      "tooltip": "",
+      "type": "link",
+      "url": "/d/${__dashboard.uid}﻿?var-ProfileDB=${ProfileDB}&var-profile_servers=${profile_servers}&from=${min_from}&to=${max_to}"
+    },
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [
+        "pg_profile"
+      ],
+      "targetBlank": false,
+      "title": "pg_profile dashboards",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    }
+  ],
+  "liveNow": false,
+  "panels": [
+    {
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 55,
+      "title": "Info",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Use provided pg_profile function call to get report of observable interval",
+      "gridPos": {
+        "h": 3,
+        "w": 3,
+        "x": 0,
+        "y": 1
+      },
+      "id": 69,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
+        "content": "get_report(${profile_servers},${startid},${endid})\n",
+        "mode": "markdown"
+      },
+      "pluginVersion": "9.3.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time < '${__from:date:iso}'\n  ORDER BY sample_id DESC\n  LIMIT 1),\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time > '${__from:date:iso}'\n  ORDER BY sample_id ASC\n  LIMIT 1)\n) as StartID",
+          "refId": "StartID",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        },
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "hide": false,
+          "rawQuery": true,
+          "rawSql": "SELECT sample_id as EndID\nFROM samples\nWHERE\n  server_id = $profile_servers AND\n  sample_time < '${__to:date:iso}'\nORDER BY sample_id DESC\nLIMIT 1",
+          "refId": "EndID",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Report generation",
+      "type": "text"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto",
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 9,
+        "x": 3,
+        "y": 1
+      },
+      "id": 71,
+      "options": {
+        "footer": {
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": false
+      },
+      "pluginVersion": "9.3.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  reset_val\nFROM settings_and_changes($profile_servers, $startid, $endid)\nWHERE name = 'version'\nORDER BY first_seen ASC",
+          "refId": "Version",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Version",
+      "type": "table"
+    },
+    {
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "id": 41,
+      "title": "Cluster statistics",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Summary pg_stat_statements  extension data",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Elapsed (s)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 0,
+        "y": 5
+      },
+      "id": 25,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "pluginVersion": "9.3.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  (coalesce(sum(total_plan_time), 0) + sum(total_exec_time)) / 1000 as \"Elapsed (s)\",\n  (sum(blk_read_time) + sum(blk_write_time)) / 1000 as \"I/O time (s)\"\nFROM sample_statements_total sst\nWHERE\n  sst.server_id = ${profile_servers}\n  AND sample_id BETWEEN $startid + 1 AND $endid \n",
+          "refId": "stmts_agg",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Overall statement times",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Overall time waited. Summary of pg_wait_sampling data.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Elapsed (s)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 4,
+        "y": 5
+      },
+      "id": 84,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "pluginVersion": "9.3.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  sum(tot_waited)/1000 as \"Total Waited (s)\",\n  sum(stmt_waited)/1000 as \"Statements Waited (s)\"\nFROM wait_sampling_total wst\nWHERE\n  wst.server_id = ${profile_servers}\n  AND wst.sample_id BETWEEN $startid + 1 AND $endid\n",
+          "refId": "stmts_agg",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Overall wait times",
+      "type": "stat"
+    },
+    {
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "id": 39,
+      "title": "Wait statistics",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Time waited in each wait event type per second from pg_wait_sampling extension (for statement waits)",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.wet}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "s/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 9
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  wst.event_type as wet,\n  sum(stmt_waited / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Waited\"\nFROM wait_sampling_total wst\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  wst.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, wst.event_type\nORDER BY time",
+          "refId": "tot_wet",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Statements wait event types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Time waited in each wait event type per second from pg_wait_sampling extension (for all waits)",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.wet}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "s/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 9
+      },
+      "id": 10,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  wst.event_type as wet,\n  sum(tot_waited / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Waited\"\nFROM wait_sampling_total wst\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  wst.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, wst.event_type\nORDER BY time",
+          "refId": "tot_wet",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Total wait event types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Time waited in each wait event per second from pg_wait_sampling extension (for statements $we_types waits)",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.we}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "s/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 17
+      },
+      "id": 11,
+      "maxPerRow": 12,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "repeat": "we_types",
+      "repeatDirection": "v",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  wst.event as we,\n  sum(stmt_waited / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Waited\"\nFROM wait_sampling_total wst\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  wst.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\n  AND wst.event_type = ${we_types}\nGROUP BY time, wst.event\nORDER BY time",
+          "refId": "tot_wet",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Statements wait events ($we_types)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Time waited in each wait event type per second from pg_wait_sampling extension (for $we_types waits)",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.we}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "s/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 17
+      },
+      "id": 3,
+      "maxPerRow": 12,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "repeat": "we_types",
+      "repeatDirection": "v",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  wst.event as we,\n  sum(tot_waited / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Waited\"\nFROM wait_sampling_total wst\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  wst.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\n  AND wst.event_type = $we_types\nGROUP BY time, wst.event\nORDER BY time",
+          "refId": "tot_wet",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Total wait events ($we_types)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": false,
+  "schemaVersion": 37,
+  "style": "dark",
+  "tags": [
+    "pg_profile"
+  ],
+  "templating": {
+    "list": [
+      {
+        "hide": 0,
+        "includeAll": false,
+        "label": "Database with pg_profile extension",
+        "multi": false,
+        "name": "ProfileDB",
+        "options": [],
+        "query": "postgres",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "datasource": {
+          "type": "postgres",
+          "uid": "${ProfileDB}"
+        },
+        "definition": "select server_id as __value, server_name as __text FROM servers",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Server",
+        "multi": false,
+        "name": "profile_servers",
+        "options": [],
+        "query": "select server_id as __value, server_name as __text FROM servers",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "datasource": {
+          "type": "postgres",
+          "uid": "${ProfileDB}"
+        },
+        "definition": "SELECT COALESCE(\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time < '${__from:date:iso}'\n  ORDER BY sample_id DESC\n  LIMIT 1),\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time > '${__from:date:iso}'\n  ORDER BY sample_id ASC\n  LIMIT 1)\n) as StartID",
+        "description": "Sample identifier of range start",
+        "hide": 2,
+        "includeAll": false,
+        "label": "StartID",
+        "multi": false,
+        "name": "startid",
+        "options": [],
+        "query": "SELECT COALESCE(\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time < '${__from:date:iso}'\n  ORDER BY sample_id DESC\n  LIMIT 1),\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time > '${__from:date:iso}'\n  ORDER BY sample_id ASC\n  LIMIT 1)\n) as StartID",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "datasource": {
+          "type": "postgres",
+          "uid": "${ProfileDB}"
+        },
+        "definition": "SELECT COALESCE(\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time < '${__to:date:iso}'\n  ORDER BY sample_id DESC\n  LIMIT 1),\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time > '${__to:date:iso}'\n  ORDER BY sample_id ASC\n  LIMIT 1)\n) as StartID",
+        "description": "Sample identifier of the current range end",
+        "hide": 2,
+        "includeAll": false,
+        "label": "EndID",
+        "multi": false,
+        "name": "endid",
+        "options": [],
+        "query": "SELECT COALESCE(\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time < '${__to:date:iso}'\n  ORDER BY sample_id DESC\n  LIMIT 1),\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time > '${__to:date:iso}'\n  ORDER BY sample_id ASC\n  LIMIT 1)\n) as StartID",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "datasource": {
+          "type": "postgres",
+          "uid": "${ProfileDB}"
+        },
+        "definition": "SELECT extract(epoch from min(sample_time))*1000 + 1 as min_from\nFROM samples\nWHERE\n  server_id = $profile_servers",
+        "description": "Minimal time for the current server",
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "min_from",
+        "options": [],
+        "query": "SELECT extract(epoch from min(sample_time))*1000 + 1 as min_from\nFROM samples\nWHERE\n  server_id = $profile_servers",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "datasource": {
+          "type": "postgres",
+          "uid": "${ProfileDB}"
+        },
+        "definition": "SELECT extract(epoch from max(sample_time))*1000 + 1 as max_to\nFROM samples\nWHERE\n  server_id = $profile_servers",
+        "description": "Maximum time for the current server",
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "max_to",
+        "options": [],
+        "query": "SELECT extract(epoch from max(sample_time))*1000 + 1 as max_to\nFROM samples\nWHERE\n  server_id = $profile_servers",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "datasource": {
+          "type": "postgres",
+          "uid": "${ProfileDB}"
+        },
+        "definition": "SELECT\n  event_type AS __value\nFROM\n  wait_sampling_total\nWHERE\n  server_id = $profile_servers\n  AND sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY event_type\nORDER BY sum(tot_waited) DESC;",
+        "description": "Types of wait event available for interval",
+        "hide": 2,
+        "includeAll": true,
+        "multi": true,
+        "name": "we_types",
+        "options": [],
+        "query": "SELECT\n  event_type AS __value\nFROM\n  wait_sampling_total\nWHERE\n  server_id = $profile_servers\n  AND sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY event_type\nORDER BY sum(tot_waited) DESC;",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      }
+    ]
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "15m",
+      "30m",
+      "1h",
+      "2h",
+      "1d"
+    ]
+  },
+  "timezone": "browser",
+  "title": "pg_profile wait statistics",
+  "uid": "rYCwgCZSz",
+  "version": 34,
+  "weekStart": ""
+}

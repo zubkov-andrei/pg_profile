@@ -1,5 +1,14 @@
 # pg_profile changelog
 
+## 4.3
+- Postgres 16 supported
+- data collection supported for *pg_stat_slru*
+- New report section "Cluster I/O statistics" (for Postgres 16)
+- New report section "Cluster SLRU statistics"
+- New report section "Top tables by new-page updated tuples" (for Postgres 16)
+- Highlight of topics in table of contents sidebar containing selected object data (@Djoongaar)
+- Privileges. Every user can now build a report, but the *pg_read_all_stats* role must be granted to user to see query texts. See [Privileges](doc/pg_profile.md#privileges)
+
 ## 4.2
 - Interactive reports.
 - _max_sample_age_ field added to the output of show_servers() function. (Reported by @bat-manav in #40)

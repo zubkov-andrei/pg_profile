@@ -463,8 +463,8 @@ BEGIN
             'kc.nvcsws as exec_nvcsws,'
             'kc.nivcsws as exec_nivcsws '
           );
-        -- pg_stat_kcache v.2.2.0, 2.2.1
-        WHEN '2.2.0', '2.2.1' THEN
+        -- pg_stat_kcache v.2.2.0, 2.2.1, 2.2.2
+        WHEN '2.2.0', '2.2.1', '2.2.2' THEN
           st_query := replace(st_query, '{kcache_fields}',
             'kc.top as toplevel,'
             'kc.plan_user_time as plan_user_time,'
@@ -671,7 +671,7 @@ BEGIN
       VALUES (
           sserver_id,
           NULL,
-          md5(qres.query),
+          md5(COALESCE(qres.query, '')),
           qres.query
         )
       ON CONFLICT ON CONSTRAINT pk_stmt_list
@@ -682,7 +682,7 @@ BEGIN
       -- bind queryid to queryid_md5 for this sample
       -- different text queries can have the same queryid
       -- between samples
-      UPDATE last_stat_statements SET queryid_md5 = md5(qres.query)
+      UPDATE last_stat_statements SET queryid_md5 = md5(COALESCE(qres.query, ''))
       WHERE (server_id, sample_id, userid, datid, toplevel, queryid) =
         (sserver_id, s_id, qres.userid, qres.datid, qres.toplevel, qres.queryid);
     END LOOP; -- over sample statements
@@ -1118,10 +1118,11 @@ SET search_path=@extschema@ AS $$
     cur.toplevel
   FROM
     last_stat_kcache cur JOIN last_stat_statements sst ON
-      (sst.server_id, sst.sample_id, sst.userid, sst.datid, sst.queryid, sst.toplevel) =
-      (cur.server_id, cur.sample_id, cur.userid, cur.datid, cur.queryid, cur.toplevel)
+      (sst.server_id, cur.server_id, sst.sample_id, sst.userid, sst.datid, sst.queryid, sst.toplevel) =
+      (sserver_id, sserver_id, cur.sample_id, cur.userid, cur.datid, cur.queryid, cur.toplevel)
   WHERE
-    (cur.server_id, cur.sample_id, sst.in_sample) = (sserver_id, s_id, true);
+    (cur.server_id, cur.sample_id, sst.in_sample) = (sserver_id, s_id, true)
+    AND sst.queryid_md5 IS NOT NULL;
 
   -- Aggregated pg_stat_kcache data
   INSERT INTO sample_kcache_total(

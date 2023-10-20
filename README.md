@@ -14,15 +14,15 @@ Any time you take a sample, _pg_stat_statements_reset()_ will be called, ensurin
 *pg_profile*, installed in one cluster is able to collect statistics from other clusters, called *servers*. You just need to define some servers, providing names and connection strings and make sure connection can be established to all databases of all defined servers. Now you can track statistics on your standbys from master, or from any other server. Once extension is installed, a *local* server is automatically created - this is a *server* for cluster where *pg_profile* resides.
 
 Report examples:
-* [Regular report from Postgres 15 database](https://zubkov-andrei.github.io/pg_profile/report_examples/pg15.html)
-* [Differential report from Postgres 15 database](https://zubkov-andrei.github.io/pg_profile/report_examples/pg15_diff.html)
+* [Regular report from Postgres 16 database](https://zubkov-andrei.github.io/pg_profile/report_examples/pg16.html)
+* [Differential report from Postgres 16 database](https://zubkov-andrei.github.io/pg_profile/report_examples/pg16_diff.html)
 
 ## Grafana dashboard ##
 There are some grafana dashboards provided in the grafana folder of the project. They have separate [documentation](grafana/README.md).
 
 ## Prerequisites
 
-Although pg_profile is usually installed in the target cluster, it also can collect performance data from other clusters. Hence, we have prerequisites for *pg_profile* database, and for *servers*.
+Although *pg_profile* is usually installed in the target cluster, it also can collect performance data from other clusters. Hence, we have prerequisites for *pg_profile* database, and for *servers*.
 
 ### pg_profile database prerequisites
 
@@ -51,6 +51,7 @@ If CPU and filesystem statistics is needed, consider installing *pg_stat_kcache*
 
 ## Supported versions
 ## PostgreSQL
+* **16** supported since version 4.3
 * **15** supported since version 4.1
 * **14** supported since version 0.3.4
 * **13** supported since version 0.1.3
@@ -60,6 +61,7 @@ If CPU and filesystem statistics is needed, consider installing *pg_stat_kcache*
 * **1.9** supported since version 4.0
 * **1.8** supported since version 0.1.2
 ## _pg_stat_kcache_ extension
+* **2.2.2** supported since version 4.3
 * **2.2.1** supported since version 4.0
 * **2.2.0** supported since version 0.3.1
 * **2.1.3** supported since version 0.2.1

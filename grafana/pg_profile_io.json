@@ -2,72 +2,6 @@
   "annotations": {
     "list": [
       {
-        "datasource": {
-          "type": "postgres",
-          "uid": "${ProfileDB}"
-        },
-        "enable": true,
-        "iconColor": "semi-dark-green",
-        "name": "Server starts",
-        "target": {
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  setting::timestamptz as time,\n  'postmaster started' as text\nFROM sample_settings \nWHERE \n  server_id = $profile_servers AND\n  name = 'pg_postmaster_start_time' AND \n  setting::timestamptz BETWEEN $__timeFrom() AND $__timeTo() \nORDER BY time ASC",
-          "refId": "Anno",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      },
-      {
-        "datasource": {
-          "type": "postgres",
-          "uid": "${ProfileDB}"
-        },
-        "enable": true,
-        "iconColor": "semi-dark-yellow",
-        "name": "Configuration loads",
-        "target": {
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  setting::timestamptz as time,\n  'configuration loaded' as text\nFROM sample_settings \nWHERE \n  server_id = $profile_servers AND\n  name = 'pg_conf_load_time' AND \n  setting::timestamptz BETWEEN $__timeFrom() AND $__timeTo() \nORDER BY time ASC",
-          "refId": "Anno",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      },
-      {
         "builtIn": 1,
         "datasource": {
           "type": "grafana",
@@ -87,11 +21,10 @@
       }
     ]
   },
-  "description": "",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 29,
+  "id": 32,
   "links": [
     {
       "asDropdown": false,
@@ -107,7 +40,7 @@
     },
     {
       "asDropdown": true,
-      "icon": "dashboard",
+      "icon": "external link",
       "includeVars": true,
       "keepTime": true,
       "tags": [
@@ -123,15 +56,13 @@
   "liveNow": false,
   "panels": [
     {
-      "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
         "y": 0
       },
-      "id": 64,
-      "panels": [],
+      "id": 55,
       "title": "Info",
       "type": "row"
     },
@@ -147,7 +78,7 @@
         "x": 0,
         "y": 1
       },
-      "id": 30,
+      "id": 69,
       "options": {
         "code": {
           "language": "plaintext",
@@ -255,7 +186,7 @@
         "x": 3,
         "y": 1
       },
-      "id": 47,
+      "id": 71,
       "options": {
         "footer": {
           "fields": "",
@@ -301,146 +232,15 @@
       "type": "table"
     },
     {
-      "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
         "y": 4
       },
-      "id": 39,
-      "panels": [],
-      "title": "Cluster stats",
+      "id": 41,
+      "title": "Cluster statistics",
       "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "${ProfileDB}"
-      },
-      "description": "LSN and pg_stat_archiver increment",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          },
-          "unit": "none"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Write time"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "s"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Bytes"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "bytes"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Archive failed"
-            },
-            "properties": [
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": null
-                    },
-                    {
-                      "color": "red",
-                      "value": 1
-                    }
-                  ]
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 3,
-        "w": 6,
-        "x": 0,
-        "y": 5
-      },
-      "id": 33,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "pluginVersion": "9.3.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "${ProfileDB}"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  sum(wal_size) as \"Bytes\",\n  sum(archived_count) as \"Archived\",\n  sum(failed_count) as \"Archive failed\"\nFROM sample_stat_cluster sc JOIN sample_stat_archiver sa USING (server_id, sample_id)\nWHERE\n  sc.server_id = ${profile_servers}\n  AND sample_id BETWEEN $startid + 1 AND $endid \n",
-          "refId": "WAL",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
-      "title": "WAL",
-      "type": "stat"
     },
     {
       "datasource": {
@@ -483,10 +283,10 @@
       "gridPos": {
         "h": 3,
         "w": 4,
-        "x": 6,
+        "x": 0,
         "y": 5
       },
-      "id": 62,
+      "id": 25,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -511,7 +311,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  (coalesce(sum(total_plan_time), 0) + sum(total_exec_time)) / 1000 as \"Elapsed (s)\",\n  (sum(blk_read_time) + sum(blk_write_time)) / 1000 as \"I/O time (s)\"\nFROM sample_statements_total sst\nWHERE\n  sst.server_id = ${profile_servers}\n  AND sample_id BETWEEN $startid + 1 AND $endid \n",
+          "rawSql": "SELECT\n  (coalesce(sum(total_plan_time), 0) + sum(total_exec_time)) / 1000 as \"Elapsed (s)\",\n  round(sum(blk_read_time)::numeric / 1000, 2) as \"Read time (s)\",\n  round(sum(blk_write_time)::numeric / 1000, 2) as \"Write time (s)\"\nFROM sample_statements_total sst\nWHERE\n  sst.server_id = ${profile_servers}\n  AND sample_id BETWEEN $startid + 1 AND $endid \n",
           "refId": "stmts_agg",
           "sql": {
             "columns": [
@@ -540,98 +340,7 @@
         "type": "postgres",
         "uid": "${ProfileDB}"
       },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "max": 100,
-          "min": 0,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 80
-              },
-              {
-                "color": "yellow",
-                "value": 95
-              },
-              {
-                "color": "green",
-                "value": 99
-              }
-            ]
-          },
-          "unit": "%"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 3,
-        "x": 10,
-        "y": 5
-      },
-      "id": 37,
-      "options": {
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true
-      },
-      "pluginVersion": "9.3.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "${ProfileDB}"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  sum(blks_hit) * 100 / nullif(sum(blks_hit) + sum(blks_read), 0)\nFROM sample_stat_database sd\nWHERE\n  sd.server_id = ${profile_servers}\n  AND NOT datistemplate\n  AND sample_id BETWEEN $startid  + 1 AND $endid \n",
-          "refId": "Hit Ratio",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
-      "title": "Overall Hit Ratio",
-      "type": "gauge"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "${ProfileDB}"
-      },
-      "description": "Summary transaction data from pg_stat_database view",
+      "description": "pg_stat_database summary",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -646,18 +355,19 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "none"
         },
         "overrides": [
           {
             "matcher": {
               "id": "byName",
-              "options": "Size"
+              "options": "Elapsed (s)"
             },
             "properties": [
               {
                 "id": "unit",
-                "value": "bytes"
+                "value": "none"
               }
             ]
           }
@@ -666,10 +376,10 @@
       "gridPos": {
         "h": 3,
         "w": 4,
-        "x": 0,
-        "y": 8
+        "x": 4,
+        "y": 5
       },
-      "id": 55,
+      "id": 124,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -694,8 +404,8 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  sum(temp_files) as \"Files\",\n  sum(temp_bytes) as \"Size\"\nFROM sample_stat_database sc\nWHERE\n  sc.server_id = ${profile_servers}\n  AND sample_id BETWEEN $startid + 1 AND $endid ",
-          "refId": "Temporary files",
+          "rawSql": "SELECT\n  round(sum(blk_read_time)::numeric / 1000, 2) as \"Read time (s)\",\n  round(sum(blk_write_time)::numeric / 1000, 2) as \"Write time (s)\"\nFROM sample_stat_database sst\nWHERE\n  sst.server_id = ${profile_servers}\n  AND sample_id BETWEEN $startid + 1 AND $endid \n",
+          "refId": "stmts_agg",
           "sql": {
             "columns": [
               {
@@ -715,918 +425,20 @@
           }
         }
       ],
-      "title": "Temporary files",
+      "title": "Cluster summary",
       "type": "stat"
     },
     {
-      "datasource": {
-        "type": "postgres",
-        "uid": "${ProfileDB}"
-      },
-      "description": "Summary transaction data from pg_stat_database view",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Deadlocks"
-            },
-            "properties": [
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": null
-                    },
-                    {
-                      "color": "red",
-                      "value": 1
-                    }
-                  ]
-                }
-              }
-            ]
-          }
-        ]
-      },
+      "collapsed": false,
       "gridPos": {
-        "h": 3,
-        "w": 6,
-        "x": 4,
+        "h": 1,
+        "w": 24,
+        "x": 0,
         "y": 8
       },
-      "id": 35,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "pluginVersion": "9.3.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "${ProfileDB}"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  sum(xact_commit) as \"Commit\",\n  sum(xact_rollback) as \"Rollback\",\n  sum(deadlocks) as \"Deadlocks\"\nFROM sample_stat_database sc\nWHERE\n  sc.server_id = ${profile_servers}\n  AND sample_id BETWEEN $startid + 1 AND $endid \n",
-          "refId": "xact",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
-      "title": "Transactions",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "${ProfileDB}"
-      },
-      "description": "Commit rate data from pg_stat_database view",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 52,
-            "gradientMode": "opacity",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "si:tps"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 11
-      },
-      "id": 81,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "${ProfileDB}"
-          },
-          "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sum(xact_rollback) / extract(epoch from smpe.sample_time - smps.sample_time) as \"Rollbacks\",\n  sum(xact_commit) / extract(epoch from smpe.sample_time - smps.sample_time) as \"Commits\"\nFROM sample_stat_database sd JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sd.server_id = ${profile_servers}\n  AND NOT datistemplate\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY smpe.sample_time, smps.sample_time\nORDER BY time",
-          "refId": "xact",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
-      "title": "Transactions",
-      "type": "timeseries"
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 19
-      },
-      "id": 41,
+      "id": 111,
       "panels": [],
-      "title": "Database Sizes",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "${ProfileDB}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 52,
-            "gradientMode": "opacity",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "displayName": "${__field.labels.database}",
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "bytes"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 20
-      },
-      "id": 45,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "${ProfileDB}"
-          },
-          "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sd.datname as database,\n  sd.datsize\nFROM sample_stat_database sd JOIN samples smpe USING (server_id, sample_id)\nWHERE\n  sd.server_id = ${profile_servers}\n  AND NOT datistemplate\n  AND sd.sample_id BETWEEN $startid + 1 AND $endid \nORDER BY time",
-          "refId": "A",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
-      "title": "Database sizes",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "${ProfileDB}"
-      },
-      "description": "Cluster size - summary databases size",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 52,
-            "gradientMode": "opacity",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "displayName": "Cluster size",
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "bytes"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 20
-      },
-      "id": 82,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "${ProfileDB}"
-          },
-          "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sum(sd.datsize)\nFROM sample_stat_database sd JOIN samples smpe USING (server_id, sample_id)\nWHERE\n  sd.server_id = ${profile_servers}\n  AND NOT datistemplate\n  AND sd.sample_id BETWEEN $startid + 1 AND $endid \nGROUP BY smpe.sample_time\nORDER BY time",
-          "refId": "A",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
-      "title": "Cluster size",
-      "type": "timeseries"
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 28
-      },
-      "id": 12,
-      "panels": [],
-      "title": "Transactions",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "${ProfileDB}"
-      },
-      "description": "Commit rate data from pg_stat_database view",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 52,
-            "gradientMode": "opacity",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "displayName": "${__field.labels.database}",
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "si:tps"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 29
-      },
-      "id": 8,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "${ProfileDB}"
-          },
-          "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sd.datname as database,\n  xact_commit / extract(epoch from smpe.sample_time - smps.sample_time) as buffers_clean\nFROM sample_stat_database sd JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sd.server_id = ${profile_servers}\n  AND NOT datistemplate\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nORDER BY time",
-          "refId": "A",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
-      "title": "Commits by database",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "${ProfileDB}"
-      },
-      "description": "Rollback rate data from pg_stat_database view",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 52,
-            "gradientMode": "opacity",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "displayName": "${__field.labels.database}",
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "tps"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 29
-      },
-      "id": 10,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "${ProfileDB}"
-          },
-          "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sd.datname as database,\n  xact_rollback / extract(epoch from smpe.sample_time - smps.sample_time) as rollback\nFROM sample_stat_database sd JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sd.server_id = ${profile_servers}\n  AND NOT datistemplate\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nORDER BY time",
-          "refId": "A",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
-      "title": "Rollbacks by database",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "${ProfileDB}"
-      },
-      "description": "Cluster session statistics from pg_stat_database. Available since Postgres 14",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "cps"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 37
-      },
-      "id": 79,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "${ProfileDB}"
-          },
-          "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sum(sessions) / extract(epoch from min(smpe.sample_time) - min(smps.sample_time)) as sessions,\n  sum(sessions_abandoned) / extract(epoch from min(smpe.sample_time) - min(smps.sample_time)) as sessions_abandoned,\n  sum(sessions_fatal) / extract(epoch from min(smpe.sample_time) - min(smps.sample_time)) as sessions_fatal,\n  sum(sessions_killed) / extract(epoch from min(smpe.sample_time) - min(smps.sample_time)) as sessions_killed\nFROM sample_stat_database sd JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sd.server_id = ${profile_servers}\n  AND NOT datistemplate\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY smpe.sample_time\nORDER BY time\n",
-          "refId": "Sessions",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
-      "title": "Sessions",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "${ProfileDB}"
-      },
-      "description": "Cluster session timing statistics from pg_stat_database. Available since Postgres 14",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "s/s"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 37
-      },
-      "id": 80,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "${ProfileDB}"
-          },
-          "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sum(session_time) / 1000 / extract(epoch from min(smpe.sample_time) - min(smps.sample_time)) as session_time,\n  sum(active_time) / 1000  / extract(epoch from min(smpe.sample_time) - min(smps.sample_time)) as active_time,\n  sum(idle_in_transaction_time) / 1000  / extract(epoch from min(smpe.sample_time) - min(smps.sample_time)) as idle_in_transaction_time\nFROM sample_stat_database sd JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sd.server_id = ${profile_servers}\n  AND NOT datistemplate\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY smpe.sample_time\nORDER BY time\n",
-          "refId": "Sessions",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
-      "title": "Session times",
-      "type": "timeseries"
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 45
-      },
-      "id": 6,
-      "panels": [],
-      "title": "Cluster I/O",
+      "title": "Cluster I/O (based on pg_stat_bgwriter and pg_stat_database)",
       "type": "row"
     },
     {
@@ -1695,9 +507,9 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 46
+        "y": 9
       },
-      "id": 4,
+      "id": 113,
       "options": {
         "legend": {
           "calcs": [],
@@ -1807,9 +619,9 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 46
+        "y": 9
       },
-      "id": 26,
+      "id": 115,
       "options": {
         "legend": {
           "calcs": [],
@@ -1902,7 +714,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1918,9 +731,9 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 54
+        "y": 17
       },
-      "id": 14,
+      "id": 117,
       "options": {
         "legend": {
           "calcs": [],
@@ -2013,7 +826,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2029,9 +843,9 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 54
+        "y": 17
       },
-      "id": 31,
+      "id": 119,
       "options": {
         "legend": {
           "calcs": [],
@@ -2140,9 +954,9 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 62
+        "y": 25
       },
-      "id": 18,
+      "id": 121,
       "options": {
         "legend": {
           "calcs": [],
@@ -2254,9 +1068,9 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 62
+        "y": 25
       },
-      "id": 16,
+      "id": 123,
       "options": {
         "legend": {
           "calcs": [],
@@ -2308,11 +1122,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 70
+        "y": 33
       },
-      "id": 20,
+      "id": 39,
       "panels": [],
-      "title": "Write Ahead Log",
+      "title": "Backends I/O (based on pg_stat_io)",
       "type": "row"
     },
     {
@@ -2320,7 +1134,7 @@
         "type": "postgres",
         "uid": "${ProfileDB}"
       },
-      "description": "LSN increment and wal_bytes summary of pg_stat_statements",
+      "description": "",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2356,16 +1170,21 @@
               "mode": "off"
             }
           },
+          "displayName": "${__field.labels.bt}",
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
                 "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
               }
             ]
           },
-          "unit": "binBps"
+          "unit": "rps"
         },
         "overrides": []
       },
@@ -2373,7 +1192,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 71
+        "y": 34
       },
       "id": 2,
       "options": {
@@ -2397,37 +1216,8 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  wal_size / extract(epoch from smpe.sample_time - smps.sample_time) as \"Cluster WAL\"\nFROM sample_stat_cluster sc \n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sc.server_id = ${profile_servers}\n  AND $__timeFilter(smpe.sample_time)\nORDER BY time",
-          "refId": "Cluster WAL",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        },
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "${ProfileDB}"
-          },
-          "editorMode": "code",
-          "format": "time_series",
-          "hide": false,
-          "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sum(wal_bytes) / extract(epoch from smpe.sample_time - smps.sample_time) as \"Statements WAL\"\nFROM sample_statements_total sst \n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sst.server_id = ${profile_servers}\n  AND $__timeFilter(smpe.sample_time)\nGROUP BY smpe.sample_time, smps.sample_time\nORDER BY time",
-          "refId": "Statements WAL",
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.backend_type as bt,\n  sum(reads / extract(epoch from smpe.sample_time - smps.sample_time)) as \"Reads\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, bt\nORDER BY time",
+          "refId": "stat_io",
           "sql": {
             "columns": [
               {
@@ -2447,7 +1237,7 @@
           }
         }
       ],
-      "title": "WAL",
+      "title": "Reads by backend types",
       "type": "timeseries"
     },
     {
@@ -2455,7 +1245,7 @@
         "type": "postgres",
         "uid": "${ProfileDB}"
       },
-      "description": "Based on pg_stat_archiver view",
+      "description": "",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2491,6 +1281,7 @@
               "mode": "off"
             }
           },
+          "displayName": "${__field.labels.bt}",
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
@@ -2501,454 +1292,6 @@
               {
                 "color": "red",
                 "value": 80
-              }
-            ]
-          },
-          "unit": "segs/min"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "failed"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "red",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 71
-      },
-      "id": 22,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "${ProfileDB}"
-          },
-          "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  archived_count * 60 / extract(epoch from smpe.sample_time - smps.sample_time) as archived,\n  failed_count * 60 / extract(epoch from smpe.sample_time - smps.sample_time) as failed\nFROM sample_stat_archiver sa JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sa.server_id = ${profile_servers}\n  AND $__timeFilter(smpe.sample_time)\nORDER BY time",
-          "refId": "Archiver",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
-      "title": "WAL Archiving",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "${ProfileDB}"
-      },
-      "description": "WAL records rate from pg_stat_wal view. Available since Postgres 14",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "si:r/s"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 79
-      },
-      "id": 57,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "${ProfileDB}"
-          },
-          "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  wal_records / extract(epoch from smpe.sample_time - smps.sample_time) as wrps\nFROM sample_stat_wal sw JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sw.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nORDER BY time",
-          "refId": "WAL Records",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
-      "title": "WAL records",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "${ProfileDB}"
-      },
-      "description": "WAL FPI rate from pg_stat_wal view. Available since Postgres 14",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": " fpi/s"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 79
-      },
-      "id": 58,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "${ProfileDB}"
-          },
-          "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  wal_fpi / extract(epoch from smpe.sample_time - smps.sample_time) as fpips\nFROM sample_stat_wal sw JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sw.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nORDER BY time",
-          "refId": "WAL Records",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
-      "title": "WAL full page images",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "${ProfileDB}"
-      },
-      "description": "WAL write and sync rate from pg_stat_wal view. Available since Postgres 14",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "left",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              }
-            ]
-          },
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 87
-      },
-      "id": 59,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "${ProfileDB}"
-          },
-          "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  wal_write / extract(epoch from smpe.sample_time - smps.sample_time) as \"Writes per second\",\n  wal_sync / extract(epoch from smpe.sample_time - smps.sample_time) as \"Syncs per second\"\nFROM sample_stat_wal sw JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sw.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nORDER BY time",
-          "refId": "WAL Records",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
-      "title": "WAL write and sync",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "${ProfileDB}"
-      },
-      "description": "WAL write and sync time elapsed from pg_stat_wal view. Available since Postgres 14 if track_wal_io_timing setting is on.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "left",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
               }
             ]
           },
@@ -2960,9 +1303,9 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 87
+        "y": 34
       },
-      "id": 60,
+      "id": 101,
       "options": {
         "legend": {
           "calcs": [],
@@ -2984,8 +1327,8 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  wal_write_time / extract(epoch from smpe.sample_time - smps.sample_time) as \"Write time per second (s/s)\",\n  wal_sync_time / extract(epoch from smpe.sample_time - smps.sample_time) as \"Syncs time per second (s/s)\"\nFROM sample_stat_wal sw JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sw.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nORDER BY time",
-          "refId": "WAL Records",
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.backend_type as bt,\n  sum(read_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Read time per second\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, bt\nORDER BY time",
+          "refId": "stat_io",
           "sql": {
             "columns": [
               {
@@ -3005,7 +1348,895 @@
           }
         }
       ],
-      "title": "WAL write and sync time",
+      "title": "Read time by backend types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.bt}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "wps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 42
+      },
+      "id": 102,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.backend_type as bt,\n  sum(writes / extract(epoch from smpe.sample_time - smps.sample_time)) as \"writes\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, bt\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Writes by backend types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.bt}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "s/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 42
+      },
+      "id": 103,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.backend_type as bt,\n  sum(write_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Read time per second\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, bt\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Write time by backend types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.bt}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "e/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 50
+      },
+      "id": 104,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.backend_type as bt,\n  sum(extends / extract(epoch from smpe.sample_time - smps.sample_time)) as \"extends\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, bt\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Extends by backend types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.bt}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "s/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 50
+      },
+      "id": 105,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.backend_type as bt,\n  sum(extend_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Read time per second\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, bt\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Extend time by backend types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.bt}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "fsyncs/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 58
+      },
+      "id": 108,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.backend_type as bt,\n  sum(coalesce(fsyncs, 0) / extract(epoch from smpe.sample_time - smps.sample_time)) as \"fsyncs per second\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, bt\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Fsyncs by backend types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.bt}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "s/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 58
+      },
+      "id": 109,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.backend_type as bt,\n  sum(fsync_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Fsync time per second\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, bt\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Fsync time by backend types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.bt}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "si:hits/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 66
+      },
+      "id": 106,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.backend_type as bt,\n  sum(coalesce(hits, 0) / extract(epoch from smpe.sample_time - smps.sample_time)) as \"extends\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, bt\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Hits by backend types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.bt}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "si:ru/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 66
+      },
+      "id": 107,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.backend_type as bt,\n  sum(coalesce(reuses, 0) / extract(epoch from smpe.sample_time - smps.sample_time)) as \"reuses per second\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, bt\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Reuses by backend types",
       "type": "timeseries"
     },
     {
@@ -3014,11 +2245,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 95
+        "y": 74
       },
-      "id": 49,
+      "id": 126,
       "panels": [],
-      "title": "Temp files by database",
+      "title": "Contexts I/O (based on pg_stat_io)",
       "type": "row"
     },
     {
@@ -3026,7 +2257,7 @@
         "type": "postgres",
         "uid": "${ProfileDB}"
       },
-      "description": "Temporary size rate from pg_stat_database view",
+      "description": "",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3040,7 +2271,7 @@
             "barAlignment": 0,
             "drawStyle": "line",
             "fillOpacity": 0,
-            "gradientMode": "opacity",
+            "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
@@ -3056,23 +2287,27 @@
             "spanNulls": false,
             "stacking": {
               "group": "A",
-              "mode": "normal"
+              "mode": "none"
             },
             "thresholdsStyle": {
               "mode": "off"
             }
           },
-          "displayName": "${__field.labels.database}",
+          "displayName": "${__field.labels.ct}",
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
                 "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
               }
             ]
           },
-          "unit": "binBps"
+          "unit": "rps"
         },
         "overrides": []
       },
@@ -3080,9 +2315,9 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 96
+        "y": 75
       },
-      "id": 51,
+      "id": 128,
       "options": {
         "legend": {
           "calcs": [],
@@ -3104,8 +2339,8 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sd.datname as database,\n  temp_bytes / extract(epoch from smpe.sample_time - smps.sample_time) as temp_bytes_ps\nFROM sample_stat_database sd JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sd.server_id = ${profile_servers}\n  AND NOT datistemplate\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nORDER BY time",
-          "refId": "Temp size",
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.context as ct,\n  sum(reads / extract(epoch from smpe.sample_time - smps.sample_time)) as \"Reads\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, ct\nORDER BY time",
+          "refId": "stat_io",
           "sql": {
             "columns": [
               {
@@ -3125,7 +2360,7 @@
           }
         }
       ],
-      "title": "Temp files size",
+      "title": "Reads by context types",
       "type": "timeseries"
     },
     {
@@ -3133,7 +2368,7 @@
         "type": "postgres",
         "uid": "${ProfileDB}"
       },
-      "description": "Temporary files generation rate from pg_stat_database view",
+      "description": "",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3147,7 +2382,7 @@
             "barAlignment": 0,
             "drawStyle": "line",
             "fillOpacity": 0,
-            "gradientMode": "opacity",
+            "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
@@ -3163,23 +2398,27 @@
             "spanNulls": false,
             "stacking": {
               "group": "A",
-              "mode": "normal"
+              "mode": "none"
             },
             "thresholdsStyle": {
               "mode": "off"
             }
           },
-          "displayName": "${__field.labels.database}",
+          "displayName": "${__field.labels.ct}",
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
                 "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
               }
             ]
           },
-          "unit": "files/s"
+          "unit": "s/s"
         },
         "overrides": []
       },
@@ -3187,9 +2426,9 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 96
+        "y": 75
       },
-      "id": 53,
+      "id": 130,
       "options": {
         "legend": {
           "calcs": [],
@@ -3211,8 +2450,8 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sd.datname as database,\n  temp_files / extract(epoch from smpe.sample_time - smps.sample_time) as temp_files_ps\nFROM sample_stat_database sd JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sd.server_id = ${profile_servers}\n  AND NOT datistemplate\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nORDER BY time",
-          "refId": "A",
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.context as ct,\n  sum(read_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Read time per second\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, ct\nORDER BY time",
+          "refId": "stat_io",
           "sql": {
             "columns": [
               {
@@ -3232,7 +2471,895 @@
           }
         }
       ],
-      "title": "Temp files generation",
+      "title": "Read time by context types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.ct}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "wps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 83
+      },
+      "id": 132,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.context as ct,\n  sum(writes / extract(epoch from smpe.sample_time - smps.sample_time)) as \"writes\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, ct\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Writes by context types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.ct}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "s/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 83
+      },
+      "id": 133,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.context as ct,\n  sum(write_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Write time per second\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, ct\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Write time by context types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.ct}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "e/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 91
+      },
+      "id": 134,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.context as ct,\n  sum(extends / extract(epoch from smpe.sample_time - smps.sample_time)) as \"extends\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, ct\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Extends by context types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.ct}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "s/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 91
+      },
+      "id": 135,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.context as ct,\n  sum(extend_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Extend time per second\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, ct\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Extend time by context types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.ct}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "fsyncs/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 99
+      },
+      "id": 136,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.context as ct,\n  sum(fsyncs / extract(epoch from smpe.sample_time - smps.sample_time)) as \"fsyncs\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, ct\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Fsyncs by context types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.ct}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "s/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 99
+      },
+      "id": 137,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.context as ct,\n  sum(fsync_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Fsync time per second\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, ct\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Fsync time by context types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.ct}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "si:hits/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 107
+      },
+      "id": 138,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.context as ct,\n  sum(hits / extract(epoch from smpe.sample_time - smps.sample_time)) as \"hits\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, ct\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Hits by context types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.ct}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "si:ru/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 107
+      },
+      "id": 139,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.context as ct,\n  sum(reuses / extract(epoch from smpe.sample_time - smps.sample_time)) as \"reuses\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, ct\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Reuses by context types",
       "type": "timeseries"
     },
     {
@@ -3241,11 +3368,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 104
+        "y": 115
       },
-      "id": 66,
+      "id": 141,
       "panels": [],
-      "title": "Statements",
+      "title": "Object types I/O (based on pg_stat_io)",
       "type": "row"
     },
     {
@@ -3253,7 +3380,7 @@
         "type": "postgres",
         "uid": "${ProfileDB}"
       },
-      "description": "Times spent by statements on planning, execution, reading and writing from pg_stat_statements",
+      "description": "",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3289,112 +3416,7 @@
               "mode": "off"
             }
           },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              }
-            ]
-          },
-          "unit": "s/s"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 105
-      },
-      "id": 68,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "${ProfileDB}"
-          },
-          "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sum(total_plan_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Planning\",\n  sum(total_exec_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Execution\",\n  sum(sst.blk_read_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Read\",\n  sum(sst.blk_write_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Write\"\nFROM sample_statements_total sst\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sst.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time\nORDER BY time",
-          "refId": "stmt_time",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
-      "title": "Statement time",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "${ProfileDB}"
-      },
-      "description": "Planning and executions count from pg_stat_statements",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
+          "displayName": "${__field.labels.ot}",
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
@@ -3408,17 +3430,17 @@
               }
             ]
           },
-          "unit": "cps"
+          "unit": "rps"
         },
         "overrides": []
       },
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 105
+        "x": 0,
+        "y": 116
       },
-      "id": 70,
+      "id": 143,
       "options": {
         "legend": {
           "calcs": [],
@@ -3440,8 +3462,8 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sum(calls / extract(epoch from smpe.sample_time - smps.sample_time)) as \"Executions\",\n  sum(plans / extract(epoch from smpe.sample_time - smps.sample_time)) as \"Plans\"\nFROM sample_statements_total sst\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sst.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time\nORDER BY time",
-          "refId": "stmt_shared_io",
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.object as ot,\n  sum(reads / extract(epoch from smpe.sample_time - smps.sample_time)) as \"Reads\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, ot\nORDER BY time",
+          "refId": "stat_io",
           "sql": {
             "columns": [
               {
@@ -3461,7 +3483,7 @@
           }
         }
       ],
-      "title": "Statement plans/executions",
+      "title": "Reads by object types",
       "type": "timeseries"
     },
     {
@@ -3469,7 +3491,7 @@
         "type": "postgres",
         "uid": "${ProfileDB}"
       },
-      "description": "Temp blocks read and write rate from pg_stat_statements",
+      "description": "",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3505,6 +3527,7 @@
               "mode": "off"
             }
           },
+          "displayName": "${__field.labels.ot}",
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
@@ -3515,459 +3538,6 @@
               {
                 "color": "red",
                 "value": 80
-              }
-            ]
-          },
-          "unit": "si:blk/s"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 113
-      },
-      "id": 72,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "${ProfileDB}"
-          },
-          "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sum(temp_blks_read / extract(epoch from smpe.sample_time - smps.sample_time)) as \"Temp read\",\n  sum(temp_blks_written / extract(epoch from smpe.sample_time - smps.sample_time)) as \"Temp written\"\nFROM sample_statements_total sst\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sst.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time\nORDER BY time",
-          "refId": "stmt_temp_io",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
-      "title": "Statement temp I/O",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "${ProfileDB}"
-      },
-      "description": "Shared blocks read and write rate from pg_stat_statements",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "si:blk/s"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 113
-      },
-      "id": 73,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "${ProfileDB}"
-          },
-          "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sum(shared_blks_read / extract(epoch from smpe.sample_time - smps.sample_time)) as \"Shared read\",\n  sum(shared_blks_written / extract(epoch from smpe.sample_time - smps.sample_time)) as \"Shared written\"\nFROM sample_statements_total sst\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sst.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time\nORDER BY time",
-          "refId": "stmt_shared_io",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
-      "title": "Statement shared I/O",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "${ProfileDB}"
-      },
-      "description": "Local blocks read and write rate from pg_stat_statements",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "si:blk/s"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 121
-      },
-      "id": 71,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "${ProfileDB}"
-          },
-          "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sum(local_blks_read / extract(epoch from smpe.sample_time - smps.sample_time)) as \"Local read\",\n  sum(local_blks_written / extract(epoch from smpe.sample_time - smps.sample_time)) as \"Local written\"\nFROM sample_statements_total sst\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sst.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time\nORDER BY time",
-          "refId": "stmt_local_io",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
-      "title": "Statement local I/O",
-      "type": "timeseries"
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 129
-      },
-      "id": 75,
-      "panels": [],
-      "title": "Wait sampling",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "${ProfileDB}"
-      },
-      "description": "Time waited in each wait event type per second from pg_wait_sampling extension (for waits with queryid)",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "displayName": "${__field.labels.wet}",
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              }
-            ]
-          },
-          "unit": "s/s"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 130
-      },
-      "id": 76,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "${ProfileDB}"
-          },
-          "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  wst.event_type as wet,\n  sum(stmt_waited / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Waited\"\nFROM wait_sampling_total wst\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  wst.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, wst.event_type\nORDER BY time",
-          "refId": "stmt_wet",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
-      "title": "Wait event types (statements)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "${ProfileDB}"
-      },
-      "description": "Time waited in each wait event type per second from pg_wait_sampling extension (for all waits)",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "displayName": "${__field.labels.wet}",
-          "links": [
-            {
-              "title": "DB Summary data link",
-              "url": "/d/5ClQqjK4l/"
-            }
-          ],
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
               }
             ]
           },
@@ -3979,15 +3549,9 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 130
+        "y": 116
       },
-      "id": 77,
-      "links": [
-        {
-          "title": "DB Summary",
-          "url": "/d/5ClQqjK4l/"
-        }
-      ],
+      "id": 145,
       "options": {
         "legend": {
           "calcs": [],
@@ -4009,8 +3573,8 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  wst.event_type as wet,\n  sum(tot_waited / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Waited\"\nFROM wait_sampling_total wst\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  wst.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, wst.event_type\nORDER BY time",
-          "refId": "tot_wet",
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.object as ot,\n  sum(read_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Read time per second\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, ot\nORDER BY time",
+          "refId": "stat_io",
           "sql": {
             "columns": [
               {
@@ -4030,7 +3594,895 @@
           }
         }
       ],
-      "title": "Wait event types (all)",
+      "title": "Read time by object types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.ot}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "wps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 124
+      },
+      "id": 146,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.object as ot,\n  sum(reads / extract(epoch from smpe.sample_time - smps.sample_time)) as \"Reads\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, ot\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Reads by object types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.ot}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "s/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 124
+      },
+      "id": 147,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.object as ot,\n  sum(write_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Write time per second\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, ot\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Write time by object types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.ot}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "e/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 132
+      },
+      "id": 149,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.object as ot,\n  sum(extends / extract(epoch from smpe.sample_time - smps.sample_time)) as \"extends\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, ot\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Extends by object types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.ot}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "s/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 132
+      },
+      "id": 150,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.object as ot,\n  sum(write_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Write time per second\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, ot\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Extend time by object types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.ot}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "fsyncs/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 140
+      },
+      "id": 152,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.object as ot,\n  sum(fsyncs / extract(epoch from smpe.sample_time - smps.sample_time)) as \"fsyncs\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, ot\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Fsyncs by object types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.ot}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "s/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 140
+      },
+      "id": 153,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.object as ot,\n  sum(fsync_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Fsync time per second\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, ot\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Fsync time by object types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.ot}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "si:hits/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 148
+      },
+      "id": 155,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.object as ot,\n  sum(hits / extract(epoch from smpe.sample_time - smps.sample_time)) as \"hits\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, ot\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Hits by object types",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "${__field.labels.ot}",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "si:ru/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 148
+      },
+      "id": 157,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sio.object as ot,\n  sum(reuses / extract(epoch from smpe.sample_time - smps.sample_time)) as \"reuses\"\nFROM sample_stat_io sio\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sio.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time, ot\nORDER BY time",
+          "refId": "stat_io",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Reuses by object types",
       "type": "timeseries"
     }
   ],
@@ -4164,9 +4616,9 @@
       "1d"
     ]
   },
-  "timezone": "",
-  "title": "pg_profile visualization",
-  "uid": "5ClQqjK4k",
-  "version": 15,
+  "timezone": "browser",
+  "title": "pg_profile IO statistics",
+  "uid": "22RkUCWSk",
+  "version": 26,
   "weekStart": ""
 }

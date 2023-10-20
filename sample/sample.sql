@@ -5,8 +5,6 @@ DECLARE
     server_properties jsonb = '{"extensions":[],"settings":[],"timings":{},"properties":{}}'; -- version, extensions, etc.
     qres              record;
     server_connstr    text;
-    collect_timings   boolean = false;
-    topn              integer;
 
     server_query      text;
     server_host       text = NULL;
@@ -16,21 +14,31 @@ BEGIN
 
     -- Getting timing collection setting
     BEGIN
-        collect_timings := current_setting('{pg_profile}.track_sample_timings')::boolean;
+        SELECT current_setting('{pg_profile}.track_sample_timings')::boolean AS collect_timings
+          INTO qres;
+        server_properties := jsonb_set(server_properties,
+          '{collect_timings}',
+          to_jsonb(qres.collect_timings)
+        );
     EXCEPTION
-        WHEN OTHERS THEN collect_timings := false;
+        WHEN OTHERS THEN
+          server_properties := jsonb_set(server_properties,
+            '{collect_timings}',
+            to_jsonb(false)
+          );
     END;
-
-    server_properties := jsonb_set(server_properties,'{collect_timings}',to_jsonb(collect_timings));
 
     -- Getting TopN setting
     BEGIN
-        topn := current_setting('{pg_profile}.topn')::integer;
+        SELECT current_setting('{pg_profile}.topn')::integer AS topn INTO qres;
+        server_properties := jsonb_set(server_properties,'{properties,topn}',to_jsonb(qres.topn));
     EXCEPTION
-        WHEN OTHERS THEN topn := 20;
+        WHEN OTHERS THEN
+          server_properties := jsonb_set(server_properties,
+            '{properties,topn}',
+            to_jsonb(20)
+          );
     END;
-
-    server_properties := jsonb_set(server_properties,'{properties,topn}',to_jsonb(topn));
 
     -- Adding dblink extension schema to search_path if it does not already there
     IF (SELECT count(*) = 0 FROM pg_catalog.pg_extension WHERE extname = 'dblink') THEN
@@ -953,6 +961,199 @@ BEGIN
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
       server_properties := jsonb_set(server_properties,'{timings,query pg_stat_wal,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,query pg_stat_io}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
+    -- pg_stat_io data
+    CASE
+      WHEN (
+        SELECT count(*) = 1 FROM jsonb_to_recordset(server_properties #> '{settings}')
+          AS x(name text, reset_val text)
+        WHERE name = 'server_version_num'
+          AND reset_val::integer >= 160000
+      )
+      THEN
+        server_query := 'SELECT '
+          'backend_type,'
+          'object,'
+          'context,'
+          'reads,'
+          'read_time,'
+          'writes,'
+          'write_time,'
+          'writebacks,'
+          'writeback_time,'
+          'extends,'
+          'extend_time,'
+          'op_bytes,'
+          'hits,'
+          'evictions,'
+          'reuses,'
+          'fsyncs,'
+          'fsync_time,'
+          'stats_reset '
+          'FROM pg_catalog.pg_stat_io '
+          'WHERE greatest('
+              'reads,'
+              'writes,'
+              'writebacks,'
+              'extends,'
+              'hits,'
+              'evictions,'
+              'reuses,'
+              'fsyncs'
+            ') > 0'
+          ;
+      ELSE
+        server_query := NULL;
+    END CASE;
+
+    IF server_query IS NOT NULL THEN
+      INSERT INTO last_stat_io (
+        server_id,
+        sample_id,
+        backend_type,
+        object,
+        context,
+        reads,
+        read_time,
+        writes,
+        write_time,
+        writebacks,
+        writeback_time,
+        extends,
+        extend_time,
+        op_bytes,
+        hits,
+        evictions,
+        reuses,
+        fsyncs,
+        fsync_time,
+        stats_reset
+      )
+      SELECT
+        sserver_id,
+        s_id,
+        backend_type,
+        object,
+        context,
+        reads,
+        read_time,
+        writes,
+        write_time,
+        writebacks,
+        writeback_time,
+        extends,
+        extend_time,
+        op_bytes,
+        hits,
+        evictions,
+        reuses,
+        fsyncs,
+        fsync_time,
+        stats_reset
+      FROM dblink('server_connection',server_query) AS rs (
+        backend_type      text,
+        object            text,
+        context           text,
+        reads             bigint,
+        read_time         double precision,
+        writes            bigint,
+        write_time        double precision,
+        writebacks        bigint,
+        writeback_time    double precision,
+        extends           bigint,
+        extend_time       double precision,
+        op_bytes          bigint,
+        hits              bigint,
+        evictions         bigint,
+        reuses            bigint,
+        fsyncs            bigint,
+        fsync_time        double precision,
+        stats_reset       timestamp with time zone
+      );
+    END IF;
+
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,query pg_stat_io,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,query pg_stat_slru}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
+    -- pg_stat_slru data
+    CASE
+      WHEN (
+        SELECT count(*) = 1 FROM jsonb_to_recordset(server_properties #> '{settings}')
+          AS x(name text, reset_val text)
+        WHERE name = 'server_version_num'
+          AND reset_val::integer >= 130000
+      )
+      THEN
+        server_query := 'SELECT '
+          'name,'
+          'blks_zeroed,'
+          'blks_hit,'
+          'blks_read,'
+          'blks_written,'
+          'blks_exists,'
+          'flushes,'
+          'truncates,'
+          'stats_reset '
+          'FROM pg_catalog.pg_stat_slru '
+          'WHERE greatest('
+              'blks_zeroed,'
+              'blks_hit,'
+              'blks_read,'
+              'blks_written,'
+              'blks_exists,'
+              'flushes,'
+              'truncates'
+            ') > 0'
+          ;
+      ELSE
+        server_query := NULL;
+    END CASE;
+
+    IF server_query IS NOT NULL THEN
+      INSERT INTO last_stat_slru (
+        server_id,
+        sample_id,
+        name,
+        blks_zeroed,
+        blks_hit,
+        blks_read,
+        blks_written,
+        blks_exists,
+        flushes,
+        truncates,
+        stats_reset
+      )
+      SELECT
+        sserver_id,
+        s_id,
+        name,
+        blks_zeroed,
+        blks_hit,
+        blks_read,
+        blks_written,
+        blks_exists,
+        flushes,
+        truncates,
+        stats_reset
+      FROM dblink('server_connection',server_query) AS rs (
+        name          text,
+        blks_zeroed   bigint,
+        blks_hit      bigint,
+        blks_read     bigint,
+        blks_written  bigint,
+        blks_exists   bigint,
+        flushes       bigint,
+        truncates     bigint,
+        stats_reset   timestamp with time zone
+      );
+    END IF;
+
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,query pg_stat_slru,end}',to_jsonb(clock_timestamp()));
       server_properties := jsonb_set(server_properties,'{timings,query pg_stat_archiver}',jsonb_build_object('start',clock_timestamp()));
     END IF;
 
@@ -1189,6 +1390,125 @@ BEGIN
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
       server_properties := jsonb_set(server_properties,'{timings,calculate cluster stats,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,calculate IO stats}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
+    -- Calc I/O stat diff
+    INSERT INTO sample_stat_io(
+        server_id,
+        sample_id,
+        backend_type,
+        object,
+        context,
+        reads,
+        read_time,
+        writes,
+        write_time,
+        writebacks,
+        writeback_time,
+        extends,
+        extend_time,
+        op_bytes,
+        hits,
+        evictions,
+        reuses,
+        fsyncs,
+        fsync_time,
+        stats_reset
+    )
+    SELECT
+        cur.server_id,
+        cur.sample_id,
+        cur.backend_type,
+        cur.object,
+        cur.context,
+        cur.reads - COALESCE(lst.reads, 0),
+        cur.read_time - COALESCE(lst.read_time, 0),
+        cur.writes - COALESCE(lst.writes, 0),
+        cur.write_time - COALESCE(lst.write_time, 0),
+        cur.writebacks - COALESCE(lst.writebacks, 0),
+        cur.writeback_time - COALESCE(lst.writeback_time, 0),
+        cur.extends - COALESCE(lst.extends, 0),
+        cur.extend_time - COALESCE(lst.extend_time, 0),
+        cur.op_bytes,
+        cur.hits - COALESCE(lst.hits, 0),
+        cur.evictions - COALESCE(lst.evictions, 0),
+        cur.reuses - COALESCE(lst.reuses, 0),
+        cur.fsyncs - COALESCE(lst.fsyncs, 0),
+        cur.fsync_time - COALESCE(lst.fsync_time, 0),
+        cur.stats_reset
+    FROM last_stat_io cur
+    LEFT OUTER JOIN last_stat_io lst ON
+      (lst.server_id, lst.sample_id, lst.backend_type, lst.object, lst.context) =
+      (sserver_id, s_id - 1, cur.backend_type, cur.object, cur.context)
+      AND (cur.op_bytes,cur.stats_reset) IS NOT DISTINCT FROM (lst.op_bytes,lst.stats_reset)
+    WHERE
+      (cur.server_id, cur.sample_id) = (sserver_id, s_id) AND
+      GREATEST(
+        cur.reads - COALESCE(lst.reads, 0),
+        cur.writes - COALESCE(lst.writes, 0),
+        cur.writebacks - COALESCE(lst.writebacks, 0),
+        cur.extends - COALESCE(lst.extends, 0),
+        cur.hits - COALESCE(lst.hits, 0),
+        cur.evictions - COALESCE(lst.evictions, 0),
+        cur.reuses - COALESCE(lst.reuses, 0),
+        cur.fsyncs - COALESCE(lst.fsyncs, 0)
+      ) > 0;
+
+    DELETE FROM last_stat_io WHERE server_id = sserver_id AND sample_id != s_id;
+
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,calculate IO stats,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,calculate SLRU stats}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
+    -- Calc SLRU stat diff
+    INSERT INTO sample_stat_slru(
+        server_id,
+        sample_id,
+        name,
+        blks_zeroed,
+        blks_hit,
+        blks_read,
+        blks_written,
+        blks_exists,
+        flushes,
+        truncates,
+        stats_reset
+    )
+    SELECT
+        cur.server_id,
+        cur.sample_id,
+        cur.name,
+        cur.blks_zeroed - COALESCE(lst.blks_zeroed, 0),
+        cur.blks_hit - COALESCE(lst.blks_hit, 0),
+        cur.blks_read - COALESCE(lst.blks_read, 0),
+        cur.blks_written - COALESCE(lst.blks_written, 0),
+        cur.blks_exists - COALESCE(lst.blks_exists, 0),
+        cur.flushes - COALESCE(lst.flushes, 0),
+        cur.truncates - COALESCE(lst.truncates, 0),
+        cur.stats_reset
+    FROM last_stat_slru cur
+    LEFT OUTER JOIN last_stat_slru lst ON
+      (lst.server_id, lst.sample_id, lst.name) =
+      (sserver_id, s_id - 1, cur.name)
+      AND cur.stats_reset IS NOT DISTINCT FROM lst.stats_reset
+    WHERE
+      (cur.server_id, cur.sample_id) = (sserver_id, s_id) AND
+      GREATEST(
+        cur.blks_zeroed - COALESCE(lst.blks_zeroed, 0),
+        cur.blks_hit - COALESCE(lst.blks_hit, 0),
+        cur.blks_read - COALESCE(lst.blks_read, 0),
+        cur.blks_written - COALESCE(lst.blks_written, 0),
+        cur.blks_exists - COALESCE(lst.blks_exists, 0),
+        cur.flushes - COALESCE(lst.flushes, 0),
+        cur.truncates - COALESCE(lst.truncates, 0)
+      ) > 0;
+
+    DELETE FROM last_stat_slru WHERE server_id = sserver_id AND sample_id != s_id;
+
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,calculate SLRU stats,end}',to_jsonb(clock_timestamp()));
       server_properties := jsonb_set(server_properties,'{timings,calculate WAL stats}',jsonb_build_object('start',clock_timestamp()));
     END IF;
 
@@ -1581,7 +1901,10 @@ BEGIN
             'class.reltoastrelid,'
             'class.relkind,'
             'class.relpages::bigint * current_setting(''block_size'')::bigint AS relpages_bytes,'
-            '0 AS relpages_bytes_diff '
+            '0 AS relpages_bytes_diff,'
+            'NULL AS last_seq_scan,'
+            'NULL AS last_idx_scan,'
+            'NULL AS n_tup_newpage_upd '
           'FROM pg_catalog.pg_stat_all_tables st '
           'JOIN pg_catalog.pg_statio_all_tables stio USING (relid, schemaname, relname) '
           'JOIN pg_catalog.pg_class class ON (st.relid = class.oid) '
@@ -1593,7 +1916,7 @@ BEGIN
           SELECT count(*) = 1 FROM jsonb_to_recordset(properties #> '{settings}')
             AS x(name text, reset_val text)
           WHERE name = 'server_version_num'
-            AND reset_val::integer >= 130000
+            AND reset_val::integer < 160000
         )
         THEN
           t_query := 'SELECT '
@@ -1635,13 +1958,74 @@ BEGIN
             'class.reltoastrelid,'
             'class.relkind,'
             'class.relpages::bigint * current_setting(''block_size'')::bigint AS relpages_bytes,'
-            '0 AS relpages_bytes_diff '
+            '0 AS relpages_bytes_diff,'
+            'NULL AS last_seq_scan,'
+            'NULL AS last_idx_scan,'
+            'NULL AS n_tup_newpage_upd '
           'FROM pg_catalog.pg_stat_all_tables st '
           'JOIN pg_catalog.pg_statio_all_tables stio USING (relid, schemaname, relname) '
           'JOIN pg_catalog.pg_class class ON (st.relid = class.oid) '
           -- is relation or its dependant is locked
           '{lock_join}'
           ;
+
+        WHEN (
+          SELECT count(*) = 1 FROM jsonb_to_recordset(properties #> '{settings}')
+            AS x(name text, reset_val text)
+          WHERE name = 'server_version_num'
+            AND reset_val::integer >= 160000
+        )
+        THEN
+          t_query := 'SELECT '
+            'st.relid,'
+            'st.schemaname,'
+            'st.relname,'
+            'st.seq_scan,'
+            'st.seq_tup_read,'
+            'st.idx_scan,'
+            'st.idx_tup_fetch,'
+            'st.n_tup_ins,'
+            'st.n_tup_upd,'
+            'st.n_tup_del,'
+            'st.n_tup_hot_upd,'
+            'st.n_live_tup,'
+            'st.n_dead_tup,'
+            'st.n_mod_since_analyze,'
+            'st.n_ins_since_vacuum,'
+            'st.last_vacuum,'
+            'st.last_autovacuum,'
+            'st.last_analyze,'
+            'st.last_autoanalyze,'
+            'st.vacuum_count,'
+            'st.autovacuum_count,'
+            'st.analyze_count,'
+            'st.autoanalyze_count,'
+            'stio.heap_blks_read,'
+            'stio.heap_blks_hit,'
+            'stio.idx_blks_read,'
+            'stio.idx_blks_hit,'
+            'stio.toast_blks_read,'
+            'stio.toast_blks_hit,'
+            'stio.tidx_blks_read,'
+            'stio.tidx_blks_hit,'
+            -- Size of all forks without TOAST
+            '{relation_size} relsize,'
+            '0 relsize_diff,'
+            'class.reltablespace AS tablespaceid,'
+            'class.reltoastrelid,'
+            'class.relkind,'
+            'class.relpages::bigint * current_setting(''block_size'')::bigint AS relpages_bytes,'
+            '0 AS relpages_bytes_diff,'
+            'st.last_seq_scan,'
+            'st.last_idx_scan,'
+            'st.n_tup_newpage_upd '
+          'FROM pg_catalog.pg_stat_all_tables st '
+          'JOIN pg_catalog.pg_statio_all_tables stio USING (relid, schemaname, relname) '
+          'JOIN pg_catalog.pg_class class ON (st.relid = class.oid) '
+          -- is relation or its dependant is locked
+          '{lock_join}'
+          ;
+
         ELSE
           RAISE 'Unsupported server version.';
       END CASE;
@@ -1705,7 +2089,10 @@ BEGIN
         relkind,
         in_sample,
         relpages_bytes,
-        relpages_bytes_diff
+        relpages_bytes_diff,
+        last_seq_scan,
+        last_idx_scan,
+        n_tup_newpage_upd
       )
       SELECT
         sserver_id,
@@ -1749,7 +2136,10 @@ BEGIN
         dbl.relkind,
         false,
         dbl.relpages_bytes,
-        dbl.relpages_bytes_diff
+        dbl.relpages_bytes_diff,
+        dbl.last_seq_scan,
+        dbl.last_idx_scan,
+        dbl.n_tup_newpage_upd
       FROM dblink('server_db_connection', t_query)
       AS dbl (
           relid                 oid,
@@ -1789,7 +2179,10 @@ BEGIN
           reltoastrelid         oid,
           relkind               char,
           relpages_bytes        bigint,
-          relpages_bytes_diff   bigint
+          relpages_bytes_diff   bigint,
+          last_seq_scan         timestamp with time zone,
+          last_idx_scan         timestamp with time zone,
+          n_tup_newpage_upd     bigint
       );
 
       EXECUTE format('ANALYZE last_stat_tables_srv%1$s',
@@ -1801,22 +2194,74 @@ BEGIN
       END IF;
 
       -- Generate index stats query
-      t_query := 'SELECT st.*,'
-        'stio.idx_blks_read,'
-        'stio.idx_blks_hit,'
-        '{relation_size} relsize,'
-        '0,'
-        'pg_class.reltablespace as tablespaceid,'
-        '(ix.indisunique OR con.conindid IS NOT NULL) AS indisunique,'
-        'pg_class.relpages::bigint * current_setting(''block_size'')::bigint AS relpages_bytes,'
-        '0 AS relpages_bytes_diff '
-      'FROM pg_catalog.pg_stat_all_indexes st '
-        'JOIN pg_catalog.pg_statio_all_indexes stio USING (relid, indexrelid, schemaname, relname, indexrelname) '
-        'JOIN pg_catalog.pg_index ix ON (ix.indexrelid = st.indexrelid) '
-        'JOIN pg_catalog.pg_class ON (pg_class.oid = st.indexrelid) '
-        'LEFT OUTER JOIN pg_catalog.pg_constraint con ON (con.conindid = ix.indexrelid AND con.contype in (''p'',''u'')) '
-        '{lock_join}'
-        ;
+      CASE
+        WHEN (
+          SELECT count(*) = 1 FROM jsonb_to_recordset(properties #> '{settings}')
+            AS x(name text, reset_val text)
+          WHERE name = 'server_version_num'
+            AND reset_val::integer < 160000
+        )
+        THEN
+          t_query := 'SELECT '
+            'st.relid,'
+            'st.indexrelid,'
+            'st.schemaname,'
+            'st.relname,'
+            'st.indexrelname,'
+            'st.idx_scan,'
+            'NULL AS last_idx_scan,'
+            'st.idx_tup_read,'
+            'st.idx_tup_fetch,'
+            'stio.idx_blks_read,'
+            'stio.idx_blks_hit,'
+            '{relation_size} relsize,'
+            '0,'
+            'pg_class.reltablespace as tablespaceid,'
+            '(ix.indisunique OR con.conindid IS NOT NULL) AS indisunique,'
+            'pg_class.relpages::bigint * current_setting(''block_size'')::bigint AS relpages_bytes,'
+            '0 AS relpages_bytes_diff '
+          'FROM pg_catalog.pg_stat_all_indexes st '
+            'JOIN pg_catalog.pg_statio_all_indexes stio USING (relid, indexrelid, schemaname, relname, indexrelname) '
+            'JOIN pg_catalog.pg_index ix ON (ix.indexrelid = st.indexrelid) '
+            'JOIN pg_catalog.pg_class ON (pg_class.oid = st.indexrelid) '
+            'LEFT OUTER JOIN pg_catalog.pg_constraint con ON (con.conindid = ix.indexrelid AND con.contype in (''p'',''u'')) '
+            '{lock_join}'
+            ;
+        WHEN (
+          SELECT count(*) = 1 FROM jsonb_to_recordset(properties #> '{settings}')
+            AS x(name text, reset_val text)
+          WHERE name = 'server_version_num'
+            AND reset_val::integer >= 160000
+        )
+        THEN
+          t_query := 'SELECT '
+            'st.relid,'
+            'st.indexrelid,'
+            'st.schemaname,'
+            'st.relname,'
+            'st.indexrelname,'
+            'st.idx_scan,'
+            'st.last_idx_scan,'
+            'st.idx_tup_read,'
+            'st.idx_tup_fetch,'
+            'stio.idx_blks_read,'
+            'stio.idx_blks_hit,'
+            '{relation_size} relsize,'
+            '0,'
+            'pg_class.reltablespace as tablespaceid,'
+            '(ix.indisunique OR con.conindid IS NOT NULL) AS indisunique,'
+            'pg_class.relpages::bigint * current_setting(''block_size'')::bigint AS relpages_bytes,'
+            '0 AS relpages_bytes_diff '
+          'FROM pg_catalog.pg_stat_all_indexes st '
+            'JOIN pg_catalog.pg_statio_all_indexes stio USING (relid, indexrelid, schemaname, relname, indexrelname) '
+            'JOIN pg_catalog.pg_index ix ON (ix.indexrelid = st.indexrelid) '
+            'JOIN pg_catalog.pg_class ON (pg_class.oid = st.indexrelid) '
+            'LEFT OUTER JOIN pg_catalog.pg_constraint con ON (con.conindid = ix.indexrelid AND con.contype in (''p'',''u'')) '
+            '{lock_join}'
+            ;
+        ELSE
+          RAISE 'Unsupported server version.';
+      END CASE;
 
       IF skip_sizes THEN
         t_query := replace(t_query,'{relation_size}','NULL');
@@ -1843,6 +2288,7 @@ BEGIN
         relname,
         indexrelname,
         idx_scan,
+        last_idx_scan,
         idx_tup_read,
         idx_tup_fetch,
         idx_blks_read,
@@ -1865,6 +2311,7 @@ BEGIN
         relname,
         indexrelname,
         dbl.idx_scan AS idx_scan,
+        dbl.last_idx_scan AS last_idx_scan,
         dbl.idx_tup_read AS idx_tup_read,
         dbl.idx_tup_fetch AS idx_tup_fetch,
         dbl.idx_blks_read AS idx_blks_read,
@@ -1884,6 +2331,7 @@ BEGIN
          relname        name,
          indexrelname   name,
          idx_scan       bigint,
+         last_idx_scan  timestamp with time zone,
          idx_tup_read   bigint,
          idx_tup_fetch  bigint,
          idx_blks_read  bigint,
@@ -2134,7 +2582,15 @@ BEGIN
           row_number() OVER (ORDER BY cur.vacuum_count - COALESCE(lst.vacuum_count, 0) +
             cur.autovacuum_count - COALESCE(lst.autovacuum_count, 0) DESC) vacuum_rank,
           row_number() OVER (ORDER BY cur.analyze_count - COALESCE(lst.analyze_count,0) +
-            cur.autoanalyze_count - COALESCE(lst.autoanalyze_count,0) DESC) analyze_rank
+            cur.autoanalyze_count - COALESCE(lst.autoanalyze_count,0) DESC) analyze_rank,
+
+          -- Newpage updates rank (since PG16)
+          CASE WHEN cur.n_tup_newpage_upd IS NOT NULL THEN
+            row_number() OVER (ORDER BY cur.n_tup_newpage_upd -
+              COALESCE(lst.n_tup_newpage_upd, 0) DESC)
+          ELSE
+            NULL
+          END newpage_upd_rank
       FROM
         -- main relations diff
         last_stat_tables cur JOIN last_stat_database dbcur USING (server_id, sample_id, datid)
@@ -2166,7 +2622,8 @@ BEGIN
         read_rank,
         gets_rank,
         vacuum_rank,
-        analyze_rank
+        analyze_rank,
+        newpage_upd_rank
       ) <= topn
       AND (ulst.server_id, ulst.sample_id, ulst.datid, ulst.in_sample) =
         (sserver_id, s_id, diff.datid, false)
@@ -2301,7 +2758,10 @@ BEGIN
       relsize,
       relsize_diff,
       relpages_bytes,
-      relpages_bytes_diff
+      relpages_bytes_diff,
+      last_seq_scan,
+      last_idx_scan,
+      n_tup_newpage_upd
     )
     SELECT
       cur.server_id AS server_id,
@@ -2340,7 +2800,10 @@ BEGIN
       cur.relsize AS relsize,
       cur.relsize - COALESCE(lst.relsize,0) AS relsize_diff,
       cur.relpages_bytes AS relpages_bytes,
-      cur.relpages_bytes - COALESCE(lst.relpages_bytes,0) AS relpages_bytes_diff
+      cur.relpages_bytes - COALESCE(lst.relpages_bytes,0) AS relpages_bytes_diff,
+      cur.last_seq_scan AS last_seq_scan,
+      cur.last_idx_scan AS last_idx_scan,
+      cur.n_tup_newpage_upd - COALESCE(lst.n_tup_newpage_upd,0) AS n_tup_newpage_upd
     FROM
       last_stat_tables cur JOIN last_stat_database dbcur USING (server_id, sample_id, datid)
       LEFT JOIN last_stat_database dblst ON
@@ -2399,7 +2862,8 @@ BEGIN
       toast_blks_hit,
       tidx_blks_read,
       tidx_blks_hit,
-      relsize_diff
+      relsize_diff,
+      n_tup_newpage_upd
     )
     SELECT
       cur.server_id,
@@ -2430,7 +2894,8 @@ BEGIN
       CASE
         WHEN skip_sizes THEN NULL
         ELSE sum(cur.relsize - COALESCE(lst.relsize,0))
-      END
+      END,
+      sum(cur.n_tup_newpage_upd - COALESCE(lst.n_tup_newpage_upd,0))
     FROM last_stat_tables cur JOIN last_stat_database dbcur USING (server_id, sample_id, datid)
       LEFT OUTER JOIN last_stat_database dblst ON
         (dblst.server_id, dblst.datid, dblst.sample_id) =
@@ -2535,7 +3000,8 @@ BEGIN
       relsize_diff,
       indisunique,
       relpages_bytes,
-      relpages_bytes_diff
+      relpages_bytes_diff,
+      last_idx_scan
     )
     SELECT
       cur.server_id AS server_id,
@@ -2552,7 +3018,8 @@ BEGIN
       cur.relsize - COALESCE(lst.relsize,0) AS relsize_diff,
       cur.indisunique,
       cur.relpages_bytes AS relpages_bytes,
-      cur.relpages_bytes - COALESCE(lst.relpages_bytes,0) AS relpages_bytes_diff
+      cur.relpages_bytes - COALESCE(lst.relpages_bytes,0) AS relpages_bytes_diff,
+      cur.last_idx_scan
     FROM
       last_stat_indexes cur JOIN last_stat_database dbcur USING (server_id, sample_id, datid)
       LEFT JOIN last_stat_database dblst ON

@@ -1,4 +1,4 @@
-PGPROFILE_VERSION = 4.2
+PGPROFILE_VERSION = 4.3
 EXTENSION = pg_profile
 
 TAR_pkg = $(EXTENSION)--$(PGPROFILE_VERSION).tar.gz $(EXTENSION)--$(PGPROFILE_VERSION)_manual.tar.gz
@@ -62,13 +62,16 @@ sample = \
 
 report = report/report_build.sql
 
+grants = \
+	privileges/pg_profile.sql
+
 # Extension script contents
 functions = $(common) $(adm_funcs) $(export_funcs) $(sample) $(report)
-script = $(schema) $(data) $(functions)
+script = $(schema) $(data) $(functions) $(grants)
 
 # Manual script contents
 functions_man = $(common) $(adm_funcs) $(sample) $(report)
-script_man = $(schema) $(functions_man) data/report_templates.sql
+script_man = $(schema) $(functions_man) $(grants) data/report_templates.sql
 
 # Common sed replacement script
 sed_extension = -e 's/{pg_profile}/$(EXTENSION)/; s/{extension_version}/$(PGPROFILE_VERSION)/; /--<manual_start>/,/--<manual_end>/d; /--<extension_end>/d; /--<extension_start>/d'

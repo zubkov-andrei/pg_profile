@@ -91,7 +91,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": null,
+  "id": 30,
   "links": [
     {
       "asDropdown": false,
@@ -103,7 +103,21 @@
       "title": "Interval",
       "tooltip": "",
       "type": "link",
-      "url": "/d/${__dashboard.uid}﻿/${__dashboard}?var-ProfileDB=${ProfileDB}&var-profile_servers=${profile_servers}&from=${min_from}&to=${max_to}"
+      "url": "/d/${__dashboard.uid}﻿?var-ProfileDB=${ProfileDB}&var-profile_servers=${profile_servers}&from=${min_from}&to=${max_to}"
+    },
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [
+        "pg_profile"
+      ],
+      "targetBlank": false,
+      "title": "pg_profile dashboards",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
     }
   ],
   "liveNow": false,
@@ -3894,15 +3908,12 @@
   "refresh": false,
   "schemaVersion": 37,
   "style": "dark",
-  "tags": [],
+  "tags": [
+    "pg_profile"
+  ],
   "templating": {
     "list": [
       {
-        "current": {
-          "selected": false,
-          "text": "PG15_profile",
-          "value": "PG15_profile"
-        },
         "hide": 0,
         "includeAll": false,
         "label": "Database with pg_profile extension",
@@ -3917,7 +3928,6 @@
         "type": "datasource"
       },
       {
-        "current": {},
         "datasource": {
           "type": "postgres",
           "uid": "${ProfileDB}"
@@ -3937,7 +3947,6 @@
         "type": "query"
       },
       {
-        "current": {},
         "datasource": {
           "type": "postgres",
           "uid": "${ProfileDB}"
@@ -3958,7 +3967,6 @@
         "type": "query"
       },
       {
-        "current": {},
         "datasource": {
           "type": "postgres",
           "uid": "${ProfileDB}"
@@ -3979,7 +3987,6 @@
         "type": "query"
       },
       {
-        "current": {},
         "datasource": {
           "type": "postgres",
           "uid": "${ProfileDB}"
@@ -3999,7 +4006,6 @@
         "type": "query"
       },
       {
-        "current": {},
         "datasource": {
           "type": "postgres",
           "uid": "${ProfileDB}"
@@ -4029,8 +4035,9 @@
       "1d"
     ]
   },
+  "timezone": "",
   "title": "pg_profile summary",
   "uid": "5ClQqjK4l",
-  "version": 7,
+  "version": 5,
   "weekStart": ""
 }

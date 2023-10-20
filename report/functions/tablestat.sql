@@ -17,6 +17,8 @@ RETURNS TABLE(
     n_tup_upd           bigint,
     n_tup_del           bigint,
     n_tup_hot_upd       bigint,
+    n_tup_newpage_upd   bigint,
+    np_upd_pct          numeric,
     vacuum_count        bigint,
     autovacuum_count    bigint,
     analyze_count       bigint,
@@ -42,6 +44,9 @@ RETURNS TABLE(
         sum(st.n_tup_upd)::bigint AS n_tup_upd,
         sum(st.n_tup_del)::bigint AS n_tup_del,
         sum(st.n_tup_hot_upd)::bigint AS n_tup_hot_upd,
+        sum(st.n_tup_newpage_upd)::bigint AS n_tup_newpage_upd,
+        sum(st.n_tup_newpage_upd)::numeric * 100 /
+          NULLIF(sum(st.n_tup_upd)::numeric, 0) AS np_upd_pct,
         sum(st.vacuum_count)::bigint AS vacuum_count,
         sum(st.autovacuum_count)::bigint AS autovacuum_count,
         sum(st.analyze_count)::bigint AS analyze_count,
@@ -79,6 +84,8 @@ RETURNS TABLE(
     n_tup_upd           bigint,
     n_tup_del           bigint,
     n_tup_hot_upd       bigint,
+    n_tup_newpage_upd   bigint,
+    np_upd_pct          numeric,
     vacuum_count        bigint,
     autovacuum_count    bigint,
     analyze_count       bigint,
@@ -103,6 +110,9 @@ RETURNS TABLE(
         sum(st.n_tup_upd)::bigint AS n_tup_upd,
         sum(st.n_tup_del)::bigint AS n_tup_del,
         sum(st.n_tup_hot_upd)::bigint AS n_tup_hot_upd,
+        sum(st.n_tup_newpage_upd)::bigint AS n_tup_newpage_upd,
+        sum(st.n_tup_newpage_upd)::numeric * 100 /
+          NULLIF(sum(st.n_tup_upd)::numeric, 0) AS np_upd_pct,
         sum(st.vacuum_count)::bigint AS vacuum_count,
         sum(st.autovacuum_count)::bigint AS autovacuum_count,
         sum(st.analyze_count)::bigint AS analyze_count,
@@ -143,6 +153,8 @@ RETURNS TABLE(
     n_tup_upd                 bigint,
     n_tup_del                 bigint,
     n_tup_hot_upd             bigint,
+    n_tup_newpage_upd         bigint,
+    np_upd_pct                numeric,
     vacuum_count              bigint,
     autovacuum_count          bigint,
     analyze_count             bigint,
@@ -156,6 +168,8 @@ RETURNS TABLE(
     toastn_tup_upd            bigint,
     toastn_tup_del            bigint,
     toastn_tup_hot_upd        bigint,
+    toastn_tup_newpage_upd    bigint,
+    toastnp_upd_pct           numeric,
     toastvacuum_count         bigint,
     toastautovacuum_count     bigint,
     toastanalyze_count        bigint,
@@ -171,6 +185,7 @@ RETURNS TABLE(
     ord_dml                   integer,
     ord_seq_scan              integer,
     ord_upd                   integer,
+    ord_upd_np                integer,
     ord_growth                integer,
     ord_vac                   integer,
     ord_anl                   integer
@@ -224,6 +239,8 @@ SET search_path=@extschema@ AS $$
     NULLIF(rel.n_tup_upd, 0) AS n_tup_upd,
     NULLIF(rel.n_tup_del, 0) AS n_tup_del,
     NULLIF(rel.n_tup_hot_upd, 0) AS n_tup_hot_upd,
+    NULLIF(rel.n_tup_newpage_upd, 0) AS n_tup_newpage_upd,
+    ROUND(NULLIF(rel.np_upd_pct, 0), 1) AS np_upd_pct,
     NULLIF(rel.vacuum_count, 0) AS vacuum_count,
     NULLIF(rel.autovacuum_count, 0) AS autovacuum_count,
     NULLIF(rel.analyze_count, 0) AS analyze_count,
@@ -237,6 +254,8 @@ SET search_path=@extschema@ AS $$
     NULLIF(toast.n_tup_upd, 0) AS toastn_tup_upd,
     NULLIF(toast.n_tup_del, 0) AS toastn_tup_del,
     NULLIF(toast.n_tup_hot_upd, 0) AS toastn_tup_hot_upd,
+    NULLIF(toast.n_tup_newpage_upd, 0) AS toastn_tup_newpage_upd,
+    ROUND(NULLIF(toast.np_upd_pct, 0), 1) AS toastnp_upd_pct,
     NULLIF(toast.vacuum_count, 0) AS toastvacuum_count,
     NULLIF(toast.autovacuum_count, 0) AS toastautovacuum_count,
     NULLIF(toast.analyze_count, 0) AS toastanalyze_count,
@@ -313,12 +332,22 @@ SET search_path=@extschema@ AS $$
     ELSE NULL END AS ord_upd,
 
     CASE WHEN
+      COALESCE(rel.n_tup_newpage_upd, 0) + COALESCE(toast.n_tup_newpage_upd, 0) > 0
+    THEN
+      row_number() OVER (ORDER BY
+        COALESCE(rel.n_tup_newpage_upd, 0) + COALESCE(toast.n_tup_newpage_upd, 0)
+        DESC NULLS LAST,
+        rel.datid,
+        rel.relid)::integer
+    ELSE NULL END AS ord_upd_np,
+
+    CASE WHEN
       ((relrs.growth_avail AND rel.growth > 0) OR rel.relpagegrowth_bytes > 0) OR
       ((toastrs.growth_avail AND toast.growth > 0) OR toast.relpagegrowth_bytes > 0)
     THEN
       row_number() OVER (ORDER BY
         CASE WHEN relrs.growth_avail THEN rel.growth ELSE rel.relpagegrowth_bytes END +
-        CASE WHEN toastrs.growth_avail THEN toast.growth ELSE toast.relpagegrowth_bytes END
+        COALESCE(CASE WHEN toastrs.growth_avail THEN toast.growth ELSE toast.relpagegrowth_bytes END, 0)
         DESC NULLS LAST,
         rel.datid,
         rel.relid)::integer
@@ -374,6 +403,8 @@ RETURNS TABLE(
     n_tup_upd1                bigint,
     n_tup_del1                bigint,
     n_tup_hot_upd1            bigint,
+    n_tup_newpage_upd1        bigint,
+    np_upd_pct1               numeric,
     vacuum_count1             bigint,
     autovacuum_count1         bigint,
     analyze_count1            bigint,
@@ -387,6 +418,8 @@ RETURNS TABLE(
     toastn_tup_upd1           bigint,
     toastn_tup_del1           bigint,
     toastn_tup_hot_upd1       bigint,
+    toastn_tup_newpage_upd1   bigint,
+    toastnp_upd_pct1          numeric,
     toastvacuum_count1        bigint,
     toastautovacuum_count1    bigint,
     toastanalyze_count1       bigint,
@@ -407,6 +440,8 @@ RETURNS TABLE(
     n_tup_upd2                bigint,
     n_tup_del2                bigint,
     n_tup_hot_upd2            bigint,
+    n_tup_newpage_upd2        bigint,
+    np_upd_pct2               numeric,
     vacuum_count2             bigint,
     autovacuum_count2         bigint,
     analyze_count2            bigint,
@@ -420,6 +455,8 @@ RETURNS TABLE(
     toastn_tup_upd2           bigint,
     toastn_tup_del2           bigint,
     toastn_tup_hot_upd2       bigint,
+    toastn_tup_newpage_upd2   bigint,
+    toastnp_upd_pct2          numeric,
     toastvacuum_count2        bigint,
     toastautovacuum_count2    bigint,
     toastanalyze_count2       bigint,
@@ -435,6 +472,7 @@ RETURNS TABLE(
     ord_dml                   integer,
     ord_seq_scan              integer,
     ord_upd                   integer,
+    ord_upd_np                integer,
     ord_growth                integer,
     ord_vac                   integer,
     ord_anl                   integer
@@ -516,6 +554,8 @@ SET search_path=@extschema@ AS $$
     NULLIF(rel1.n_tup_upd, 0) AS n_tup_upd1,
     NULLIF(rel1.n_tup_del, 0) AS n_tup_del1,
     NULLIF(rel1.n_tup_hot_upd, 0) AS n_tup_hot_upd1,
+    NULLIF(rel1.n_tup_newpage_upd, 0) AS n_tup_newpage_upd1,
+    ROUND(NULLIF(rel1.np_upd_pct, 0), 1) AS np_upd_pct1,
     NULLIF(rel1.vacuum_count, 0) AS vacuum_count1,
     NULLIF(rel1.autovacuum_count, 0) AS autovacuum_count1,
     NULLIF(rel1.analyze_count, 0) AS analyze_count1,
@@ -529,6 +569,8 @@ SET search_path=@extschema@ AS $$
     NULLIF(toast1.n_tup_upd, 0) AS toastn_tup_upd1,
     NULLIF(toast1.n_tup_del, 0) AS toastn_tup_del1,
     NULLIF(toast1.n_tup_hot_upd, 0) AS toastn_tup_hot_upd1,
+    NULLIF(toast1.n_tup_newpage_upd, 0) AS toastn_tup_newpage_upd1,
+    ROUND(NULLIF(toast1.np_upd_pct, 0), 1) AS toastnp_upd_pct1,
     NULLIF(toast1.vacuum_count, 0) AS toastvacuum_count1,
     NULLIF(toast1.autovacuum_count, 0) AS toastautovacuum_count1,
     NULLIF(toast1.analyze_count, 0) AS toastanalyze_count1,
@@ -574,6 +616,8 @@ SET search_path=@extschema@ AS $$
     NULLIF(rel2.n_tup_upd, 0) AS n_tup_upd2,
     NULLIF(rel2.n_tup_del, 0) AS n_tup_del2,
     NULLIF(rel2.n_tup_hot_upd, 0) AS n_tup_hot_upd2,
+    NULLIF(rel2.n_tup_newpage_upd, 0) AS n_tup_newpage_upd2,
+    ROUND(NULLIF(rel2.np_upd_pct, 0), 1) AS np_upd_pct2,
     NULLIF(rel2.vacuum_count, 0) AS vacuum_count2,
     NULLIF(rel2.autovacuum_count, 0) AS autovacuum_count2,
     NULLIF(rel2.analyze_count, 0) AS analyze_count2,
@@ -587,6 +631,8 @@ SET search_path=@extschema@ AS $$
     NULLIF(toast2.n_tup_upd, 0) AS toastn_tup_upd2,
     NULLIF(toast2.n_tup_del, 0) AS toastn_tup_del2,
     NULLIF(toast2.n_tup_hot_upd, 0) AS toastn_tup_hot_upd2,
+    NULLIF(toast2.n_tup_newpage_upd, 0) AS toastn_tup_newpage_upd2,
+    ROUND(NULLIF(toast2.np_upd_pct, 0), 1) AS toastnp_upd_pct2,
     NULLIF(toast2.vacuum_count, 0) AS toastvacuum_count2,
     NULLIF(toast2.autovacuum_count, 0) AS toastautovacuum_count2,
     NULLIF(toast2.analyze_count, 0) AS toastanalyze_count2,
@@ -675,6 +721,18 @@ SET search_path=@extschema@ AS $$
         COALESCE(rel1.datid, rel2.datid),
         COALESCE(rel1.relid, rel2.relid))::integer
     ELSE NULL END AS ord_upd,
+
+    CASE WHEN
+      COALESCE(rel1.n_tup_newpage_upd, 0) + COALESCE(toast1.n_tup_newpage_upd, 0) +
+      COALESCE(rel2.n_tup_newpage_upd, 0) + COALESCE(toast2.n_tup_newpage_upd, 0) > 0
+    THEN
+      row_number() OVER (ORDER BY
+        COALESCE(rel1.n_tup_newpage_upd, 0) + COALESCE(toast1.n_tup_newpage_upd, 0) +
+        COALESCE(rel2.n_tup_newpage_upd, 0) + COALESCE(toast2.n_tup_newpage_upd, 0)
+        DESC NULLS LAST,
+        COALESCE(rel1.datid, rel2.datid),
+        COALESCE(rel1.relid, rel2.relid))::integer
+    ELSE NULL END AS ord_upd_np,
 
     CASE WHEN
       ((relrs1.growth_avail AND rel1.growth > 0) OR rel1.relpagegrowth_bytes > 0) OR

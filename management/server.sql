@@ -203,6 +203,8 @@ BEGIN
       'DROP TABLE last_stat_user_functions_srv%1$s',
       dserver_id);
     DELETE FROM last_stat_cluster WHERE server_id = dserver_id;
+    DELETE FROM last_stat_io WHERE server_id = dserver_id;
+    DELETE FROM last_stat_slru WHERE server_id = dserver_id;
     DELETE FROM last_stat_wal WHERE server_id = dserver_id;
     DELETE FROM last_stat_archiver WHERE server_id = dserver_id;
     DELETE FROM sample_stat_tablespaces WHERE server_id = dserver_id;
@@ -349,8 +351,25 @@ IS 'Set relation sizes sampling settings for a server';
 CREATE FUNCTION show_servers()
 RETURNS TABLE(server_name name, connstr text, enabled boolean, max_sample_age integer, description text)
 SET search_path=@extschema@ AS $$
+DECLARE
+  c_priv CURSOR FOR
     SELECT server_name, connstr, enabled, max_sample_age, server_description FROM servers;
-$$ LANGUAGE sql;
+
+  c_unpriv CURSOR FOR
+    SELECT server_name, '<hidden>' as connstr, enabled, max_sample_age, server_description FROM servers;
+BEGIN
+  IF has_column_privilege('servers', 'connstr', 'SELECT') THEN
+    FOR server_name, connstr, enabled, max_sample_age, description IN SELECT s.server_name, s.connstr, s.enabled, s.max_sample_age, s.server_description FROM servers s LOOP
+      RETURN NEXT;
+    END LOOP;
+  ELSE
+    FOR server_name, connstr, enabled, max_sample_age, description IN SELECT s.server_name, '<hidden>' as connstr, s.enabled, s.max_sample_age, s.server_description FROM servers s LOOP
+      RETURN NEXT;
+    END LOOP;
+  END IF;
+  RETURN;
+END;
+$$ LANGUAGE plpgsql;
 COMMENT ON FUNCTION show_servers() IS 'Displays all servers';
 
 CREATE FUNCTION show_servers_size_sampling()

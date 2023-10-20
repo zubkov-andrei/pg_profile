@@ -994,7 +994,7 @@ SET search_path=@extschema@ AS $$
         (server_id, datid, userid, queryid, toplevel)
 $$ LANGUAGE sql;
 
-CREATE FUNCTION report_queries_format(IN sserver_id integer, IN queries_list jsonb,
+CREATE FUNCTION report_queries_format(IN report_context jsonb, IN sserver_id integer, IN queries_list jsonb,
   IN start1_id integer, IN end1_id integer, IN start2_id integer, IN end2_id integer)
 RETURNS TABLE(
   hexqueryid  text,
@@ -1056,10 +1056,16 @@ DECLARE
     queryid_entry     jsonb;
     lim               CONSTANT integer := 3;
 BEGIN
+    IF NOT has_column_privilege('stmt_list', 'query', 'SELECT') THEN
+      -- Return empty set when permissions denied to see query text
+      hexqueryid := '';
+      query_text1 := 'You must be a member of pg_read_all_stats to access query texts';
+      RETURN NEXT;
+      RETURN;
+    END IF;
+    qlen_limit := (report_context #>> '{report_properties,max_query_length}')::integer;
     FOR qr_result IN c_queries(lim)
     LOOP
-        /*query_text := replace(qr_result.query,'<','&lt;');
-        query_text := replace(query_text,'>','&gt;');*/
         -- New query entry
         IF qr_result.ord = 1 THEN
           hexqueryid := to_hex(qr_result.queryid);
@@ -1070,11 +1076,11 @@ BEGIN
         -- Collect query texts
         CASE qr_result.ord
           WHEN 1 THEN
-            query_text1 := qr_result.query;
+            query_text1 := left(qr_result.query, qlen_limit);
           WHEN 2 THEN
-            query_text2 := qr_result.query;
+            query_text2 := left(qr_result.query, qlen_limit);
           WHEN 3 THEN
-            query_text3 := qr_result.query;
+            query_text3 := left(qr_result.query, qlen_limit);
           ELSE
             RAISE 'Unexpected queryid index';
         END CASE;

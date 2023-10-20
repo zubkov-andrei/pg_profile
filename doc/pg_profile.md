@@ -8,7 +8,7 @@ Extension is based on statistic views of PostgreSQL and several contrib extensio
 
 Historic repository will be created in your database by this extension. This repository will hold statistic "samples" for your postgres clusters. Sample is taken by calling _take_sample()_ function. PostgreSQL doesn't have any job-like engine, so you'll need to use *cron*.
 
-Periodic samples can help you finding most resource intensive activities in the past. Suppose, you were reported performance degradation several hours ago. Resolving such issue, you can build a report between two samples bounding performance issue period to see load profile of your database. It's worth using a monitoring tool such as Zabbix to know exact time when performance issues was happening.
+Periodic samples can help you finding most resource intensive activities in the past. Suppose, you were reported performance degradation several hours ago. Resolving such issue, you can build a report between two samples bounding performance issue period to see the load profile of your database. You can use provided grafana dashboard to locate the exact time when performance issues was happening.
 
 You can take an explicit sample before running any batch processing, and after it will be done.
 
@@ -81,43 +81,65 @@ New versions of *pg_profile* will contain migration script (when possible). So, 
 postgres=# ALTER EXTENSION pg_profile UPDATE;
 ```
 ## Privileges
-Using *pg_profile* with a superuser privileges does not have any issues, but if you want to avoid using superuser permissions, here is the guide:
-### On pg_profile database
-Create an unprivileged user:
+Up to three roles can be involved while *pg_profile* is in action:
+  * **The pg_profile owner** is the owner of *pg_profile* extension.
+  * **The collecting role** is used by *pg_profile* while connecting to databases.
+  * **The reporting role** is used to generate reports.
+If you use the superuser role *postgres* to perform all actions with *pg_profile*, you can skip the most of the following steps.
+### The pg_profile owner
+This role can be used to perform all actions related to *pg_profile* extension. This role will have access to server connection strings, which may contain a passwords. You should use this role to run *take_sample()* function. Dblink extension is needed for this user.
+Complicated example assuming each extension in own schema:
 ```
-create role profile_usr login password 'pwd';
+\c postgres postgres
+CREATE SCHEMA dblink;
+CREATE EXTENSION dblink SCHEMA dblink;
+CREATE USER profile_usr with password 'profile_pwd';
+GRANT USAGE ON SCHEMA dblink TO profile_usr;
+CREATE SCHEMA profile AUTHORIZATION profile_usr;
+\c postgres profile_usr
+CREATE EXTENSION pg_profile SCHEMA profile;
 ```
-Create a schema for pg_profile installation:
+### The collecting role
+This role should be used by *pg_profile* for connecting to databases and performing statistics collection. Unprivileged users can't open connections using the *dblink* extension without a password, so you have to provide it in the connection string for each server. This role should have access to all supported statistics extensions. Also it should be able to perform a reset of statistic extensions.
+The most complicated example:
 ```
-create schema profile authorization profile_usr;
+\c postgres postgres
+CREATE SCHEMA pgss;
+CREATE SCHEMA pgsk;
+CREATE SCHEMA pgws;
+CREATE EXTENSION pg_stat_statements SCHEMA pgss;
+CREATE EXTENSION pg_stat_kcache SCHEMA pgsk;
+CREATE EXTENSION pg_wait_sampling SCHEMA pgws;
+CREATE USER profile_collector with password 'collector_pwd';
+GRANT pg_read_all_stats TO profile_collector;
+GRANT USAGE ON SCHEMA pgss TO profile_collector;
+GRANT USAGE ON SCHEMA pgsk TO profile_collector;
+GRANT USAGE ON SCHEMA pgws TO profile_collector;
+GRANT EXECUTE ON FUNCTION pgsk.pg_stat_kcache_reset TO profile_collector;
+GRANT EXECUTE ON FUNCTION pgss.pg_stat_statements_reset TO profile_collector;
+GRANT EXECUTE ON FUNCTION pgws.pg_wait_sampling_reset_profile TO profile_collector;
 ```
-Grant usage permission on schema, where _dblink_ extension resides:
+Now you should setup a connection string pointing to the database with statistics extensions installed:
 ```
-grant usage on schema public to profile_usr;
+\c postgres profile_usr
+SELECT profile.set_server_connstr('local','dbname=postgres port=5432 host=localhost user=profile_collector password=collector_pwd');
 ```
-Create the extension using *profile_usr* account:
-```
-postgres=> create extension pg_profile schema profile;
-```
-### On server database
-Create a user for *pg_profile* to connect:
-```
-create role profile_mon login password 'pwd_mon';
-```
-Make sure this user have permissions to connect to any database in a cluster (by default, it is), and _pg_hba.conf_ will permit such connection from _pg_profile_ database host. Also, we need *pg_read_all_stats* privilege, and execute privilege on pg_stat_statements_reset:
-```
-grant pg_read_all_stats to profile_mon;
-grant execute on function pg_stat_statements_reset TO profile_mon;
-```
-### Server setup at pg_profile database
-Non-superusers can't establish connection without a password. Best way to provide password is using a password file.
+The password authentication must be configured in the *pg_hba.conf* file for the *profile_collector* user.
 
-N.B. pg_profile will connect to all databases on a server, thus password file must use a wildcard as a database name.
+Obviously, the collecting role should be configured properly on all servers observed by *pg_profile*.
 
-As an insecure way, you can provide a password in connection string:
+You should be able to perform a *take_sample()* call now using the *profile_usr* role:
 ```
-select set_server_connstr('local','dbname=postgres port=5432 user=profile_mon password=pwd_mon');
+\c postgres profile_usr
+SELECT * FROM take_sample();
 ```
+It is time to configure the scheduler (in our example crontab of postgres user):
+```
+*/30 * * * *   psql -U profile_usr -d postgres -c 'SELECT profile.take_sample()' > /dev/null 2>&1
+```
+Note that you can use the postgres password file to store passwords.
+### The reporting role
+Any postgres user can build a *pg_profile* report. The minimal privileges needed to generate a *pg_profile* reports are granted to the public role. However full report with query texts available only to the member of *pg_read_all_stats* role. Anyway the reporting role can't access server connection strings, so it can't get the passwords of servers.
 
 ## Using pg_profile
 ### Setting extension parameters
@@ -497,6 +519,48 @@ Contains per-database statistics during report interval, based on *pg_stat_datab
   * *Files* - number of temporary files created by queries in this database (*temp_files*)
 * *Size* - database size at the end of report interval (*pg_database_size()*)
 * *Growth* - database growth during report interval (*pg_database_size()* difference)
+
+#### Cluster I/O statistics
+I/O statistics by object types, backend types and contexts. Based on *pg_stat_io*, available since PostgreSQL 16
+
+* *Object* - type of an I/O operation target object
+* *Backend* - type of backend performed an I/O operation
+* *Context* - context of an I/O operation
+* *Reads* - read statistics
+  * *Count* - number of read operations
+  * *Bytes* - read data amount
+  * *Time* - time spent in reading operations (in seconds)
+* *Writes* - read statistics
+  * *Count* - number of write operations
+  * *Bytes* - written data amount
+  * *Time* - time spent in writing operations (in seconds)
+* *Writebacks* - requests on writing to permanent storage
+  * *Count* - number of blocks which the process requested the kernel write out to permanent storage
+  * *Bytes* - the amount of data requested for write out to permanent storage
+  * *Time* - time spent in writeback operations (seconds)
+* *Extends* - relation extend operations
+  * *Count* - number of relation extend operations
+  * *Bytes* - the amount of space used by extend operations
+  * *Time* - time spent in extend operations (in seconds)
+* *Hits* - the number of times a desired block was found in a shared buffer
+* *Evictions* - number of times a block has been written out from a shared or local buffer in order to make it available for another use
+* *Reuses* - the number of times an existing buffer in a size-limited ring buffer outside of shared buffers was reused as part of an I/O operation in the bulkread, bulkwrite, or vacuum contexts
+* *Fsyncs* - fsync operations
+  * *Count* - number of fsync calls. These are only tracked in context normal
+  * *Time* - time spent in fsync operations (seconds)
+
+#### Cluster SLRU statistics
+Access statistics on SLRU caches (based on *pg_stat_slru* view)
+
+* *Name* - name of the SLRU
+* *Zeroed* - number of blocks zeroed during initializations
+* *Hits* - number of times disk blocks were found already in the SLRU, so that a read was not necessary (this only includes hits in the SLRU, not the operating system's file system cache)
+* *Reads* - number of disk blocks read for this SLRU
+* *%Hit* - number of disk blocks hits for this SLRU as a percentage of reads + hits
+* *Writes* - number of disk blocks written for this SLRU
+* *Checked* - number of blocks checked for existence for this SLRU (blks_exists field)
+* *Flushes* - number of flushes of dirty data for this SLRU
+* *Truncates* - number of truncates for this SLRU
 
 #### Session statistics by database
 This section contains session-related data from *pg_stat_database* view. Available since Postgres 14
@@ -1007,6 +1071,18 @@ Top tables sorted by amount of operations, causing autovacuum load, i.e. sum of 
 * *AutoVacuum* - number of times this table has been vacuumed by the autovacuum daemon (*autovacuum_count* field)
 * *Analyze* - number of times this table has been manually analyzed (*analyze_count* field)
 * *AutoAnalyze* - number of times this table has been analyzed by the autovacuum daemon (*autoanalyze_count* field)
+
+#### Top tables by new-page updated tuples
+Top tables by number of rows updated where the successor version goes onto a new heap page, leaving behind an original version with a t_ctid field that points to a different heap page. These are always non-HOT updates.
+
+* *DB* - database name of the table
+* *Tablespace* - tablespace name, where the table is located
+* *Schema* - schema name of the table
+* *Table* - table name
+* *NP Upd* - number of rows updated to a new heap page
+* *%Upd* - number of new-page updated rows as a percentage of all rows updated
+* *Upd* - number of rows updated (includes HOT updated rows)
+* *Upd(HOT)* - number of rows HOT updated (i.e., with no separate index update required)
 
 #### Top growing tables
 

@@ -297,14 +297,14 @@ $$ LANGUAGE sql;
 
 CREATE FUNCTION dbstats_reset(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS TABLE(
-    datname     name,
+    dbname      name,
     stats_reset timestamp with time zone,
     sample_id   integer
   )
 SET search_path=@extschema@ AS
 $$
     SELECT
-        st1.datname,
+        st1.datname as dbname,
         st1.stats_reset,
         st1.sample_id
     FROM sample_stat_database st1
@@ -324,7 +324,7 @@ $$ LANGUAGE sql;
 
 CREATE FUNCTION dbstats_reset_format(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS TABLE(
-    datname     name,
+    dbname      name,
     stats_reset text,
     sample_id   integer
   )
@@ -332,7 +332,7 @@ RETURNS TABLE(
 AS
 $$
   SELECT
-    datname,
+    dbname,
     stats_reset::text as stats_reset,
     sample_id
   FROM dbstats_reset(sserver_id, start_id, end_id)
@@ -344,7 +344,7 @@ CREATE FUNCTION dbstats_reset_format_diff(IN sserver_id integer,
   IN start2_id integer, IN end2_id integer)
 RETURNS TABLE(
   interval_num integer,
-  datname      name,
+  dbname       name,
   stats_reset  text,
   sample_id    integer
 )
@@ -353,14 +353,14 @@ AS
 $$
   SELECT
     interval_num,
-    datname,
+    dbname,
     stats_reset::text as stats_reset,
     sample_id
   FROM
-    (SELECT 1 AS interval_num, datname, stats_reset, sample_id
+    (SELECT 1 AS interval_num, dbname, stats_reset, sample_id
       FROM dbstats_reset(sserver_id, start1_id, end1_id)
     UNION
-    SELECT 2 AS interval_num, datname, stats_reset, sample_id
+    SELECT 2 AS interval_num, dbname, stats_reset, sample_id
       FROM dbstats_reset(sserver_id, start2_id, end2_id)) AS samples
   ORDER BY interval_num, sample_id ASC;
 $$ LANGUAGE sql;

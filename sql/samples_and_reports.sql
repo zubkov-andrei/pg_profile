@@ -88,11 +88,7 @@ WHERE
 ORDER BY funcname;
 
 /* Testing report */
-DROP FUNCTION IF EXISTS get_ids;
-DROP FUNCTION IF EXISTS get_sources;
-DROP FUNCTION IF EXISTS get_report_sections;
-
-CREATE OR REPLACE FUNCTION get_ids(IN headers jsonb)
+CREATE FUNCTION profile.get_ids(IN headers jsonb)
 RETURNS jsonb AS $$
 DECLARE
 	col jsonb;
@@ -113,14 +109,14 @@ BEGIN
 			END IF;
 		END IF;
 		IF col #>> '{columns}' IS NOT NULL
-			THEN ids := ids ||  get_ids((col #>> '{columns}')::jsonb);
+			THEN ids := ids ||  profile.get_ids((col #>> '{columns}')::jsonb);
 		END IF;
 	END LOOP;
 	RETURN ids;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION get_sources(IN headers jsonb)
+CREATE FUNCTION profile.get_sources(IN headers jsonb)
 RETURNS jsonb AS $$
 DECLARE
 	header jsonb;
@@ -131,7 +127,7 @@ BEGIN
 		IF header #>> '{source}' IS NOT NULL
             THEN sources := sources || jsonb_build_object(
                 header #>> '{source}', jsonb_build_object(
-                	'ids', get_ids((header #>> '{columns}')::jsonb),
+                	'ids', profile.get_ids((header #>> '{columns}')::jsonb),
                 	'ordering', header #>> '{ordering}'
                 )
             );
@@ -141,7 +137,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION get_report_sections(IN sections jsonb, IN report_context jsonb)
+CREATE FUNCTION profile.get_report_sections(IN sections jsonb, IN report_context jsonb)
 RETURNS jsonb AS $$
 DECLARE
 	elem jsonb;
@@ -161,10 +157,10 @@ BEGIN
 			elem #>> '{sect_id}',
 			jsonb_build_object(
 				'exists', true,
-				'headers', CASE WHEN (elem #>> '{header}') IS NOT NULL THEN get_sources((elem #>> '{header}')::jsonb) END
+				'headers', CASE WHEN (elem #>> '{header}') IS NOT NULL THEN profile.get_sources((elem #>> '{header}')::jsonb) END
 			));
 		IF elem #>> '{sections}' IS NOT NULL
-			THEN result := result || get_report_sections((elem #>> '{sections}')::jsonb, report_context::jsonb);
+			THEN result := result || profile.get_report_sections((elem #>> '{sections}')::jsonb, report_context::jsonb);
 		END IF;
 	END LOOP;
 	RETURN result;
@@ -183,7 +179,7 @@ DECLARE
 	report_context jsonb := profile.get_report_context(server_id,start_id,end_id);
 	report_sections jsonb := profile.sections_jsonb(report_context,server_id,rep_id)::jsonb;
 	report_datasets jsonb := profile.get_report_datasets(report_context,server_id)::jsonb;
-	report_structure jsonb := get_report_sections((report_sections #>> '{sections}')::jsonb, report_context::jsonb);
+	report_structure jsonb := profile.get_report_sections((report_sections #>> '{sections}')::jsonb, report_context::jsonb);
 	c_recursive CURSOR FOR
 		WITH RECURSIVE sel AS (
 			SELECT sect_id, parent_sect_id, feature

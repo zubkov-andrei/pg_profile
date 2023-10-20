@@ -36,6 +36,7 @@ CREATE TABLE sample_stat_indexes (
     indisunique         bool,
     relpages_bytes      bigint,
     relpages_bytes_diff bigint,
+    last_idx_scan       timestamp with time zone,
     CONSTRAINT fk_stat_indexes_indexes FOREIGN KEY (server_id, datid, indexrelid)
       REFERENCES indexes_list(server_id, datid, indexrelid)
       ON DELETE NO ACTION ON UPDATE RESTRICT
@@ -72,7 +73,8 @@ CREATE VIEW v_sample_stat_indexes AS
         tablespaceid,
         indisunique,
         relpages_bytes,
-        relpages_bytes_diff
+        relpages_bytes_diff,
+        last_idx_scan
     FROM
         sample_stat_indexes s
         JOIN indexes_list il USING (datid, indexrelid, server_id)
@@ -99,7 +101,8 @@ CREATE TABLE last_stat_indexes (
     indisunique         bool,
     in_sample           boolean NOT NULL DEFAULT false,
     relpages_bytes      bigint,
-    relpages_bytes_diff bigint
+    relpages_bytes_diff bigint,
+    last_idx_scan       timestamp with time zone
 )
 PARTITION BY LIST (server_id);
 COMMENT ON TABLE last_stat_indexes IS 'Last sample data for calculating diffs in next sample';
