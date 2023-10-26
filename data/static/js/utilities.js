@@ -22,10 +22,16 @@ class Utilities {
     static sum(data, key) {
         return data.reduce((partialSum, a) => partialSum + a[key], 0);
     }
-    /** Filter by boolean key */
+    /** Advanced filter */
     static filter(data, key) {
-        if (data.every(obj => key in obj)) {
-            return structuredClone(data.filter(obj => obj[key]));
+        if (key.type === "exists") {
+            if (data.every(obj => key["field"] in obj)) {
+                return structuredClone(data.filter(obj => obj[key["field"]]));
+            }
+        } else if (key.type === "equal") {
+            if (data.every(obj => key["field"] in obj)) {
+                return structuredClone(data.filter(obj => obj[key["field"]] === key["value"]));
+            }
         }
         return data;
     }

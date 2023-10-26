@@ -23,26 +23,66 @@ a:hover {
 }
 #navigator {
     position: var(--main-position);
-    background-color: #ffffff;
+    background-color: transparent;
     border-radius: 4px;
-    padding: 10px 20px 20px 30px;
-    box-shadow: var(--main-box-shadow);
     visibility: hidden;
     top: 2%;
     height: 92%;
-    right: -15%;
+    right: 0;
     overflow: auto;
-    opacity: 0.2;
+    opacity: 0.9;
     transition: opacity 300ms linear, visibility 300ms linear, right 300ms linear;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+}
+#navigator div {
+    margin-top: 15px;
+    height: 100px;
+    background-color: royalblue;
+    writing-mode: vertical-lr;
+    font-size: 14px;
+    letter-spacing: 2px;
+    text-align: center;
+    transition: width 300ms linear;
+    color: white;
+}
+#navigator div:hover {
+    cursor: pointer;
+}
+#navigator ul {
+    background-color: white;
+}
+#navigator div.active {
+    width: 14px;
+}
+#navigator div.active:hover {
+    width: 20px;
+}
+#navigator div.hidden {
+    width: 48px;
+}
+#navigator div.hidden:hover {
+    width: 42px;
+}
+#navigator ul.active {
+    box-shadow: var(--main-box-shadow);
+    overflow: auto;
+    display: block;
+}
+#navigator ul.hidden {
+    display: none;
 }
 #navigator:hover {
-    opacity: 0.9;
-    right: 0;
+    opacity: 1;
 }
-#navigator li.active {
+#navigator li.current {
+    border: 2px solid black;
+    border-radius: 3px;
+}
+#navigator li.active{
     background-color: var(--secondary-bg-color);
     border-radius: 3px;
-    padding: 2px;
 }
 #commonstat {
     display: flex;
@@ -120,10 +160,10 @@ svg rect:hover, svg circle:hover, svg path:hover, a.copyButton svg:hover>rect{
 }
 /* ----------- Differential report styles ----------- */
 
-.int1 td:not(.hdr), table.setlist tr.new_i1 {
+td.int1, .int1 td:not(.hdr), table.setlist tr.new_i1 {
     background-color: #FFEEEE;
 }
-.int2 td:not(.hdr), table.setlist tr.new_i2 {
+td.int2, .int2 td:not(.hdr), table.setlist tr.new_i2 {
     background-color: #EEEEFF;
 }
 table.toast tr.int1:not(.active) td:not(.hdr) {

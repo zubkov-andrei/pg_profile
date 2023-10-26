@@ -334,7 +334,7 @@ class BaseTable extends BaseSection {
         let newCell = newRow.insertCell(-1);
 
         /** Setting id on tr */
-        newRow.setAttribute('id', `${row.wait_event_type}_${row.hexqueryid}_${row.hexplanid}`);
+        newRow.setAttribute('id', `${row.event_type}_${row.hexqueryid}_${row.hexplanid}`);
 
         /** Setting rowspan attributes to new cell */
         if (column.rowspan) {
@@ -351,23 +351,19 @@ class BaseTable extends BaseSection {
             for (let i = 0; i < row[column.id].length; i++) {
                 let details = row[column.id][i];
 
-                if (details.wait_event) {
+                if (details.event) {
                     let p = document.createElement('p');
                     let a = document.createElement('a');
-                    if (row.wait_event_type === 'Total') {
-                        a.href = `#${details.wait_event}_${details.hexqueryid}_${details.hexplanid}`;
+                    if (row.event_type === 'Total') {
+                        a.href = `#${details.event}_${row.hexqueryid}_${row.hexplanid}`;
                     }
-                    a.innerHTML = details.wait_event;
+                    a.innerHTML = details.event;
                     p.appendChild(a);
                     let colons = document.createTextNode(': ');
                     p.appendChild(colons);
                     let strong = document.createElement('strong');
-                    strong.innerHTML = details.waited;
+                    strong.innerHTML = details.wait;
                     p.appendChild(strong);
-                    newCell.appendChild(p);
-                } else if (details.wait_event) {
-                    let p = document.createElement('p');
-                    p.insertAdjacentHTML('afterbegin', `${details.wait_event}: <strong>${details.waited}</strong>`);
                     newCell.appendChild(p);
                 }
             }
@@ -634,8 +630,8 @@ class HorizontalTable extends BaseTable {
             'hexplanid': 'data-hexplanid',
             'toplevel': 'data-toplevel',
             'userid': 'data-userid',
-            'wait_event_type': 'data-waiteventtype',
-            'wait_event': 'data-waitevent',
+            'event_type': 'data-event_type',
+            'event': 'data-event',
             'tablespacename': 'data-tablespacename',
             'schemaname': 'data-schemaname',
             'relname': 'data-relname',
@@ -684,8 +680,10 @@ class HorizontalTable extends BaseTable {
                 /** Iterate over all unique columns */
                 for (let k = 0; k < columns[j].length; k++) {
 
+                    let column = columns[j][k];
+
                     /** Build cells inside <tr> */
-                    isEmpty.push(HorizontalTable.buildCell(newRow, columns[j][k], row));
+                    isEmpty.push(HorizontalTable.buildCell(newRow, column, row));
                 }
 
                 /** Remove row, if all cells in row are empty */

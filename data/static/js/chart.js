@@ -23,17 +23,17 @@ class PipeChart extends BaseChart {
 
         let svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svg.setAttribute('width', '100%');
-        svg.setAttribute('height', '100%');
+        svg.setAttribute('height', '2em');
 
         orderedData.forEach(elem => {
-            let width = Math.ceil(elem[value]);
+            let width = Math.floor(elem[value]);
             let nestedSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
             nestedSvg.setAttribute('x', `${x}%`);
             nestedSvg.setAttribute('height', '2em');
             nestedSvg.setAttribute('width', `${width}%`);
 
             let title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-            title.innerHTML = `${elem.objname}: ${elem[key]}`;
+            title.innerHTML = `${elem.objname}: ${elem[value]}`;
 
             let text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
             text.setAttribute('y', '70%');

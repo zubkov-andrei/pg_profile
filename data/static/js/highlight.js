@@ -41,6 +41,13 @@ class Highlighter {
                 let isEqual = Highlighter.isDatasetEqual(tr.dataset, elem.dataset, elem);
                 if (isEqual) {
                     elem.classList.add('active');
+                    let navId = this.getClosestTag(elem, 0, 'div').firstChild.id;
+                    if (navId) {
+                        let navLi= document.getElementById(`navigator_${navId}`);
+                        if (navLi && !navLi.classList.contains('active')) {
+                            navLi.classList.add('active');
+                        }
+                    }
                 }
             });
         } else {
@@ -89,11 +96,19 @@ class Highlighter {
                 elem.classList.remove('active');
             }
         })
+        let navigator = document.getElementById('navigator');
+        if (navigator) {
+            let allItems = document.querySelectorAll('li');
+            allItems.forEach(item => {
+                if (item.classList.contains('active')) {
+                    item.classList.remove('active');
+                }
+            })
+        }
     }
 
     /**
      * If datasets in target and in row are the same - highlight the row.
-     * TODO: Продумать как подсвечивать отдельные ячейки при неполном совпадении дата-атрибутов
      * @param targetDataset
      * @param rowDataset
      * @param elem
@@ -116,6 +131,9 @@ class Highlighter {
 
         /** If at least one data in datasets doesn't match */
         for (let data in targetDataset) {
+            if (targetDataset[data] === '*' && rowDataset[data] !== undefined) {
+                continue;
+            }
             if (targetDataset[data] !== rowDataset[data]) {
                 return false;
             }

@@ -25,7 +25,6 @@ class Popup {
         const POPUP = document.createElement('div');
         POPUP.setAttribute('id', Popup.id);
         POPUP.setAttribute('class', Popup.klass);
-        POPUP.appendChild(document.createElement('p'));
         document.getElementById('container').appendChild(POPUP);
 
         return POPUP;
@@ -46,6 +45,17 @@ class Popup {
             POPUP.style.setProperty('--main-bg-color', noticeProperties.bgColor);
             POPUP.style.setProperty('--main-font-color', noticeProperties.fontColor);
             POPUP.innerHTML = ''; /** Cleare all inside */
+
+            /** Add close link to popup */
+            let close_link = document.createElement('a');
+            close_link.innerHTML = 'x';
+            close_link.onclick = function () {
+                POPUP.style.display = 'none';
+            }
+            close_link.style.cursor = 'pointer';
+            close_link.style.color = 'gray';
+
+            POPUP.appendChild(close_link);
             POPUP.appendChild(notice);
 
             if (noticeProperties.duration) {

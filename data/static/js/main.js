@@ -74,7 +74,7 @@ function main() {
     /** Add highlight feature */
     Highlighter.init();
 
-    /** Add highlight feature */
+    /** Add copy feature */
     Copier.init();
 
     /** Add sort feature */
