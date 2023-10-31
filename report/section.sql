@@ -892,7 +892,7 @@ BEGIN
       dataset := '[]'::jsonb;
       FOR r_result IN (
           SELECT *
-          FROM wal_stats_format_diff(sserver_id,
+          FROM wal_stats_format(sserver_id,
             start1_id, end1_id, start2_id, end2_id,
             (report_context #>> '{report_properties,interval1_duration_sec}')::numeric,
             (report_context #>> '{report_properties,interval2_duration_sec}')::numeric)

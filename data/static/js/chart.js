@@ -5,7 +5,7 @@ class BaseChart {
         let value = column.id;
         let direction = column.ordering[0] === '-' ? -1 : 1;
         let newCell = newRow.insertCell(-1);
-
+        newCell.setAttribute('class', column.class);
         if (Utilities.sum(data, value) > 0) {
             let orderedData = Utilities.sort(data, key, direction);
 

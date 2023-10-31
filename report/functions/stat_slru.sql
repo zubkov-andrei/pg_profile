@@ -44,16 +44,16 @@ RETURNS TABLE(
   SELECT
     COALESCE(name, 'Total') AS name,
 
-    NULLIF(SUM(blks_zeroed), 0) AS blks_zeroed,
-    NULLIF(SUM(blks_hit), 0) AS blks_hit,
-    NULLIF(SUM(blks_read), 0) AS blks_read,
+    NULLIF(SUM(blks_zeroed), 0)::bigint AS blks_zeroed,
+    NULLIF(SUM(blks_hit), 0)::bigint AS blks_hit,
+    NULLIF(SUM(blks_read), 0)::bigint AS blks_read,
     ROUND(NULLIF(SUM(blks_hit), 0)::numeric * 100 /
       NULLIF(COALESCE(SUM(blks_hit), 0) + COALESCE(SUM(blks_read), 0), 0), 2)
       AS hit_pct,
-    NULLIF(SUM(blks_written), 0) AS blks_written,
-    NULLIF(SUM(blks_exists), 0) AS blks_exists,
-    NULLIF(SUM(flushes), 0) AS flushes,
-    NULLIF(SUM(truncates), 0) AS truncates
+    NULLIF(SUM(blks_written), 0)::bigint AS blks_written,
+    NULLIF(SUM(blks_exists), 0)::bigint AS blks_exists,
+    NULLIF(SUM(flushes), 0)::bigint AS flushes,
+    NULLIF(SUM(truncates), 0)::bigint AS truncates
 
   FROM cluster_stat_slru(sserver_id, start_id, end_id)
   GROUP BY ROLLUP(name)
@@ -87,27 +87,27 @@ RETURNS TABLE(
   SELECT
     COALESCE(name, 'Total') AS name,
 
-    NULLIF(SUM(st1.blks_zeroed), 0) AS blks_zeroed1,
-    NULLIF(SUM(st1.blks_hit), 0) AS blks_hit1,
-    NULLIF(SUM(st1.blks_read), 0) AS blks_read1,
+    NULLIF(SUM(st1.blks_zeroed), 0)::bigint AS blks_zeroed1,
+    NULLIF(SUM(st1.blks_hit), 0)::bigint AS blks_hit1,
+    NULLIF(SUM(st1.blks_read), 0)::bigint AS blks_read1,
     ROUND(NULLIF(SUM(st1.blks_hit), 0)::numeric * 100 /
       NULLIF(COALESCE(SUM(st1.blks_hit), 0) + COALESCE(SUM(st1.blks_read), 0), 0), 2)
       AS hit_pct1,
-    NULLIF(SUM(st1.blks_written), 0) AS blks_written1,
-    NULLIF(SUM(st1.blks_exists), 0) AS blks_exists1,
-    NULLIF(SUM(st1.flushes), 0) AS flushes1,
-    NULLIF(SUM(st1.truncates), 0) AS truncates1,
+    NULLIF(SUM(st1.blks_written), 0)::bigint AS blks_written1,
+    NULLIF(SUM(st1.blks_exists), 0)::bigint AS blks_exists1,
+    NULLIF(SUM(st1.flushes), 0)::bigint AS flushes1,
+    NULLIF(SUM(st1.truncates), 0)::bigint AS truncates1,
 
-    NULLIF(SUM(st2.blks_zeroed), 0) AS blks_zeroed2,
-    NULLIF(SUM(st2.blks_hit), 0) AS blks_hit2,
-    NULLIF(SUM(st2.blks_read), 0) AS blks_read2,
+    NULLIF(SUM(st2.blks_zeroed), 0)::bigint AS blks_zeroed2,
+    NULLIF(SUM(st2.blks_hit), 0)::bigint AS blks_hit2,
+    NULLIF(SUM(st2.blks_read), 0)::bigint AS blks_read2,
     ROUND(NULLIF(SUM(st2.blks_hit), 0)::numeric * 100 /
       NULLIF(COALESCE(SUM(st2.blks_hit), 0) + COALESCE(SUM(st2.blks_read), 0), 0), 2)
       AS hit_pct2,
-    NULLIF(SUM(st2.blks_written), 0) AS blks_written2,
-    NULLIF(SUM(st2.blks_exists), 0) AS blks_exists2,
-    NULLIF(SUM(st2.flushes), 0) AS flushes2,
-    NULLIF(SUM(st2.truncates), 0) AS truncates2
+    NULLIF(SUM(st2.blks_written), 0)::bigint AS blks_written2,
+    NULLIF(SUM(st2.blks_exists), 0)::bigint AS blks_exists2,
+    NULLIF(SUM(st2.flushes), 0)::bigint AS flushes2,
+    NULLIF(SUM(st2.truncates), 0)::bigint AS truncates2
     
   FROM cluster_stat_slru(sserver_id, start1_id, end1_id) st1
     FULL OUTER JOIN cluster_stat_slru(sserver_id, start2_id, end2_id) st2

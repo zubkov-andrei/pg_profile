@@ -105,6 +105,12 @@ table tr td.table_obj_value, table tr td.mono {
 table tr td.table_obj_value {
     text-align: right;
 }
+table tr td.fullScreen {
+    width: 85%
+}
+table tr td.halfScreen {
+    width: 42%;
+}
 table p {
     margin: 0.2em;
 }
