@@ -14,6 +14,7 @@ CREATE TABLE sample_settings (
     CONSTRAINT pk_sample_settings PRIMARY KEY (server_id, setting_scope, name, first_seen),
     CONSTRAINT fk_sample_settings_servers FOREIGN KEY (server_id)
       REFERENCES servers(server_id) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE
 );
 -- Unique index on system_identifier to ensure there is no versions
 -- as they are affecting export/import functionality

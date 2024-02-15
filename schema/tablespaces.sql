@@ -1,6 +1,6 @@
 /* ==== Tablespaces stats history ==== */
 CREATE TABLE tablespaces_list(
-    server_id           integer REFERENCES servers(server_id) ON DELETE CASCADE,
+    server_id           integer,
     tablespaceid        oid,
     tablespacename      name NOT NULL,
     tablespacepath      text NOT NULL, -- cannot be changed without changing oid
@@ -8,6 +8,7 @@ CREATE TABLE tablespaces_list(
     CONSTRAINT pk_tablespace_list PRIMARY KEY (server_id, tablespaceid),
     CONSTRAINT fk_tablespaces_list_samples FOREIGN KEY (server_id, last_sample_id)
       REFERENCES samples (server_id, sample_id) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE
 );
 CREATE INDEX ix_tablespaces_list_smp ON tablespaces_list(server_id, last_sample_id);
 COMMENT ON TABLE tablespaces_list IS 'Tablespaces, captured in samples';
@@ -20,9 +21,10 @@ CREATE TABLE sample_stat_tablespaces
     size                bigint NOT NULL,
     size_delta          bigint NOT NULL,
     CONSTRAINT fk_stattbs_samples FOREIGN KEY (server_id, sample_id)
-        REFERENCES samples (server_id, sample_id) ON DELETE CASCADE,
+      REFERENCES samples (server_id, sample_id) ON DELETE CASCADE
+        DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT fk_st_tablespaces_tablespaces FOREIGN KEY (server_id, tablespaceid)
-        REFERENCES tablespaces_list(server_id, tablespaceid)
+      REFERENCES tablespaces_list(server_id, tablespaceid)
         ON DELETE NO ACTION ON UPDATE CASCADE
         DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT pk_sample_stat_tablespaces PRIMARY KEY (server_id, sample_id, tablespaceid)

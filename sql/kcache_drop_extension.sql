@@ -5,6 +5,7 @@ DROP FUNCTION profile.grow_table_trg_f();
 DROP FUNCTION profile.get_ids;
 DROP FUNCTION profile.get_sources;
 DROP FUNCTION profile.get_report_sections;
+DROP FUNCTION profile.check_dataset_queries;
 /* Testing drop server with data */
 SELECT * FROM profile.drop_server('local');
 DROP EXTENSION pg_profile;

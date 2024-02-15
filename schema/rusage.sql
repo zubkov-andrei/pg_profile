@@ -38,6 +38,7 @@ CREATE TABLE sample_kcache (
       DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT fk_kcache_st FOREIGN KEY (server_id, sample_id, datid, userid, queryid, toplevel)
       REFERENCES sample_statements(server_id, sample_id, datid, userid, queryid, toplevel) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE
 );
 CREATE INDEX ix_sample_kcache_sl ON sample_kcache(server_id,queryid_md5);
 
@@ -113,5 +114,6 @@ CREATE TABLE sample_kcache_total (
     CONSTRAINT pk_sample_kcache_total PRIMARY KEY (server_id, sample_id, datid),
     CONSTRAINT fk_kcache_t_st FOREIGN KEY (server_id, sample_id, datid)
       REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE
 );
 COMMENT ON TABLE sample_kcache_total IS 'Aggregated stats for kcache, based on pg_stat_kcache';

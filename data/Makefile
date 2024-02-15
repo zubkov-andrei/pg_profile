@@ -10,8 +10,6 @@ includes = \
 	static/js/highlight.js \
 	static/js/navigator.js \
 	static/js/copier.js \
-	static/js/popup.js \
-	static/js/sort.js \
 	static/js/main.js \
 	static/css/style.css
 
@@ -23,8 +21,6 @@ report_templates.sql: $(data_files) $(includes)
 	static/js/highlight.js \
 	static/js/navigator.js \
 	static/js/copier.js \
-	static/js/popup.js \
-	static/js/sort.js \
 	static/js/main.js \
 	> static/js/script.js && \
 	sed -f script.sed $(data_files) \

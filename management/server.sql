@@ -225,6 +225,8 @@ BEGIN
         fk_statements_roles
       DEFERRED;
     DELETE FROM samples WHERE server_id = dserver_id;
+    DELETE FROM indexes_list WHERE server_id = dserver_id;
+    DELETE FROM tables_list WHERE server_id = dserver_id;
     SET CONSTRAINTS
         fk_stat_indexes_indexes,
         fk_toast_table,

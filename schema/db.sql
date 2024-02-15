@@ -35,7 +35,8 @@ CREATE TABLE sample_stat_database
     checksum_failures   bigint,
     checksum_last_failure timestamp with time zone,
     CONSTRAINT fk_statdb_samples FOREIGN KEY (server_id, sample_id)
-      REFERENCES samples (server_id, sample_id) ON DELETE CASCADE,
+      REFERENCES samples (server_id, sample_id) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT pk_sample_stat_database PRIMARY KEY (server_id, sample_id, datid)
 );
 COMMENT ON TABLE sample_stat_database IS 'Sample database statistics table (fields from pg_stat_database)';

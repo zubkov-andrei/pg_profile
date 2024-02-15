@@ -486,7 +486,8 @@ psql -Aqtc "select profile.get_report(tstzrange(now() - interval '1 day',now()))
 Now you can view report file using any web browser.
 
 ## Sections of a report
-Report tables and their columns are described in this section. The most objects mentioned in the report can be selected to highlight all related entries in a report.
+Report tables and their columns are described in this section. The most objects mentioned in the report can be selected to highlight all related entries in a report. Also there is a sub-string based filter that can be used to limit report content to some particular objects based on a sub-string.
+
 ### Server statistics
 
 #### Database statistics
@@ -700,7 +701,7 @@ This table contains top _pg_profile.topn_ wait events by summary time waited inc
 * *%Total* - time waited in event by all backends as a percentage of overall time waited by backends
 
 ### SQL query statistics
-This report section contains tables of top statements during report interval sorted by several important statistics. Data is captured from *pg_stat_statements* view if it was available at the time of samples.
+This report section contains tables of top statements during report interval sorted by several important statistics. Data is captured from *pg_stat_statements* view if it was available at the time of samples. Statements can be highlighted in all SQL-related sections by a single mouse click on it. Also this click will show a query text preview just under the query statistics row. Query text preview can be hidden with a second click on a query.
 
 #### Top SQL by elapsed time
 

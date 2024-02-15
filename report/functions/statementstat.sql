@@ -998,9 +998,7 @@ CREATE FUNCTION report_queries_format(IN report_context jsonb, IN sserver_id int
   IN start1_id integer, IN end1_id integer, IN start2_id integer, IN end2_id integer)
 RETURNS TABLE(
   hexqueryid  text,
-  query_text1 text,
-  query_text2 text,
-  query_text3 text
+  query_texts jsonb
 )
 SET search_path=@extschema@ AS $$
 DECLARE
@@ -1051,40 +1049,25 @@ DECLARE
 
     qr_result         RECORD;
     qlen_limit        integer;
-    query_text        text := '';
-    query_text_keys   jsonb;
-    queryid_entry     jsonb;
     lim               CONSTANT integer := 3;
 BEGIN
     IF NOT has_column_privilege('stmt_list', 'query', 'SELECT') THEN
       -- Return empty set when permissions denied to see query text
       hexqueryid := '';
-      query_text1 := 'You must be a member of pg_read_all_stats to access query texts';
+      query_texts := jsonb_insert(query_texts, '{-1}',
+        to_jsonb('You must be a member of pg_read_all_stats to access query texts'));
       RETURN NEXT;
       RETURN;
     END IF;
     qlen_limit := (report_context #>> '{report_properties,max_query_length}')::integer;
     FOR qr_result IN c_queries(lim)
     LOOP
-        -- New query entry
         IF qr_result.ord = 1 THEN
           hexqueryid := to_hex(qr_result.queryid);
-          query_text1 := NULL;
-          query_text2 := NULL;
-          query_text3 := NULL;
+          query_texts := '[]'::jsonb;
         END IF;
-        -- Collect query texts
-        CASE qr_result.ord
-          WHEN 1 THEN
-            query_text1 := left(qr_result.query, qlen_limit);
-          WHEN 2 THEN
-            query_text2 := left(qr_result.query, qlen_limit);
-          WHEN 3 THEN
-            query_text3 := left(qr_result.query, qlen_limit);
-          ELSE
-            RAISE 'Unexpected queryid index';
-        END CASE;
-        -- Return collected texts
+        query_texts := jsonb_insert(query_texts, '{-1}',
+          to_jsonb(left(qr_result.query, qlen_limit)));
         IF qr_result.ord = qr_result.rowspan THEN
           RETURN NEXT;
         END IF;

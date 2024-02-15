@@ -383,6 +383,11 @@ DECLARE
 BEGIN
   IF num_nulls(start1_id, end1_id) = 0 AND num_nulls(start2_id, end2_id) > 0 THEN
     -- Regular report
+    -- report properties dataset
+    dataset := '[]'::jsonb;
+    dataset := dataset || (report_context #>> '{report_properties}')::jsonb;
+    datasets := jsonb_set(datasets, '{properties}', dataset);
+
     -- database statistics dataset
     dataset := '[]'::jsonb;
     FOR r_result IN (
@@ -393,7 +398,7 @@ BEGIN
     END LOOP;
     datasets := jsonb_set(datasets, '{dbstat}', dataset);
 
-    IF (report_context #> '{report_features,dbstats_reset}')::boolean THEN
+    IF (report_context #>> '{report_features,dbstats_reset}')::boolean THEN
       -- dbstats reset dataset
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -405,7 +410,7 @@ BEGIN
       datasets := jsonb_set(datasets, '{dbstats_reset}', dataset);
     END IF;
 
-    IF (report_context #> '{report_features,stat_io}')::boolean THEN
+    IF (report_context #>> '{report_features,stat_io}')::boolean THEN
       -- stat_io dataset
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -415,7 +420,7 @@ BEGIN
         dataset := dataset || to_jsonb(r_result);
       END LOOP;
       datasets := jsonb_set(datasets, '{stat_io}', dataset);
-      IF (report_context #> '{report_features,stat_io_reset}')::boolean THEN
+      IF (report_context #>> '{report_features,stat_io_reset}')::boolean THEN
         -- IO reset dataset
         dataset := '[]'::jsonb;
         FOR r_result IN (
@@ -428,7 +433,7 @@ BEGIN
       END IF;
     END IF;
 
-    IF (report_context #> '{report_features,stat_slru}')::boolean THEN
+    IF (report_context #>> '{report_features,stat_slru}')::boolean THEN
       -- stat_slru dataset
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -438,7 +443,7 @@ BEGIN
         dataset := dataset || to_jsonb(r_result);
       END LOOP;
       datasets := jsonb_set(datasets, '{stat_slru}', dataset);
-      IF (report_context #> '{report_features,stat_slru_reset}')::boolean THEN
+      IF (report_context #>> '{report_features,stat_slru_reset}')::boolean THEN
         -- SLRU reset dataset
         dataset := '[]'::jsonb;
         FOR r_result IN (
@@ -451,7 +456,7 @@ BEGIN
       END IF;
     END IF;
 
-    IF (report_context #> '{report_features,statstatements}')::boolean THEN
+    IF (report_context #>> '{report_features,statstatements}')::boolean THEN
       -- statements by database dataset
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -463,7 +468,7 @@ BEGIN
       datasets := jsonb_set(datasets, '{statements_dbstats}', dataset);
     END IF;
 
-    IF (report_context #> '{report_features,stmt_cnt_range}')::boolean THEN
+    IF (report_context #>> '{report_features,stmt_cnt_range}')::boolean THEN
       -- statements count of max for interval
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -475,7 +480,7 @@ BEGIN
       datasets := jsonb_set(datasets, '{stmt_cnt_range}', dataset);
     END IF;
 
-    IF (report_context #> '{report_features,stmt_cnt_all}')::boolean THEN
+    IF (report_context #>> '{report_features,stmt_cnt_all}')::boolean THEN
       -- statements count of max for all samples
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -497,7 +502,7 @@ BEGIN
     END LOOP;
     datasets := jsonb_set(datasets, '{cluster_stats}', dataset);
 
-    IF (report_context #> '{report_features,cluster_stats_reset}')::boolean THEN
+    IF (report_context #>> '{report_features,cluster_stats_reset}')::boolean THEN
       -- cluster stats reset dataset
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -509,7 +514,7 @@ BEGIN
       datasets := jsonb_set(datasets, '{cluster_stats_reset}', dataset);
     END IF;
 
-    IF (report_context #> '{report_features,wal_stats_reset}')::boolean THEN
+    IF (report_context #>> '{report_features,wal_stats_reset}')::boolean THEN
       -- WAL stats reset dataset
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -521,7 +526,7 @@ BEGIN
       datasets := jsonb_set(datasets, '{wal_stats_reset}', dataset);
     END IF;
 
-    IF (report_context #> '{report_features,wal_stats}')::boolean THEN
+    IF (report_context #>> '{report_features,wal_stats}')::boolean THEN
       -- WAL stats dataset
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -544,7 +549,7 @@ BEGIN
     END LOOP;
     datasets := jsonb_set(datasets, '{tablespace_stats}', dataset);
 
-    IF (report_context #> '{report_features,wait_sampling_tot}')::boolean THEN
+    IF (report_context #>> '{report_features,wait_sampling_tot}')::boolean THEN
       -- Wait totals dataset
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -565,7 +570,7 @@ BEGIN
       datasets := jsonb_set(datasets, '{wait_sampling_events}', dataset);
     END IF;
 
-    IF (report_context #> '{report_features,statstatements}')::boolean THEN
+    IF (report_context #>> '{report_features,statstatements}')::boolean THEN
       -- Statement stats dataset
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -591,7 +596,7 @@ BEGIN
       datasets := jsonb_set(datasets, '{top_statements}', dataset);
     END IF;
 
-    IF (report_context #> '{report_features,kcachestatements}')::boolean THEN
+    IF (report_context #>> '{report_features,kcachestatements}')::boolean THEN
       -- Statement rusage stats dataset
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -738,6 +743,11 @@ BEGIN
     datasets := jsonb_set(datasets, '{queries}', dataset);
   ELSIF num_nulls(start1_id, end1_id, start2_id, end2_id) = 0 THEN
     -- Differential report
+    -- report properties dataset
+    dataset := '[]'::jsonb;
+    dataset := dataset || (report_context #>> '{report_properties}')::jsonb;
+    datasets := jsonb_set(datasets, '{properties}', dataset);
+
     -- database statistics dataset
     dataset := '[]'::jsonb;
     FOR r_result IN (
@@ -749,7 +759,7 @@ BEGIN
     END LOOP;
     datasets := jsonb_set(datasets, '{dbstat}', dataset);
 
-    IF (report_context #> '{report_features,dbstats_reset}')::boolean THEN
+    IF (report_context #>> '{report_features,dbstats_reset}')::boolean THEN
       -- dbstats reset dataset
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -762,7 +772,7 @@ BEGIN
       datasets := jsonb_set(datasets, '{dbstats_reset}', dataset);
     END IF;
 
-    IF (report_context #> '{report_features,stat_io}')::boolean THEN
+    IF (report_context #>> '{report_features,stat_io}')::boolean THEN
       -- stat_io dataset
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -773,7 +783,7 @@ BEGIN
         dataset := dataset || to_jsonb(r_result);
       END LOOP;
       datasets := jsonb_set(datasets, '{stat_io}', dataset);
-      IF (report_context #> '{report_features,stat_io_reset}')::boolean THEN
+      IF (report_context #>> '{report_features,stat_io_reset}')::boolean THEN
         -- SLRU reset dataset
         dataset := '[]'::jsonb;
         FOR r_result IN (
@@ -787,7 +797,7 @@ BEGIN
       END IF;
     END IF;
 
-    IF (report_context #> '{report_features,stat_slru}')::boolean THEN
+    IF (report_context #>> '{report_features,stat_slru}')::boolean THEN
       -- stat_slru dataset
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -798,7 +808,7 @@ BEGIN
         dataset := dataset || to_jsonb(r_result);
       END LOOP;
       datasets := jsonb_set(datasets, '{stat_slru}', dataset);
-      IF (report_context #> '{report_features,stat_slru_reset}')::boolean THEN
+      IF (report_context #>> '{report_features,stat_slru_reset}')::boolean THEN
         -- SLRU reset dataset
         dataset := '[]'::jsonb;
         FOR r_result IN (
@@ -812,7 +822,7 @@ BEGIN
       END IF;
     END IF;
 
-    IF (report_context #> '{report_features,statstatements}')::boolean THEN
+    IF (report_context #>> '{report_features,statstatements}')::boolean THEN
       -- statements by database dataset
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -825,7 +835,7 @@ BEGIN
       datasets := jsonb_set(datasets, '{statements_dbstats}', dataset);
     END IF;
 
-    IF (report_context #> '{report_features,stmt_cnt_range}')::boolean THEN
+    IF (report_context #>> '{report_features,stmt_cnt_range}')::boolean THEN
       -- statements count of max for interval
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -838,7 +848,7 @@ BEGIN
       datasets := jsonb_set(datasets, '{stmt_cnt_range}', dataset);
     END IF;
 
-    IF (report_context #> '{report_features,stmt_cnt_all}')::boolean THEN
+    IF (report_context #>> '{report_features,stmt_cnt_all}')::boolean THEN
       -- statements count of max for all samples
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -861,7 +871,7 @@ BEGIN
     END LOOP;
     datasets := jsonb_set(datasets, '{cluster_stats}', dataset);
 
-    IF (report_context #> '{report_features,cluster_stats_reset}')::boolean THEN
+    IF (report_context #>> '{report_features,cluster_stats_reset}')::boolean THEN
       -- cluster stats reset dataset
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -874,7 +884,7 @@ BEGIN
       datasets := jsonb_set(datasets, '{cluster_stats_reset}', dataset);
     END IF;
 
-    IF (report_context #> '{report_features,wal_stats_reset}')::boolean THEN
+    IF (report_context #>> '{report_features,wal_stats_reset}')::boolean THEN
       -- WAL stats reset dataset
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -887,7 +897,7 @@ BEGIN
       datasets := jsonb_set(datasets, '{wal_stats_reset}', dataset);
     END IF;
 
-    IF (report_context #> '{report_features,wal_stats}')::boolean THEN
+    IF (report_context #>> '{report_features,wal_stats}')::boolean THEN
       -- WAL stats dataset
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -912,7 +922,7 @@ BEGIN
     END LOOP;
     datasets := jsonb_set(datasets, '{tablespace_stats}', dataset);
 
-    IF (report_context #> '{report_features,wait_sampling_tot}')::boolean THEN
+    IF (report_context #>> '{report_features,wait_sampling_tot}')::boolean THEN
       -- Wait totals dataset
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -935,7 +945,7 @@ BEGIN
       datasets := jsonb_set(datasets, '{wait_sampling_events}', dataset);
     END IF;
 
-    IF (report_context #> '{report_features,statstatements}')::boolean THEN
+    IF (report_context #>> '{report_features,statstatements}')::boolean THEN
       -- Statement stats dataset
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -962,7 +972,7 @@ BEGIN
       datasets := jsonb_set(datasets, '{top_statements}', dataset);
     END IF;
 
-    IF (report_context #> '{report_features,kcachestatements}')::boolean THEN
+    IF (report_context #>> '{report_features,kcachestatements}')::boolean THEN
       -- Statement rusage stats dataset
       dataset := '[]'::jsonb;
       FOR r_result IN (
@@ -1253,7 +1263,7 @@ DECLARE
           rs.sect_struct,
           init_depth,
           ARRAY['sections', (row_number() OVER (ORDER BY s_ord ASC) - 1)::text] path,
-          ARRAY[row_number() OVER (ORDER BY s_ord ASC)] as ordering_path
+          ARRAY[row_number() OVER (ORDER BY s_ord ASC, sect_id)] as ordering_path
         FROM report_struct rs
         WHERE rs.report_id = sections_jsonb.report_id AND parent_sect_id IS NULL
           AND (
@@ -1274,7 +1284,8 @@ DECLARE
           rs.sect_struct,
           st.depth + 1,
           st.path || ARRAY['sections', (row_number() OVER (PARTITION BY st.path ORDER BY s_ord ASC) - 1)::text] path,
-          ordering_path || ARRAY[row_number() OVER (PARTITION BY st.path ORDER BY s_ord ASC)] as ordering_path
+          ordering_path || ARRAY[row_number() OVER (PARTITION BY st.path ORDER BY s_ord ASC, rs.sect_id)]
+            as ordering_path
         FROM report_struct rs JOIN sections_tree st ON
           (rs.report_id, rs.parent_sect_id) =
           (st.report_id, st.sect_id)

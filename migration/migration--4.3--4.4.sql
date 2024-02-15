@@ -4,3 +4,89 @@ INSERT INTO import_queries_version_order VALUES
 DELETE FROM report_struct;
 DELETE FROM report;
 DELETE FROM report_static;
+
+DROP TABLE import_queries;
+ALTER TABLE samples ALTER CONSTRAINT samples_server_id_fkey DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE baselines
+  ALTER CONSTRAINT baselines_server_id_fkey DEFERRABLE INITIALLY IMMEDIATE;
+
+ALTER TABLE baselines DROP CONSTRAINT uk_baselines;
+ALTER TABLE baselines
+  ADD CONSTRAINT uk_baselines UNIQUE (server_id,bl_name) DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE bl_samples
+  ALTER CONSTRAINT fk_bl_samples_baselines DEFERRABLE INITIALLY IMMEDIATE,
+  ALTER CONSTRAINT fk_bl_samples_samples DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE funcs_list
+  ALTER CONSTRAINT fk_funcs_list_samples DEFERRABLE INITIALLY IMMEDIATE,
+  ALTER CONSTRAINT funcs_list_server_id_fkey DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE indexes_list
+  DROP CONSTRAINT indexes_list_server_id_fkey,
+  ALTER CONSTRAINT fk_indexes_list_samples DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE last_stat_archiver
+  ALTER CONSTRAINT fk_last_stat_archiver_samples DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE last_stat_cluster
+  ALTER CONSTRAINT fk_last_stat_cluster_samples DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE last_stat_io
+  ALTER CONSTRAINT fk_last_stat_io_samples DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE last_stat_slru
+  ALTER CONSTRAINT fk_last_stat_slru_samples DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE last_stat_wal
+  ALTER CONSTRAINT fk_last_stat_wal_samples DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE roles_list
+  ALTER CONSTRAINT fk_roles_list_smp DEFERRABLE INITIALLY IMMEDIATE,
+  ALTER CONSTRAINT roles_list_server_id_fkey DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE sample_kcache
+  ALTER CONSTRAINT fk_kcache_st DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE sample_kcache_total
+  ALTER CONSTRAINT fk_kcache_t_st DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE sample_settings
+  ALTER CONSTRAINT fk_sample_settings_servers DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE sample_stat_archiver
+  ALTER CONSTRAINT fk_sample_stat_archiver_samples DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE sample_stat_cluster
+  ALTER CONSTRAINT fk_statcluster_samples DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE sample_stat_database
+  ALTER CONSTRAINT fk_statdb_samples DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE sample_stat_indexes
+  ALTER CONSTRAINT fk_stat_indexes_dat DEFERRABLE INITIALLY IMMEDIATE,
+  ALTER CONSTRAINT fk_stat_indexes_tablespaces DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE sample_stat_indexes_total
+  ALTER CONSTRAINT fk_stat_indexes_tot_dat DEFERRABLE INITIALLY IMMEDIATE,
+  ALTER CONSTRAINT fk_stat_tablespaces_tot_dat DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE sample_stat_io
+  ALTER CONSTRAINT fk_sample_stat_io_samples DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE sample_stat_slru
+  ALTER CONSTRAINT fk_sample_stat_slru_samples DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE sample_stat_tables
+  ALTER CONSTRAINT fk_st_tables_dat DEFERRABLE INITIALLY IMMEDIATE,
+  ALTER CONSTRAINT fk_st_tables_tablespace DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE sample_stat_tables_total
+  ALTER CONSTRAINT fk_st_tables_tot_dat DEFERRABLE INITIALLY IMMEDIATE,
+  ALTER CONSTRAINT fk_st_tablespaces_tot_dat DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE sample_stat_tablespaces
+  ALTER CONSTRAINT fk_stattbs_samples DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE sample_stat_user_func_total
+  ALTER CONSTRAINT fk_user_func_tot_dat DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE sample_stat_user_functions
+  ALTER CONSTRAINT fk_user_functions_dat DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE sample_stat_wal
+  ALTER CONSTRAINT fk_statwal_samples DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE sample_statements
+  ALTER CONSTRAINT fk_statments_dat DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE sample_statements_total
+  ALTER CONSTRAINT fk_statments_t_dat DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE stmt_list
+  ALTER CONSTRAINT fk_stmt_list_samples DEFERRABLE INITIALLY IMMEDIATE,
+  ALTER CONSTRAINT stmt_list_server_id_fkey DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE tables_list
+  ALTER CONSTRAINT fk_tables_list_samples DEFERRABLE INITIALLY IMMEDIATE,
+  DROP CONSTRAINT tables_list_server_id_fkey;
+ALTER TABLE sample_timings
+  ALTER CONSTRAINT fk_sample_timings_sample DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE tablespaces_list
+  ALTER CONSTRAINT fk_tablespaces_list_samples DEFERRABLE INITIALLY IMMEDIATE,
+  DROP CONSTRAINT tablespaces_list_server_id_fkey;
+ALTER TABLE wait_sampling_total
+  ALTER CONSTRAINT fk_wait_sampling_samples DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE report_struct
+  ALTER COLUMN content TYPE jsonb USING content::jsonb;

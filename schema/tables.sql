@@ -1,6 +1,6 @@
 /* ==== Tables stats history ==== */
 CREATE TABLE tables_list(
-    server_id           integer REFERENCES servers(server_id) ON DELETE CASCADE,
+    server_id           integer,
     datid               oid,
     relid               oid,
     relkind             char(1) NOT NULL,
@@ -10,7 +10,8 @@ CREATE TABLE tables_list(
     last_sample_id      integer,
     CONSTRAINT pk_tables_list PRIMARY KEY (server_id, datid, relid),
     CONSTRAINT fk_tables_list_samples FOREIGN KEY (server_id, last_sample_id)
-      REFERENCES samples (server_id, sample_id) ON DELETE CASCADE,
+      REFERENCES samples (server_id, sample_id) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT fk_toast_table FOREIGN KEY (server_id, datid, reltoastrelid)
       REFERENCES tables_list (server_id, datid, relid)
       ON DELETE NO ACTION ON UPDATE RESTRICT
@@ -63,9 +64,11 @@ CREATE TABLE sample_stat_tables (
     n_tup_newpage_upd   bigint,
     CONSTRAINT pk_sample_stat_tables PRIMARY KEY (server_id, sample_id, datid, relid),
     CONSTRAINT fk_st_tables_dat FOREIGN KEY (server_id, sample_id, datid)
-      REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE CASCADE,
+      REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT fk_st_tables_tablespace FOREIGN KEY (server_id, sample_id, tablespaceid)
-      REFERENCES sample_stat_tablespaces(server_id, sample_id, tablespaceid) ON DELETE CASCADE,
+      REFERENCES sample_stat_tablespaces(server_id, sample_id, tablespaceid) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT fk_st_tables_tables FOREIGN KEY (server_id, datid, relid)
       REFERENCES tables_list(server_id, datid, relid)
       ON DELETE NO ACTION ON UPDATE RESTRICT
@@ -208,9 +211,11 @@ CREATE TABLE sample_stat_tables_total (
     n_tup_newpage_upd   bigint,
     CONSTRAINT pk_sample_stat_tables_tot PRIMARY KEY (server_id, sample_id, datid, relkind, tablespaceid),
     CONSTRAINT fk_st_tables_tot_dat FOREIGN KEY (server_id, sample_id, datid)
-      REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE CASCADE,
+      REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT fk_st_tablespaces_tot_dat FOREIGN KEY (server_id, sample_id, tablespaceid)
       REFERENCES sample_stat_tablespaces(server_id, sample_id, tablespaceid) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE
 );
 CREATE INDEX ix_sample_stat_tables_total_ts ON sample_stat_tables_total(server_id, sample_id, tablespaceid);
 

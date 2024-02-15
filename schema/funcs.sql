@@ -1,7 +1,8 @@
 /* ==== Function stats history ==== */
 
 CREATE TABLE funcs_list(
-    server_id       integer NOT NULL REFERENCES servers(server_id) ON DELETE CASCADE,
+    server_id       integer NOT NULL REFERENCES servers(server_id) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE,
     datid           oid,
     funcid          oid,
     schemaname      name NOT NULL,
@@ -11,6 +12,7 @@ CREATE TABLE funcs_list(
     CONSTRAINT pk_funcs_list PRIMARY KEY (server_id, datid, funcid),
     CONSTRAINT fk_funcs_list_samples FOREIGN KEY (server_id, last_sample_id)
       REFERENCES samples (server_id, sample_id) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE
 );
 CREATE INDEX ix_funcs_list_samples ON funcs_list (server_id, last_sample_id);
 COMMENT ON TABLE funcs_list IS 'Function names and schemas, captured in samples';
@@ -29,7 +31,8 @@ CREATE TABLE sample_stat_user_functions (
       ON DELETE NO ACTION
       DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT fk_user_functions_dat FOREIGN KEY (server_id, sample_id, datid)
-      REFERENCES sample_stat_database (server_id, sample_id, datid) ON DELETE CASCADE,
+      REFERENCES sample_stat_database (server_id, sample_id, datid) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT pk_sample_stat_user_functions PRIMARY KEY (server_id, sample_id, datid, funcid)
 );
 CREATE INDEX ix_sample_stat_user_functions_fl ON sample_stat_user_functions(server_id, datid, funcid);
@@ -64,7 +67,8 @@ CREATE TABLE sample_stat_user_func_total (
     total_time  double precision,
     trg_fn      boolean,
     CONSTRAINT fk_user_func_tot_dat FOREIGN KEY (server_id, sample_id, datid)
-      REFERENCES sample_stat_database (server_id, sample_id, datid) ON DELETE CASCADE,
+      REFERENCES sample_stat_database (server_id, sample_id, datid) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT pk_sample_stat_user_func_total PRIMARY KEY (server_id, sample_id, datid, trg_fn)
 );
 COMMENT ON TABLE sample_stat_user_func_total IS 'Total stats for user functions in all databases by samples';

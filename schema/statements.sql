@@ -1,12 +1,14 @@
 /* === Statements history tables ==== */
 CREATE TABLE stmt_list(
-    server_id      integer NOT NULL REFERENCES servers(server_id) ON DELETE CASCADE,
+    server_id      integer NOT NULL REFERENCES servers(server_id) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE,
     queryid_md5    char(32),
     query          text,
     last_sample_id integer,
     CONSTRAINT pk_stmt_list PRIMARY KEY (server_id, queryid_md5),
     CONSTRAINT fk_stmt_list_samples FOREIGN KEY (server_id, last_sample_id)
       REFERENCES samples (server_id, sample_id) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE
 );
 CREATE INDEX ix_stmt_list_smp ON stmt_list(server_id, last_sample_id);
 COMMENT ON TABLE stmt_list IS 'Statements, captured in samples';
@@ -63,7 +65,8 @@ CREATE TABLE sample_statements (
       ON DELETE NO ACTION ON UPDATE CASCADE
       DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT fk_statments_dat FOREIGN KEY (server_id, sample_id, datid)
-      REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE CASCADE,
+      REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT fk_statements_roles FOREIGN KEY (server_id, userid)
       REFERENCES roles_list (server_id, userid)
       ON DELETE NO ACTION ON UPDATE CASCADE
@@ -162,5 +165,6 @@ CREATE TABLE sample_statements_total (
     CONSTRAINT pk_sample_statements_total PRIMARY KEY (server_id, sample_id, datid),
     CONSTRAINT fk_statments_t_dat FOREIGN KEY (server_id, sample_id, datid)
       REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE
 );
 COMMENT ON TABLE sample_statements_total IS 'Aggregated stats for sample, based on pg_stat_statements';

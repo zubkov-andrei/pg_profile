@@ -19,7 +19,8 @@ CREATE TABLE sample_stat_cluster
     wal_lsn                    pg_lsn,
     in_recovery                boolean,
     CONSTRAINT fk_statcluster_samples FOREIGN KEY (server_id, sample_id)
-      REFERENCES samples (server_id, sample_id) ON DELETE CASCADE,
+      REFERENCES samples (server_id, sample_id) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT pk_sample_stat_cluster PRIMARY KEY (server_id, sample_id)
 );
 COMMENT ON TABLE sample_stat_cluster IS 'Sample cluster statistics table (fields from pg_stat_bgwriter, etc.)';
@@ -28,7 +29,8 @@ CREATE TABLE last_stat_cluster(LIKE sample_stat_cluster);
 ALTER TABLE last_stat_cluster ADD CONSTRAINT pk_last_stat_cluster_samples
   PRIMARY KEY (server_id, sample_id);
 ALTER TABLE last_stat_cluster ADD CONSTRAINT fk_last_stat_cluster_samples
-  FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT;
+  FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT
+    DEFERRABLE INITIALLY IMMEDIATE;
 COMMENT ON TABLE last_stat_cluster IS 'Last sample data for calculating diffs in next sample';
 
 CREATE TABLE sample_stat_wal
@@ -45,7 +47,8 @@ CREATE TABLE sample_stat_wal
     wal_sync_time       double precision,
     stats_reset         timestamp with time zone,
     CONSTRAINT fk_statwal_samples FOREIGN KEY (server_id, sample_id)
-      REFERENCES samples (server_id, sample_id) ON DELETE CASCADE,
+      REFERENCES samples (server_id, sample_id) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT pk_sample_stat_wal PRIMARY KEY (server_id, sample_id)
 );
 COMMENT ON TABLE sample_stat_wal IS 'Sample WAL statistics table';
@@ -54,7 +57,9 @@ CREATE TABLE last_stat_wal AS SELECT * FROM sample_stat_wal WHERE false;
 ALTER TABLE last_stat_wal ADD CONSTRAINT pk_last_stat_wal_samples
   PRIMARY KEY (server_id, sample_id);
 ALTER TABLE last_stat_wal ADD CONSTRAINT fk_last_stat_wal_samples
-  FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT;
+  FOREIGN KEY (server_id, sample_id)
+  REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT
+    DEFERRABLE INITIALLY IMMEDIATE;
 COMMENT ON TABLE last_stat_wal IS 'Last WAL sample data for calculating diffs in next sample';
 
 CREATE TABLE sample_stat_archiver
@@ -69,7 +74,8 @@ CREATE TABLE sample_stat_archiver
     last_failed_time            timestamp with time zone,
     stats_reset                 timestamp with time zone,
     CONSTRAINT fk_sample_stat_archiver_samples FOREIGN KEY (server_id, sample_id)
-      REFERENCES samples (server_id, sample_id) ON DELETE CASCADE,
+      REFERENCES samples (server_id, sample_id) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT pk_sample_stat_archiver PRIMARY KEY (server_id, sample_id)
 );
 COMMENT ON TABLE sample_stat_archiver IS 'Sample archiver statistics table (fields from pg_stat_archiver)';
@@ -78,7 +84,8 @@ CREATE TABLE last_stat_archiver AS SELECT * FROM sample_stat_archiver WHERE 0=1;
 ALTER TABLE last_stat_archiver ADD CONSTRAINT pk_last_stat_archiver_samples
   PRIMARY KEY (server_id, sample_id);
 ALTER TABLE last_stat_archiver ADD CONSTRAINT fk_last_stat_archiver_samples
-  FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT;
+  FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT
+  DEFERRABLE INITIALLY IMMEDIATE;
 COMMENT ON TABLE last_stat_archiver IS 'Last sample data for calculating diffs in next sample';
 
 CREATE TABLE sample_stat_io
@@ -106,6 +113,7 @@ CREATE TABLE sample_stat_io
     CONSTRAINT pk_sample_stat_io PRIMARY KEY (server_id, sample_id, backend_type, object, context),
     CONSTRAINT fk_sample_stat_io_samples FOREIGN KEY (server_id, sample_id)
       REFERENCES samples (server_id, sample_id) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE
 );
 COMMENT ON TABLE sample_stat_io IS 'Sample IO statistics table (fields from pg_stat_io)';
 
@@ -113,7 +121,8 @@ CREATE TABLE last_stat_io (LIKE sample_stat_io);
 ALTER TABLE last_stat_io ADD CONSTRAINT pk_last_stat_io_samples
   PRIMARY KEY (server_id, sample_id, backend_type, object, context);
 ALTER TABLE last_stat_io ADD CONSTRAINT fk_last_stat_io_samples
-  FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT;
+  FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT
+  DEFERRABLE INITIALLY IMMEDIATE;
 COMMENT ON TABLE last_stat_io IS 'Last sample data for calculating diffs in next sample';
 
 CREATE TABLE sample_stat_slru
@@ -132,6 +141,7 @@ CREATE TABLE sample_stat_slru
     CONSTRAINT pk_sample_stat_slru PRIMARY KEY (server_id, sample_id, name),
     CONSTRAINT fk_sample_stat_slru_samples FOREIGN KEY (server_id, sample_id)
       REFERENCES samples (server_id, sample_id) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE
 );
 COMMENT ON TABLE sample_stat_slru IS 'Sample SLRU statistics table (fields from pg_stat_slru)';
 
@@ -139,5 +149,6 @@ CREATE TABLE last_stat_slru (LIKE sample_stat_slru);
 ALTER TABLE last_stat_slru ADD CONSTRAINT pk_last_stat_slru_samples
   PRIMARY KEY (server_id, sample_id, name);
 ALTER TABLE last_stat_slru ADD CONSTRAINT fk_last_stat_slru_samples
-  FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT;
+  FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT
+  DEFERRABLE INITIALLY IMMEDIATE;
 COMMENT ON TABLE last_stat_slru IS 'Last sample data for calculating diffs in next sample';

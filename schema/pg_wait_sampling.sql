@@ -10,4 +10,5 @@ CREATE TABLE wait_sampling_total(
     CONSTRAINT uk_sample_we UNIQUE (server_id, sample_id, event_type, event),
     CONSTRAINT fk_wait_sampling_samples FOREIGN KEY (server_id, sample_id)
       REFERENCES samples(server_id, sample_id) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE
 );

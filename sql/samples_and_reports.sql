@@ -43,7 +43,7 @@ array_to_string(array
   (select
   substr('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
   trunc(random() * 62)::integer + 1, 1)
-  FROM   generate_series(1, 8000)), ''
+  FROM   generate_series(1, 7900)), ''
 )
 FROM generate_series(1,20);
 SELECT * FROM profile.dummy_func();
@@ -167,6 +167,42 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE FUNCTION profile.check_dataset_queries(IN report_datasets jsonb)
+RETURNS boolean AS $$
+DECLARE
+	elem jsonb;
+	plan jsonb;
+	hexid_collection jsonb := '{}';
+	failed boolean := false;
+BEGIN
+	/** Collecting hexqueryids and hexplanids presented in queries dataset */
+	FOR elem IN SELECT * FROM jsonb_array_elements((report_datasets #>> '{queries}')::jsonb)
+	LOOP
+		hexid_collection := jsonb_set(hexid_collection, ARRAY[elem #>> '{hexqueryid}'], to_jsonb('exists'::text), true);
+
+		FOR plan IN SELECT * FROM jsonb_array_elements((elem #>> '{plans}')::jsonb)
+		LOOP
+			hexid_collection := jsonb_set(hexid_collection, ARRAY[plan #>> '{hexplanid}'], to_jsonb('exists'::text), true);
+		END LOOP;
+	END LOOP;
+	/** Checking if hexqueryid or hexplanid presented in queries dataset */
+	FOR elem IN SELECT * FROM jsonb_array_elements((report_datasets #>> '{top_statements}')::jsonb)
+	LOOP
+		IF elem #>> '{hexqueryid}' IS NOT NULL AND hexid_collection #>> ARRAY[elem #>> '{hexqueryid}'] IS NULL
+			THEN RAISE WARNING 'Hexqueryid <%> not presented in dataset queries', elem #>> '{hexqueryid}';
+            failed := true;
+		END IF;
+		IF elem #>> '{hexplanid}' IS NOT NULL AND hexid_collection #>> ARRAY[elem #>> '{hexplanid}'] IS NULL
+			THEN RAISE WARNING 'Hexplanid % not presented in dataset queries', elem #>> '{hexplanid}';
+		    failed := true;
+		END IF;
+
+	END LOOP;
+
+	RETURN failed;
+END;
+$$ LANGUAGE plpgsql;
+
 DO $$
 DECLARE
 	elem record;
@@ -179,6 +215,7 @@ DECLARE
 	report_context jsonb := profile.get_report_context(server_id,start_id,end_id);
 	report_sections jsonb := profile.sections_jsonb(report_context,server_id,rep_id)::jsonb;
 	report_datasets jsonb := profile.get_report_datasets(report_context,server_id)::jsonb;
+    queries boolean := profile.check_dataset_queries(report_datasets);
 	report_structure jsonb := profile.get_report_sections((report_sections #>> '{sections}')::jsonb, report_context::jsonb);
 	c_recursive CURSOR FOR
 		WITH RECURSIVE sel AS (
@@ -195,6 +232,10 @@ DECLARE
 		)
 		SELECT * FROM sel;
 BEGIN
+    IF queries
+        THEN RAISE EXCEPTION 'Failed validation';
+    END IF;
+
 	FOR elem IN c_recursive
 	LOOP
 		IF report_structure #>> ARRAY[elem.sect_id::text, 'exists'] IS NULL

@@ -5,7 +5,9 @@ CREATE TABLE sample_timings (
     event       text,
     time_spent  interval MINUTE TO SECOND (2),
     CONSTRAINT pk_sample_timings PRIMARY KEY (server_id, sample_id, event),
-    CONSTRAINT fk_sample_timings_sample FOREIGN KEY (server_id, sample_id) REFERENCES samples(server_id, sample_id) ON DELETE CASCADE
+    CONSTRAINT fk_sample_timings_sample FOREIGN KEY (server_id, sample_id)
+      REFERENCES samples(server_id, sample_id) ON DELETE CASCADE
+      DEFERRABLE INITIALLY IMMEDIATE
 );
 COMMENT ON TABLE sample_timings IS 'Sample taking time statistics';
 
