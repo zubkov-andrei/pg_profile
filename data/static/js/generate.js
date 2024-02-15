@@ -29,6 +29,15 @@ class BaseSection {
         if (this.sectionHasTitle) {
             div.appendChild(BaseSection.buildTitle(this.section));
         }
+        if (this.sectionHasContent) {
+            let contentClass = this.section.content.class;
+            let contentText = this.section.content.text;
+            let contentDiv = document.createElement('div');
+
+            contentDiv.classList.add(contentClass);
+            contentDiv.innerHTML = contentText;
+            div.appendChild(contentDiv);
+        }
         if (this.sectionHasBlocks) {
             let table = document.createElement('table');
 
@@ -78,21 +87,6 @@ class BaseSection {
                 }
             }
         }
-        if (this.sectionHasContent) {
-            const divider = '{func_output}';
-            let contentOne = this.section.content.split(divider)[0];
-            let contentTwo = this.section.content.split(divider)[1];
-            let table = div.querySelector('table');
-
-            if (table) {
-                if (contentOne) {
-                    table.insertAdjacentHTML('beforebegin', contentOne);
-                }
-                if (contentTwo) {
-                    table.insertAdjacentHTML('afterend', contentTwo);
-                }
-            }
-        }
 
         return div;
     }
@@ -113,7 +107,7 @@ class BaseTable extends BaseSection {
         'waitEvent': BaseTable.buildWaitEventDetailsCell,
         'pipeChart': PipeChart.drawIntoTable,
         'pieChart': PieChart.drawIntoTable
-    };
+    }
     static properties = {
         'topn': data.properties.topn,
         'end1_id': data.properties.end1_id,
@@ -235,6 +229,11 @@ class BaseTable extends BaseSection {
         newCell.appendChild(p1);
         newCell.appendChild(p2);
 
+        /** Copy query id into clipboard button */
+        let button = Copier.drawButton();
+        button.classList.add('copyQueryId');
+        p1.appendChild(button);
+
         return !!row.hexqueryid;
     }
 
@@ -242,6 +241,7 @@ class BaseTable extends BaseSection {
         BaseTable.buildQueryIdCell(newRow, column, row);
         newRow.firstChild.setAttribute('id', `jit_${row.hexqueryid}_${row.datid}_${row.userid}_${row.toplevel}`);
     }
+
     static buildPlanIdCell(newRow, column, row) {
 
         let newCell = newRow.insertCell(-1);
@@ -265,48 +265,75 @@ class BaseTable extends BaseSection {
 
     static buildQueryTextIdCell(newRow, column, row) {
         let cell = newRow.insertCell(-1);
-        let columnId;
 
-        if (row['hexplanid']) {
-            columnId = row['hexplanid'];
-            newRow.classList.add('plantext');
-            cell.setAttribute('id', `${row[column.id]}_${columnId}`);
-        } else {
-            columnId = row[column.id];
-            newRow.classList.add('statement');
-            cell.setAttribute('id', columnId);
-        }
+        let columnId = row[column.id];
+        newRow.classList.add('statement');
+        cell.setAttribute('id', columnId);
 
         let newText = document.createTextNode(columnId);
 
         /** Setting attributes to new cell */
         cell.setAttribute('class', column.class);
 
-        /** Count query_text* keys in row and set it as rowspan */
-        const countMatches = [...Object.keys(row).join(' ').matchAll(new RegExp('query_text*', 'g'))].length;
-        cell.setAttribute('rowspan', `${countMatches}`);
+        /** Check query_texts length and set it as rowspan */
+        const queryTextsLength = row.query_texts.length;
+        cell.setAttribute('rowspan', `${queryTextsLength}`);
 
         cell.appendChild(newText);
 
         return !!columnId;
     }
 
+    /**
+     * Function builds query_text cells and plan_id and plan_text cells
+     * @param newRow html tah <tr> in which cells should be built
+     * @param column cell meta data
+     * @param row object with data
+     * @returns {boolean}
+     */
     static buildQueryTextCell(newRow, column, row) {
-        if (row['hexplanid'] || row[column.id]) {
+        for (let i = 0; i < row[column.id].length; i++) {
+            if (i > 0) {
+                newRow = newRow.parentNode.insertRow(-1);
+                newRow.setAttribute('data-hexqueryid', row.hexqueryid);
+                newRow.setAttribute('data-all', row.hexqueryid);
+            }
             let newCell = newRow.insertCell(-1);
-            let newText = null;
+            let text = row[column.id][i];
 
             /** Setting attributes to new cell */
             newCell.setAttribute('class', column.class);
 
-            if (row['hexplanid'] && row[column.id]) {
-                newText = `<pre>${row[column.id]}</pre>`;
-                newCell.insertAdjacentHTML('afterbegin', newText);
-            } else if (row[column.id]) {
-                newText = document.createTextNode(row[column.id]);
+            let newText = document.createTextNode(text);
+            newCell.appendChild(newText);
+        }
+
+        /** If plans of statements are available */
+        if (row.plans && row.plans.length) {
+            for (let i = 0; i < row.plans.length; i++) {
+                newRow = newRow.parentNode.insertRow(-1);
+                newRow.setAttribute('data-hexqueryid', row.hexqueryid);
+                newRow.setAttribute('data-hexplanid', row.plans[i].hexplanid);
+                newRow.setAttribute('data-all', `${row.hexqueryid} ${row.plans[i].hexplanid}`);
+                newRow.classList.add('plantext');
+
+                /** Hexplan column */
+                let newCell = newRow.insertCell(-1);
+                let text = row.plans[i].hexplanid;
+                let newText = document.createTextNode(text);
                 newCell.appendChild(newText);
+
+                /** Setting attributes to new cell */
+                newCell.setAttribute('class', column.class);
+                newCell.setAttribute('id', `${row.hexqueryid}_${row.plans[i].hexplanid}`);
+
+                /** Plantext column */
+                newCell = newRow.insertCell(-1);
+                text = `<pre>${row.plans[i].plan_text}</pre>`;
+                newCell.insertAdjacentHTML('afterbegin', text);
             }
         }
+
         return !!row[column.id];
     }
 
@@ -375,7 +402,7 @@ class BaseTable extends BaseSection {
     /**
      * Split object into several objects with unique fields
      *
-     * @param column, {json object}, structure of column
+     * @param column json object, structure of column
      * @returns objects, {json[]}, array with json objects */
     static bifurcateObject(column) {
 
@@ -451,8 +478,12 @@ class BaseTable extends BaseSection {
                 'colspan': header.columns ? header.columns.length + sumCols : 1,
                 'rowspan': deep === 0 && !('columns' in header) ? 2 : 1
             };
-            if (header.id) {th['id'] = header.id}
-            if (header.title) {th['title'] = BaseTable.getTagTitle(header.title)}
+            if (header.id) {
+                th['id'] = header.id
+            }
+            if (header.title) {
+                th['title'] = BaseTable.getTagTitle(header.title)
+            }
 
             resultMatrix[deep].push(th);
         } else {
@@ -525,9 +556,9 @@ class HorizontalTable extends BaseTable {
     /**
      *  Build cell
      *
-     * @param newRow, {html node}, row into which the cell need to be build
-     * @param column, {json obj}, cell meta-data
-     * @param row, {json obj}, object data
+     * @param newRow html node, row into which the cell need to be build
+     * @param column json obj, cell meta-data
+     * @param row json object, data
      *
      * @returns boolean, return true if cell is empty, otherwise return false  */
     static buildCell(newRow, column, row) {
@@ -619,29 +650,23 @@ class HorizontalTable extends BaseTable {
 
     /**
      * Setting data attributes to row for highlighting
-     * @param newRow: html tag with table row
-     * @param row: Object with data for populating html table
+     * @param newRow html tag with table row
+     * @param row Object with data for populating html table
+     * @param dataAttrs Object with attr name for setting data-attrs in <tr> tag
      */
-    static setDataAttrs(newRow, row) {
-        let attributesMap = {
-            'dbname': 'data-dbname',
-            'hexqueryid': 'data-hexqueryid',
-            'queryid': 'data-queryid',
-            'hexplanid': 'data-hexplanid',
-            'toplevel': 'data-toplevel',
-            'userid': 'data-userid',
-            'event_type': 'data-event_type',
-            'event': 'data-event',
-            'tablespacename': 'data-tablespacename',
-            'schemaname': 'data-schemaname',
-            'relname': 'data-relname',
-            'indexrelname': 'data-indexrelname',
-            'funcname': 'data-funcname'
-        }
-        for (const [key, value] of Object.entries(attributesMap)) {
-            if (row[key]) {
-                newRow.setAttribute(value, row[key]);
-            }
+    static setDataAttrs(newRow, row, dataAttrs) {
+        /** Collecting search array */
+        let searchArray = [];
+
+        /** Set attributes for strings highlighting */
+        if (dataAttrs && dataAttrs.columns) {
+            dataAttrs.columns.forEach(attr => {
+                newRow.setAttribute(`data-${attr.name}`, row[attr.name]);
+                searchArray.push(row[attr.name]);
+            })
+            /** Set data-search attribute */
+            let searchString = Object.values(searchArray).join(' ').replace(/\s\s+/g, ' ');
+            newRow.setAttribute('data-all', searchString);
         }
     }
 
@@ -651,6 +676,7 @@ class HorizontalTable extends BaseTable {
     insertRows() {
 
         let columns = HorizontalTable.getColumns(this.section.header);  // Getting columns matrix
+        let dataAttrs = this.section.header.attrs;
         let rows = this.section.data;  // Getting json array with data
         let isParent = true;
 
@@ -668,11 +694,13 @@ class HorizontalTable extends BaseTable {
                     newRow.classList.add(isParent ? 'int1' : 'int2');
                     isParent = !isParent;
                 }
+
+                /** Set class to row */
                 if (row.klass) {
-                    newRow.setAttribute('class', row.klass);
+                    newRow.classList.add(row.klass);
                 }
-                /** Set classes for highlighting rows */
-                HorizontalTable.setDataAttrs(newRow, row);
+                /** Set data-attributes */
+                HorizontalTable.setDataAttrs(newRow, row, dataAttrs);
 
                 /** Array to collect empty cells */
                 let isEmpty = [];
@@ -684,6 +712,54 @@ class HorizontalTable extends BaseTable {
 
                     /** Build cells inside <tr> */
                     isEmpty.push(HorizontalTable.buildCell(newRow, column, row));
+                }
+
+                /** Insert query text in row on click */
+                if (this.table.classList.contains('stmt_stat')) {
+                    let queryRow = null;
+                    let queryCell = null;
+                    let planRow = null;
+                    let planCell = null;
+                    let queryIndex = null;
+
+                    if (!newRow.classList.contains('int1')) {
+                        /** Insert query row */
+                        queryRow = this.table.insertRow(-1);
+                        queryCell = queryRow.insertCell(-1);
+                        queryCell.setAttribute('colspan', '100');
+                        queryRow.classList.add('queryRow');
+                        queryRow.setAttribute('data-hexqueryid', row.hexqueryid);
+                        queryRow.style.display = 'none';
+
+                        /** Copy query text into clipboard button */
+                        let copyQueryTextButton = Copier.drawButton();
+                        copyQueryTextButton.setAttribute('class', 'copyQueryTextButton');
+                        queryCell.appendChild(copyQueryTextButton);
+
+                    }
+
+                    /** Insert query text and plan text 'on click' */
+                    if (row.hexqueryid) {
+                        newRow.addEventListener('click', event => {
+                            /** Trigger event only if user clicked not on rect and link*/
+                            if (event.target.tagName.toLowerCase() !== 'a' && event.target.tagName.toLowerCase() !== 'rect') {
+                                if (newRow.classList.contains('int1')) {
+                                    queryRow = newRow.nextSibling.nextSibling;
+                                    queryCell = queryRow.firstChild;
+                                }
+
+                                if (queryRow.style.display === 'none') {
+
+                                    queryIndex = Utilities.findQuery(row.hexqueryid);
+                                    let queryText = data.datasets.queries[queryIndex].query_texts[0];
+                                    Utilities.queryTextPreviewer(queryCell, queryRow, newRow, queryText);
+
+                                } else {
+                                    queryRow.style.display = 'none';
+                                }
+                            }
+                        })
+                    }
                 }
 
                 /** Remove row, if all cells in row are empty */

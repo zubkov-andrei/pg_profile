@@ -8,6 +8,8 @@
  */
 
 class Highlighter {
+    static transition = 'background-color 70ms';
+
     /**
      * Method compares each data-attribute in target and in each row
      * and add active class if they fit.
@@ -15,52 +17,38 @@ class Highlighter {
      * @param allRows
      */
     static toggleClass(tr, allRows) {
-        if (!tr.classList.contains('active')) {
-            Highlighter.cleanAllActiveClasses(allRows);
+        /** Firstly, clean all active rows */
+        Highlighter.cleanAllActiveClasses(allRows);
 
-            /** Create message and send message If popup feature is active */
-            if (Popup.getInstance()) {
-                const notice = document.createElement('div');
-                const p = document.createElement('p');
-                p.textContent = 'Highlighted row attributes:'
-                notice.appendChild(p);
-
-                const table = document.createElement('table');
-                Object.keys(tr.dataset).forEach(key => {
-                    let _tr = table.insertRow(-1);
-                    let tdKey = _tr.insertCell(-1);
-                    tdKey.innerHTML = key;
-                    let tdVal = _tr.insertCell(-1);
-                    tdVal.innerHTML = tr.dataset[key];
-                });
-                notice.appendChild(table);
-
-                Popup.sendNotice(Popup.STYLE.BANNER, notice);
-            }
-            allRows.forEach((elem) => {
-                let isEqual = Highlighter.isDatasetEqual(tr.dataset, elem.dataset, elem);
+        /** If row has dataset and is not active (highlighted) */
+        if (Object.keys(tr.dataset).length && !tr.classList.contains('active')) {
+            allRows.forEach((row) => {
+                /** Removing data-search attr from dataset */
+                let isEqual = Highlighter.isDatasetEqual(tr, row);
                 if (isEqual) {
-                    elem.classList.add('active');
-                    let navId = this.getClosestTag(elem, 0, 'div').firstChild.id;
+                    /** Remove smart hover and highlight row */
+                    Highlighter.setBackgroundColorToRow(row, '', this.transition);
+                    row.classList.add('active');
+
+                    /** Highlight navigator item */
+                    let navId = this.getClosestTag(row, 0, 'div').firstChild.id;
                     if (navId) {
-                        let navLi= document.getElementById(`navigator_${navId}`);
+                        let navLi = document.getElementById(`navigator_${navId}`);
                         if (navLi && !navLi.classList.contains('active')) {
                             navLi.classList.add('active');
                         }
                     }
                 }
             });
-        } else {
-            Highlighter.cleanAllActiveClasses(allRows);
-            /** Hide popup if popup feature is active */
-            if (Popup.getInstance()) {
-                Popup.popupDisappearing();
-            }
         }
     }
 
     static getAllRows() {
         return document.querySelectorAll('tr');
+    }
+
+    static getHighlightableRows() {
+        return document.querySelectorAll('table.highlightable tr:not(.queryRow)');
     }
 
     /**
@@ -114,24 +102,31 @@ class Highlighter {
      * @param elem
      * @returns boolean
      */
-    static isDatasetEqual(targetDataset, rowDataset, elem) {
-        /** If no data in dataset then return */
-        if (!Object.keys(targetDataset).length) {
-            return false;
-        }
+    /** TODO: Сейчас подсветка работает при совпадении всех data-attributes
+     * TODO: Надо сделать так чтобы подсветка работала также при частичном совпадении параметров
+     * TODO: Использовать для этого параметр index в поле header.attrs */
+    static isDatasetEqual(tr, row) {
+        let targetDataset = tr.dataset;
+        let rowDataset = row.dataset;
+
         /** Highlighting statements texts. If data-queryid and (data-planid) in statement list match */
-        let tableIsSqlList = Highlighter.getClosestTag(elem, 0, 'table').id === 'sqllist_t';
-        let isSameQuery = targetDataset.queryid !== undefined
+        let trIsSqlList = Highlighter.getClosestTag(tr, 0, 'table').id === 'sqllist_t';
+        let rowIsSqlList = Highlighter.getClosestTag(row, 0, 'table').id === 'sqllist_t';
+
+        let isSameQuery = targetDataset.hexqueryid !== undefined
             && targetDataset.hexqueryid === rowDataset.hexqueryid
             && targetDataset.planid === rowDataset.planid;
 
-        if (tableIsSqlList && isSameQuery) {
+        if ((trIsSqlList || rowIsSqlList) && isSameQuery) {
             return true;
         }
 
         /** If at least one data in datasets doesn't match */
         for (let data in targetDataset) {
             if (targetDataset[data] === '*' && rowDataset[data] !== undefined) {
+                continue;
+            }
+            if (data === 'all') {
                 continue;
             }
             if (targetDataset[data] !== rowDataset[data]) {
@@ -172,12 +167,11 @@ class Highlighter {
         }
     }
 
-    static smartHover(eventType, event) {
+    static smartHover(eventType, event, transition) {
         let hoverColor = '#D9FFCC';
-        let transition = 'background-color 300ms';
         let tr = Highlighter.getClosestTag(event.target, 0, 'tr');
 
-        if (tr && eventType === 'mouseover') {
+        if (tr && !tr.classList.contains('active') && eventType === 'mouseover') {
             Highlighter.setBackgroundColorToRow(tr, hoverColor, transition);
         } else if (tr && eventType === 'mouseout') {
             Highlighter.setBackgroundColorToRow(tr, '', transition);
@@ -186,17 +180,20 @@ class Highlighter {
 
     static init() {
         const ALL_ROWS = Highlighter.getAllRows();
-        ALL_ROWS.forEach((elem) => {
+        const HIGHLIGHTABLE_ROWS = Highlighter.getHighlightableRows();
 
-            /** Highlighting chosen (and related) row */
+        /** Highlighting chosen (and related) row */
+        HIGHLIGHTABLE_ROWS.forEach((elem) => {
             elem.addEventListener('click', (event) => {
-                Highlighter.highlight(event, ALL_ROWS);
+                Highlighter.highlight(event, HIGHLIGHTABLE_ROWS);
             });
+        })
 
-            /** Smart hover */
+        /** Smart hover */
+        ALL_ROWS.forEach((elem) => {
             ['mouseover', 'mouseout'].forEach(eventType => {
                 elem.addEventListener(eventType, (event) => {
-                    Highlighter.smartHover(eventType, event);
+                    Highlighter.smartHover(eventType, event, this.transition);
                 });
             })
         })

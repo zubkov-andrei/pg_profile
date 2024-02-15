@@ -1,10 +1,8 @@
 class Copier {
-    static getAllQueryCells() {
-        return document.querySelectorAll('.queryId, .jitCellId');
-    }
     static drawButton() {
         let button = document.createElement('a');
         button.setAttribute('class', 'copyButton');
+        button.setAttribute('title', 'Copy to clipboard');
         let svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svg.style.marginLeft = '10px';
         svg.setAttribute('height', '14px');
@@ -34,31 +32,46 @@ class Copier {
 
         return button;
     }
-    static sendNotice(text) {
-        if (Popup.getInstance()) {
-            const notice = document.createElement('p');
-            notice.textContent = `queryid value copied to clipboard: ${text}`;
-            Popup.sendNotice(Popup.STYLE.MESSAGE, notice);
-        }
-    }
+
     static copyQueryId(ev) {
         let text = ev.target.closest('tr').dataset.queryid;
-        navigator.clipboard.writeText(text).then(
-            function() {
-                Copier.sendNotice(text);
-            }, function(err) {
-            console.error('Async: Could not copy text: ', err);
-        });
+        navigator.clipboard.writeText(text).then(r => console.log('Copy: ', text));
     }
+
     static init() {
-        const ALL_ID_CELLS = Copier.getAllQueryCells();
+        document.querySelectorAll('.copyQueryId').forEach(button => {
+            button.addEventListener('click', function () {
+                let text = button.closest('tr').dataset.queryid;
+                navigator.clipboard.writeText(text).then(r => console.log('Copy query ID'));
+            })
+        })
 
-        ALL_ID_CELLS.forEach(elem => {
-            elem = elem.querySelector('p');
-
-            let button = Copier.drawButton();
-            button.addEventListener('click', ev => Copier.copyQueryId(ev));
-            elem.appendChild(button);
+        document.querySelectorAll('.copyQueryTextButton').forEach(button => {
+            button.addEventListener('click', function () {
+                let hexQueryId = button.closest('tr').dataset.hexqueryid;
+                data.datasets.queries.forEach(query => {
+                    if (query.hexqueryid === hexQueryId) {
+                        let text = query.query_texts[0];
+                        navigator.clipboard.writeText(text).then(r => console.log('Copy query text'));
+                    }
+                })
+            })
+        })
+        document.querySelectorAll('.copyPlanTextButton').forEach(button => {
+            button.addEventListener('click', function () {
+                let hexQueryId = button.closest('tr').dataset.hexqueryid;
+                let hexPlanId = button.closest('tr').dataset.hexplanid;
+                data.datasets.queries.forEach(query => {
+                    if (query.hexqueryid === hexQueryId) {
+                        query.plans.forEach(plan => {
+                            if (plan.hexplanid === hexPlanId) {
+                                let text = plan.plan_text;
+                                navigator.clipboard.writeText(text).then(r => console.log('Copy plan text'));
+                            }
+                        })
+                    }
+                })
+            })
         })
     }
 }
