@@ -9,3 +9,4 @@ DROP FUNCTION drop_server(name);
 DROP FUNCTION import_data;
 DROP FUNCTION report_queries_format;
 DROP FUNCTION sections_jsonb;
+DROP FUNCTION collect_pg_stat_statements_stats;

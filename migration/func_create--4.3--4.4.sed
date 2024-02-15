@@ -9,3 +9,4 @@
 /^COMMENT ON FUNCTION drop_server.*';$/p
 /^CREATE FUNCTION report_queries_format(.*$/,/\$\$[[:space:]]*LANGUAGE[[:space:]]\+\(plpg\)\?sql[[:space:]]*;[[:space:]]*$/p
 /^CREATE FUNCTION sections_jsonb(.*$/,/\$\$[[:space:]]*LANGUAGE[[:space:]]\+\(plpg\)\?sql[[:space:]]*;[[:space:]]*$/p
+/^CREATE FUNCTION collect_pg_stat_statements_stats(.*$/,/\$\$[[:space:]]*LANGUAGE[[:space:]]\+\(plpg\)\?sql[[:space:]]*;[[:space:]]*$/p

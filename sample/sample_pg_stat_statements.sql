@@ -80,7 +80,8 @@ BEGIN
           AS ext(extname text, extversion text)
         WHERE extname = 'pg_stat_statements'
       )
-      WHEN '1.3','1.4','1.5','1.6','1.7' THEN
+      WHEN '1.3','1.4','1.5','1.6','1.7'
+      THEN
         st_query := replace(st_query, '{statements_fields}',
           'true as toplevel,'
           'NULL as plans,'
@@ -122,7 +123,8 @@ BEGIN
           'NULL as temp_blk_read_time, '
           'NULL as temp_blk_write_time '
         );
-      WHEN '1.8' THEN
+      WHEN '1.8'
+      THEN
         st_query := replace(st_query, '{statements_fields}',
           'true as toplevel,'
           'st.plans,'
@@ -164,7 +166,8 @@ BEGIN
           'NULL as temp_blk_read_time, '
           'NULL as temp_blk_write_time '
         );
-      WHEN '1.9' THEN
+      WHEN '1.9'
+      THEN
         st_query := replace(st_query, '{statements_fields}',
           'st.toplevel,'
           'st.plans,'
@@ -206,7 +209,8 @@ BEGIN
           'NULL as temp_blk_read_time, '
           'NULL as temp_blk_write_time '
         );
-      WHEN '1.10' THEN
+      WHEN '1.10'
+      THEN
         st_query := replace(st_query, '{statements_fields}',
           'st.toplevel,'
           'st.plans,'
@@ -435,7 +439,8 @@ BEGIN
           WHERE extname = 'pg_stat_kcache'
         )
         -- pg_stat_kcache v.2.1.0 - 2.1.3
-        WHEN '2.1.0','2.1.1','2.1.2','2.1.3' THEN
+        WHEN '2.1.0','2.1.1','2.1.2','2.1.3'
+        THEN
           st_query := replace(st_query, '{kcache_fields}',
             'true as toplevel,'
             'NULL as plan_user_time,'
@@ -464,7 +469,8 @@ BEGIN
             'kc.nivcsws as exec_nivcsws '
           );
         -- pg_stat_kcache v.2.2.0, 2.2.1, 2.2.2
-        WHEN '2.2.0', '2.2.1', '2.2.2' THEN
+        WHEN '2.2.0', '2.2.1', '2.2.2', '2.2.3'
+        THEN
           st_query := replace(st_query, '{kcache_fields}',
             'kc.top as toplevel,'
             'kc.plan_user_time as plan_user_time,'
@@ -607,13 +613,15 @@ BEGIN
           AS ext(extname text, extversion text)
         WHERE extname = 'pg_stat_statements'
       )
-      WHEN '1.3','1.4','1.5','1.6','1.7','1.8' THEN
+      WHEN '1.3','1.4','1.5','1.6','1.7','1.8'
+      THEN
         st_query :=
           'SELECT userid, dbid, true AS toplevel, queryid, '||
           $o$regexp_replace(query,$i$\s+$i$,$i$ $i$,$i$g$i$) AS query $o$ ||
           'FROM %1$I.pg_stat_statements(true) '
           'WHERE queryid IN (%s)';
-      WHEN '1.9', '1.10' THEN
+      WHEN '1.9', '1.10'
+      THEN
         st_query :=
           'SELECT userid, dbid, toplevel, queryid, '||
           $o$regexp_replace(query,$i$\s+$i$,$i$ $i$,$i$g$i$) AS query $o$ ||
@@ -693,7 +701,8 @@ BEGIN
           AS x(extname text, extversion text)
         WHERE extname = 'pg_stat_kcache'
     )
-      WHEN '2.1.0','2.1.1','2.1.2','2.1.3','2.2.0','2.2.1' THEN
+      WHEN '2.1.0','2.1.1','2.1.2','2.1.3','2.2.0','2.2.1','2.2.2','2.2.3'
+      THEN
         SELECT * INTO qres FROM dblink('server_connection',
           format('SELECT %1$I.pg_stat_kcache_reset()',
             (
@@ -715,7 +724,8 @@ BEGIN
         WHERE extname = 'pg_stat_statements'
       )
       -- pg_stat_statements v 1.3-1.8
-      WHEN '1.3','1.4','1.5','1.6','1.7','1.8','1.9','1.10' THEN
+      WHEN '1.3','1.4','1.5','1.6','1.7','1.8','1.9','1.10'
+      THEN
         SELECT * INTO qres FROM dblink('server_connection',
           format('SELECT %1$I.pg_stat_statements_reset()',
             (
