@@ -167,37 +167,39 @@ DECLARE
 BEGIN
     SELECT server_id INTO STRICT dserver_id FROM servers WHERE server_name = server;
     DELETE FROM bl_samples WHERE server_id = dserver_id;
+--<extension_start>
     EXECUTE format('ALTER EXTENSION {pg_profile} DROP TABLE last_stat_kcache_srv%1$s',
       dserver_id);
+    EXECUTE format('ALTER EXTENSION {pg_profile} DROP TABLE last_stat_statements_srv%1$s',
+      dserver_id);
+    EXECUTE format('ALTER EXTENSION {pg_profile} DROP TABLE last_stat_database_srv%1$s',
+      dserver_id);
+    EXECUTE format('ALTER EXTENSION {pg_profile} DROP TABLE last_stat_tables_srv%1$s',
+      dserver_id);
+    EXECUTE format('ALTER EXTENSION {pg_profile} DROP TABLE last_stat_indexes_srv%1$s',
+      dserver_id);
+    EXECUTE format('ALTER EXTENSION {pg_profile} DROP TABLE last_stat_tablespaces_srv%1$s',
+      dserver_id);
+    EXECUTE format('ALTER EXTENSION {pg_profile} DROP TABLE last_stat_user_functions_srv%1$s',
+      dserver_id);
+--<extension_end>
     EXECUTE format(
       'DROP TABLE last_stat_kcache_srv%1$s',
-      dserver_id);
-    EXECUTE format('ALTER EXTENSION {pg_profile} DROP TABLE last_stat_statements_srv%1$s',
       dserver_id);
     EXECUTE format(
       'DROP TABLE last_stat_statements_srv%1$s',
       dserver_id);
-    EXECUTE format('ALTER EXTENSION {pg_profile} DROP TABLE last_stat_database_srv%1$s',
-      dserver_id);
     EXECUTE format(
       'DROP TABLE last_stat_database_srv%1$s',
-      dserver_id);
-    EXECUTE format('ALTER EXTENSION {pg_profile} DROP TABLE last_stat_tables_srv%1$s',
       dserver_id);
     EXECUTE format(
       'DROP TABLE last_stat_tables_srv%1$s',
       dserver_id);
-    EXECUTE format('ALTER EXTENSION {pg_profile} DROP TABLE last_stat_indexes_srv%1$s',
-      dserver_id);
     EXECUTE format(
       'DROP TABLE last_stat_indexes_srv%1$s',
       dserver_id);
-    EXECUTE format('ALTER EXTENSION {pg_profile} DROP TABLE last_stat_tablespaces_srv%1$s',
-      dserver_id);
     EXECUTE format(
       'DROP TABLE last_stat_tablespaces_srv%1$s',
-      dserver_id);
-    EXECUTE format('ALTER EXTENSION {pg_profile} DROP TABLE last_stat_user_functions_srv%1$s',
       dserver_id);
     EXECUTE format(
       'DROP TABLE last_stat_user_functions_srv%1$s',

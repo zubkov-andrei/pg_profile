@@ -92,6 +92,7 @@ $(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql: $(script)
 	sed -e 's/SET search_path=@extschema@//' \
 	$(sed_manual) \
 	$(script_man) \
+	-e '1i \\\set ON_ERROR_STOP on' \
 	> $(EXTENSION)--$(PGPROFILE_VERSION)_manual.sql
 
 $(EXTENSION).control: control.tpl
