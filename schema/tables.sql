@@ -4,19 +4,13 @@ CREATE TABLE tables_list(
     datid               oid,
     relid               oid,
     relkind             char(1) NOT NULL,
-    reltoastrelid       oid,
     schemaname          name NOT NULL,
     relname             name NOT NULL,
     last_sample_id      integer,
     CONSTRAINT pk_tables_list PRIMARY KEY (server_id, datid, relid),
     CONSTRAINT fk_tables_list_samples FOREIGN KEY (server_id, last_sample_id)
       REFERENCES samples (server_id, sample_id) ON DELETE CASCADE
-      DEFERRABLE INITIALLY IMMEDIATE,
-    CONSTRAINT fk_toast_table FOREIGN KEY (server_id, datid, reltoastrelid)
-      REFERENCES tables_list (server_id, datid, relid)
-      ON DELETE NO ACTION ON UPDATE RESTRICT
-      DEFERRABLE INITIALLY IMMEDIATE,
-    CONSTRAINT uk_toast_table UNIQUE (server_id, datid, reltoastrelid)
+      DEFERRABLE INITIALLY IMMEDIATE
 );
 CREATE INDEX ix_tables_list_samples ON tables_list(server_id, last_sample_id);
 COMMENT ON TABLE tables_list IS 'Table names and schemas, captured in samples';
@@ -62,6 +56,7 @@ CREATE TABLE sample_stat_tables (
     last_seq_scan       timestamp with time zone,
     last_idx_scan       timestamp with time zone,
     n_tup_newpage_upd   bigint,
+    reltoastrelid       oid,
     CONSTRAINT pk_sample_stat_tables PRIMARY KEY (server_id, sample_id, datid, relid),
     CONSTRAINT fk_st_tables_dat FOREIGN KEY (server_id, sample_id, datid)
       REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE CASCADE
@@ -71,6 +66,10 @@ CREATE TABLE sample_stat_tables (
       DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT fk_st_tables_tables FOREIGN KEY (server_id, datid, relid)
       REFERENCES tables_list(server_id, datid, relid)
+      ON DELETE NO ACTION ON UPDATE RESTRICT
+      DEFERRABLE INITIALLY IMMEDIATE,
+    CONSTRAINT fk_st_tables_toast FOREIGN KEY (server_id, sample_id, datid, reltoastrelid)
+      REFERENCES sample_stat_tables(server_id, sample_id, datid, relid)
       ON DELETE NO ACTION ON UPDATE RESTRICT
       DEFERRABLE INITIALLY IMMEDIATE
 );

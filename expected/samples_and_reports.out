@@ -81,16 +81,19 @@ WHERE
 (1 row)
 
 SELECT
-  n_tup_ins,
-  n_live_tup
+  stt.n_tup_ins,
+  stt.n_live_tup
 FROM
-  profile.sample_stat_tables st
+  profile.sample_stat_tables stt
+  JOIN profile.sample_stat_tables stm ON
+    (stm.server_id, stm.sample_id, stm.datid, stm.reltoastrelid) =
+    (stt.server_id, stt.sample_id, stt.datid, stt.relid)
   JOIN profile.tables_list tl ON
-    (st.server_id = tl.server_id AND st.datid = tl.datid
-    AND st.relid = tl.reltoastrelid)
+    (stm.server_id, stm.datid, stm.relid) =
+    (tl.server_id, tl.datid, tl.relid)
 WHERE
   tl.relname = 'grow_table' AND tl.schemaname = 'profile'
-  AND st.sample_id = 2;
+  AND stm.sample_id = 2;
  n_tup_ins | n_live_tup 
 -----------+------------
         80 |         80

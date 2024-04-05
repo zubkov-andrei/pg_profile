@@ -1,8 +1,6 @@
-UPDATE profile.samples SET sample_time = now() - '4 days'::interval - '10 minutes'::interval WHERE server_id = 1 AND sample_id = 1;
-UPDATE profile.samples SET sample_time = now() - '3 days'::interval - '10 minutes'::interval WHERE server_id = 1 AND sample_id = 2;
-UPDATE profile.samples SET sample_time = now() - '2 days'::interval - '10 minutes'::interval WHERE server_id = 1 AND sample_id = 3;
-UPDATE profile.samples SET sample_time = now() - '1 days'::interval - '10 minutes'::interval WHERE server_id = 1 AND sample_id = 4;
-UPDATE profile.samples SET sample_time = now() - '23 hours'::interval - '10 minutes'::interval WHERE server_id = 1 AND sample_id = 5;
+UPDATE profile.samples
+SET sample_time = now() - (5 - sample_id) * '1 day'::interval - '10 minutes'::interval
+WHERE sample_id <= 5;
 SELECT server,result FROM profile.take_sample();
  server | result 
 --------+--------

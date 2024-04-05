@@ -37,8 +37,8 @@ SET search_path=@extschema@ AS $$
         st.indisunique,
         sample_db.datname,
         tablespaces_list.tablespacename,
-        COALESCE(mtbl.schemaname,st.schemaname)::name AS schemaname,
-        COALESCE(mtbl.relname||'(TOAST)',st.relname)::text as relname,
+        COALESCE(mtl.schemaname,st.schemaname)::name AS schemaname,
+        COALESCE(mtl.relname||'(TOAST)',st.relname)::text as relname,
         st.indexrelname::text,
         sum(st.idx_scan)::bigint as idx_scan,
         sum(st.relsize_diff)::bigint as growth,
@@ -102,12 +102,15 @@ SET search_path=@extschema@ AS $$
         JOIN sample_stat_database sample_db USING (server_id, sample_id, datid)
         JOIN tablespaces_list ON (st.server_id, st.tablespaceid) = (tablespaces_list.server_id, tablespaces_list.tablespaceid)
         -- join main table for indexes on toast
-        LEFT OUTER JOIN tables_list mtbl ON
-          (mtbl.server_id, mtbl.datid, mtbl.reltoastrelid) =
-          (st.server_id, st.datid, st.relid)
+        LEFT OUTER JOIN sample_stat_tables mtbl ON
+          (mtbl.server_id, mtbl.sample_id, mtbl.datid, mtbl.reltoastrelid) =
+          (st.server_id, st.sample_id, st.datid, st.relid)
+        LEFT OUTER JOIN tables_list mtl ON
+          (mtl.server_id, mtl.datid, mtl.relid) =
+          (mtbl.server_id, mtbl.datid, mtbl.relid)
     WHERE st.server_id=sserver_id AND NOT sample_db.datistemplate AND st.sample_id BETWEEN start_id + 1 AND end_id
     GROUP BY st.datid,st.relid,st.indexrelid,st.indisunique,sample_db.datname,
-      COALESCE(mtbl.schemaname,st.schemaname),COALESCE(mtbl.relname||'(TOAST)',st.relname), tablespaces_list.tablespacename,st.indexrelname
+      COALESCE(mtl.schemaname,st.schemaname),COALESCE(mtl.relname||'(TOAST)',st.relname), tablespaces_list.tablespacename,st.indexrelname
 $$ LANGUAGE sql;
 
 CREATE FUNCTION top_indexes_format(IN sserver_id integer, IN start_id integer, IN end_id integer)

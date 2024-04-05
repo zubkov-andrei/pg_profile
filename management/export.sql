@@ -1012,18 +1012,30 @@ BEGIN
             imp_table_name, import_meta ->> 'extension', import_meta ->> 'version');
       END CASE; -- over import versions
     WHEN 'tables_list' THEN
+      section_meta := '{}'::jsonb;
       LOOP
         FETCH data INTO datarow;
         EXIT WHEN NOT FOUND;
+        /* In case of old import (before 4.5) we should collect relid - reltoastrelid
+        * binding here. We'll need it in further insert into sample_stat_tables
+        */
+        IF datarow.row_data #> ARRAY['reltoastrelid'] IS NOT NULL THEN
+          section_meta := jsonb_set(section_meta,
+            ARRAY[format('%s.%s',
+              datarow.row_data #>> ARRAY['server_id'],
+              datarow.row_data #>> ARRAY['relid'])
+            ],
+            jsonb_build_object('reltoastrelid', datarow.row_data #> ARRAY['reltoastrelid'])
+          );
+        END IF;
         INSERT INTO tables_list(server_id,last_sample_id,datid,relid,relkind,
-          reltoastrelid,schemaname,relname)
+          schemaname,relname)
         SELECT
           (srv_map ->> dr.server_id::text)::integer,
           s.sample_id,
           dr.datid,
           dr.relid,
           dr.relkind,
-          dr.reltoastrelid,
           dr.schemaname,
           dr.relname
         FROM json_to_record(datarow.row_data) AS dr(
@@ -1032,7 +1044,6 @@ BEGIN
             datid          oid,
             relid          oid,
             relkind        character(1),
-            reltoastrelid  oid,
             schemaname     name,
             relname        name
           ) LEFT JOIN samples s ON (s.server_id, s.sample_id) =
@@ -1049,6 +1060,10 @@ BEGIN
           RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
         END IF;
       END LOOP; -- over data rows
+      -- Return collected relations mapping
+      IF section_meta != '{}'::jsonb THEN
+        new_import_meta := jsonb_set(new_import_meta, '{relations_map}', section_meta);
+      END IF;
     WHEN 'stmt_list' THEN
       section_meta := '{}'::jsonb;
       CASE
@@ -1786,7 +1801,7 @@ BEGIN
         FETCH data INTO datarow;
         EXIT WHEN NOT FOUND;
         INSERT INTO sample_stat_tables(server_id,sample_id,
-          datid,relid,tablespaceid,seq_scan,
+          datid,relid,reltoastrelid,tablespaceid,seq_scan,
           seq_tup_read,idx_scan,idx_tup_fetch,n_tup_ins,n_tup_upd,n_tup_del,n_tup_hot_upd,
           n_live_tup,n_dead_tup,n_mod_since_analyze,n_ins_since_vacuum,last_vacuum,
           last_autovacuum,last_analyze,last_autoanalyze,vacuum_count,autovacuum_count,
@@ -1799,6 +1814,15 @@ BEGIN
           dr.sample_id,
           dr.datid,
           dr.relid,
+          COALESCE(
+            dr.reltoastrelid,
+            (import_meta #>> ARRAY[
+                'relations_map',
+                format('%s.%s', dr.server_id::text, dr.relid::text),
+                'reltoastrelid'
+              ]
+            )::oid
+          ) AS reltoastrelid,
           dr.tablespaceid,
           dr.seq_scan,
           dr.seq_tup_read,
@@ -1840,6 +1864,7 @@ BEGIN
           sample_id            integer,
           datid                oid,
           relid                oid,
+          reltoastrelid        oid,
           tablespaceid         oid,
           seq_scan             bigint,
           seq_tup_read         bigint,

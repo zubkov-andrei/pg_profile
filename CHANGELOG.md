@@ -1,5 +1,9 @@
 # pg_profile changelog
 
+## 4.5
+- Fix broken *take_sample()* function after performing a sample during execution of *pg_repack*
+- Test stability improved for *retention_and_baselines* test
+
 ## 4.4
 - Query text preview in "Top SQL by ..." report sections (@Djoongaar)
 - Substring-based report entries filter (@Djoongaar)

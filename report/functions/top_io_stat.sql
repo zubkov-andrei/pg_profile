@@ -328,8 +328,8 @@ RETURNS TABLE(
         st.relid,
         sample_db.datname AS dbname,
         tablespaces_list.tablespacename,
-        COALESCE(mtbl.schemaname,st.schemaname)::name AS schemaname,
-        COALESCE(mtbl.relname||'(TOAST)',st.relname)::name AS relname,
+        COALESCE(mtl.schemaname,st.schemaname)::name AS schemaname,
+        COALESCE(mtl.relname||'(TOAST)',st.relname)::name AS relname,
         st.indexrelid,
         st.indexrelname,
         sum(st.idx_scan)::bigint AS idx_scan,
@@ -344,11 +344,16 @@ RETURNS TABLE(
         ON (st.server_id=sample_db.server_id AND st.sample_id=sample_db.sample_id AND st.datid=sample_db.datid)
         JOIN tablespaces_list ON  (st.server_id=tablespaces_list.server_id AND st.tablespaceid=tablespaces_list.tablespaceid)
         -- join main table for indexes on toast
-        LEFT OUTER JOIN tables_list mtbl ON (st.server_id = mtbl.server_id AND st.datid = mtbl.datid AND st.relid = mtbl.reltoastrelid)
+        LEFT OUTER JOIN sample_stat_tables mtbl ON
+          (mtbl.server_id, mtbl.sample_id, mtbl.datid, mtbl.reltoastrelid) =
+          (st.server_id, st.sample_id, st.datid, st.relid)
+        LEFT OUTER JOIN tables_list mtl ON
+          (mtl.server_id, mtl.datid, mtl.relid) =
+          (mtbl.server_id, mtbl.datid, mtbl.relid)
         CROSS JOIN total
     WHERE st.server_id = sserver_id AND NOT sample_db.datistemplate AND st.sample_id BETWEEN start_id + 1 AND end_id
     GROUP BY st.server_id,st.datid,st.relid,sample_db.datname,
-      COALESCE(mtbl.schemaname,st.schemaname), COALESCE(mtbl.relname||'(TOAST)',st.relname),
+      COALESCE(mtl.schemaname,st.schemaname), COALESCE(mtl.relname||'(TOAST)',st.relname),
       st.schemaname,st.relname,tablespaces_list.tablespacename, st.indexrelid,st.indexrelname
 $$ LANGUAGE sql;
 

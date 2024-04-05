@@ -217,7 +217,6 @@ BEGIN
      */
     SET CONSTRAINTS
         fk_stat_indexes_indexes,
-        fk_toast_table,
         fk_st_tablespaces_tablespaces,
         fk_st_tables_tables,
         fk_indexes_tables,
@@ -231,7 +230,6 @@ BEGIN
     DELETE FROM tables_list WHERE server_id = dserver_id;
     SET CONSTRAINTS
         fk_stat_indexes_indexes,
-        fk_toast_table,
         fk_st_tablespaces_tablespaces,
         fk_st_tables_tables,
         fk_indexes_tables,
@@ -546,7 +544,6 @@ BEGIN
   -- Delete specified samples without baseline samples
   SET CONSTRAINTS
       fk_stat_indexes_indexes,
-      fk_toast_table,
       fk_st_tablespaces_tablespaces,
       fk_st_tables_tables,
       fk_indexes_tables,
@@ -573,7 +570,6 @@ BEGIN
   GET DIAGNOSTICS smp_delcount := ROW_COUNT;
   SET CONSTRAINTS
       fk_stat_indexes_indexes,
-      fk_toast_table,
       fk_st_tablespaces_tablespaces,
       fk_st_tables_tables,
       fk_indexes_tables,

@@ -2132,7 +2132,7 @@ BEGIN
         dbl.relsize AS relsize,
         dbl.relsize_diff AS relsize_diff,
         CASE WHEN dbl.tablespaceid=0 THEN qres.tablespaceid ELSE dbl.tablespaceid END AS tablespaceid,
-        dbl.reltoastrelid,
+        NULLIF(dbl.reltoastrelid, 0),
         dbl.relkind,
         false,
         dbl.relpages_bytes,
@@ -2694,7 +2694,6 @@ BEGIN
       datid,
       relid,
       relkind,
-      reltoastrelid,
       schemaname,
       relname
     )
@@ -2704,7 +2703,6 @@ BEGIN
       cur.datid,
       cur.relid,
       cur.relkind,
-      NULLIF(cur.reltoastrelid, 0),
       cur.schemaname,
       cur.relname
     FROM
@@ -2714,11 +2712,11 @@ BEGIN
       (sserver_id, s_id, true)
     ON CONFLICT ON CONSTRAINT pk_tables_list DO
       UPDATE SET
-        (last_sample_id, reltoastrelid, schemaname, relname) =
-        (EXCLUDED.last_sample_id, EXCLUDED.reltoastrelid, EXCLUDED.schemaname, EXCLUDED.relname)
+        (last_sample_id, schemaname, relname) =
+        (EXCLUDED.last_sample_id, EXCLUDED.schemaname, EXCLUDED.relname)
       WHERE
-        (itl.last_sample_id, itl.reltoastrelid, itl.schemaname, itl.relname) IS DISTINCT FROM
-        (EXCLUDED.last_sample_id, EXCLUDED.reltoastrelid, EXCLUDED.schemaname, EXCLUDED.relname);
+        (itl.last_sample_id, itl.schemaname, itl.relname) IS DISTINCT FROM
+        (EXCLUDED.last_sample_id, EXCLUDED.schemaname, EXCLUDED.relname);
 
     -- Tables
     INSERT INTO sample_stat_tables (
@@ -2726,6 +2724,7 @@ BEGIN
       sample_id,
       datid,
       relid,
+      reltoastrelid,
       tablespaceid,
       seq_scan,
       seq_tup_read,
@@ -2768,6 +2767,7 @@ BEGIN
       cur.sample_id AS sample_id,
       cur.datid AS datid,
       cur.relid AS relid,
+      cur.reltoastrelid AS reltoastrelid,
       cur.tablespaceid AS tablespaceid,
       cur.seq_scan - COALESCE(lst.seq_scan,0) AS seq_scan,
       cur.seq_tup_read - COALESCE(lst.seq_tup_read,0) AS seq_tup_read,
@@ -2814,7 +2814,8 @@ BEGIN
         (lst.server_id, lst.sample_id, lst.datid, lst.relid) =
         (sserver_id, s_id - 1, dblst.datid, cur.relid)
     WHERE
-      (cur.server_id, cur.sample_id, cur.in_sample) = (sserver_id, s_id, true);
+      (cur.server_id, cur.sample_id, cur.in_sample) = (sserver_id, s_id, true)
+    ORDER BY cur.reltoastrelid NULLS FIRST;
 
     -- Update incorrectly calculated relation growth in case of database stats reset
     UPDATE sample_stat_tables usst
