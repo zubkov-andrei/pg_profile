@@ -324,7 +324,7 @@ class BaseTable extends BaseSection {
                 newCell.appendChild(newText);
 
                 /** Setting attributes to new cell */
-                newCell.setAttribute('class', column.class);
+                newCell.setAttribute('class', "mono queryTextId");
                 newCell.setAttribute('id', `${row.hexqueryid}_${row.plans[i].hexplanid}`);
 
                 /** Plantext column */

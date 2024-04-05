@@ -312,6 +312,10 @@ table.stmt_stat tr.queryRow a, table.stmt_stat tr.planRow a {
     float: right;
 }
 
+table tr td.queryText {
+    font-size: 13px;
+}
+
 table.setlist tr.new_i1 td.switch_bold, table.setlist tr.new_i2 td.switch_bold, .new td.switch_bold {
     font-weight: bold;
 }
