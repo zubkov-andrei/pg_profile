@@ -80,6 +80,16 @@ class BaseSection {
                  * If there are multiple objects in header, then class of table will be overriden */
                 table.setAttribute('class', newBlock.header.class);
 
+                /** If section has highlight attribute, add class highlight to table */
+                if (newBlock.header["highlight"]) {
+                    table.classList.add('highlight');
+                }
+
+                /** If section has preview attribute, add class preview to table */
+                if (newBlock.header["preview"]) {
+                    table.classList.add('preview');
+                }
+
                 if (newBlock.header.type === 'row_table') {
                     div.appendChild(new HorizontalTable(newBlock, table).init());
                 } else if (newBlock.header.type === 'column_table') {
@@ -137,6 +147,9 @@ class BaseTable extends BaseSection {
         let tr0 = document.createElement('tr');
         let tr1 = document.createElement('tr');
         let tr2 = document.createElement('tr');
+        tr0.classList.add('header');
+        tr1.classList.add('header');
+        tr2.classList.add('header');
 
         let th0 = document.createElement('th');
         let mainColumn = header.columns[0];
@@ -501,24 +514,14 @@ class BaseTable extends BaseSection {
      * @returns {HTMLTableElement} tag wit table
      */
     buildHeader() {
-
-        /** Checking if the header has unique class */
-        let classList = this.section.header.class.split(' ');
-        for (let i = 0; i < classList.length; i++) {
-
-            /** If true, build header by special method */
-            let klass = classList[i].trim();
-            if (BaseTable.uniqueHeaders[klass]) {
-                return BaseTable.uniqueHeaders[klass](this.table, this.section.header);
-            }
-        }
-
         /** Collecting header into matrix */
         let headerMatrix = BaseTable.collectHeader(this.section.header, 0, null);
 
         /** If header is not unique build it like regular */
         headerMatrix.forEach(row => {
             let tr = document.createElement('tr');
+            tr.classList.add('header');
+
             row.forEach(column => {
                 let th = document.createElement('th');
 
@@ -659,10 +662,10 @@ class HorizontalTable extends BaseTable {
         let searchArray = [];
 
         /** Set attributes for strings highlighting */
-        if (dataAttrs && dataAttrs.columns) {
-            dataAttrs.columns.forEach(attr => {
-                newRow.setAttribute(`data-${attr.name}`, row[attr.name]);
-                searchArray.push(row[attr.name]);
+        if (dataAttrs) {
+            dataAttrs.forEach(attr => {
+                newRow.setAttribute(`data-${attr.id}`, row[attr.id]);
+                searchArray.push(row[attr.id]);
             })
             /** Set data-search attribute */
             let searchString = Object.values(searchArray).join(' ').replace(/\s\s+/g, ' ');
@@ -676,9 +679,19 @@ class HorizontalTable extends BaseTable {
     insertRows() {
 
         let columns = HorizontalTable.getColumns(this.section.header);  // Getting columns matrix
-        let dataAttrs = this.section.header.attrs;
+        let highlightRowAttrs = this.section.header.highlight;
+        let previewQueryAttrs = this.section.header.preview;
         let rows = this.section.data;  // Getting json array with data
-        let isParent = true;
+
+        /** Set data-attributes */
+        if (highlightRowAttrs) {
+            let result = JSON.stringify(highlightRowAttrs);
+            this.table.setAttribute('data-highlight', result);
+        }
+        if (previewQueryAttrs) {
+            let result = JSON.stringify(previewQueryAttrs);
+            this.table.setAttribute('data-preview', result);
+        }
 
         /** Iterate over the data */
         for (let i = 0; i < rows.length; i++) {
@@ -690,17 +703,24 @@ class HorizontalTable extends BaseTable {
 
                 /** Build <tr> tag for each row in matrix */
                 let newRow = this.table.insertRow(-1);
-                if (this.table.classList.contains('diff') || this.table.classList.contains('toast')) {
-                    newRow.classList.add(isParent ? 'int1' : 'int2');
-                    isParent = !isParent;
+                if (columns.length > 1) {
+                    newRow.classList.add(`int${j + 1}`);
                 }
 
                 /** Set class to row */
                 if (row.klass) {
                     newRow.classList.add(row.klass);
                 }
+                if (i % 2 !== 0) {
+                    newRow.classList.add('grey');
+                }
                 /** Set data-attributes */
-                HorizontalTable.setDataAttrs(newRow, row, dataAttrs);
+                if (highlightRowAttrs) {
+                    HorizontalTable.setDataAttrs(newRow, row, highlightRowAttrs);
+                }
+                if (previewQueryAttrs) {
+                    HorizontalTable.setDataAttrs(newRow, row, previewQueryAttrs);
+                }
 
                 /** Array to collect empty cells */
                 let isEmpty = [];
@@ -712,54 +732,6 @@ class HorizontalTable extends BaseTable {
 
                     /** Build cells inside <tr> */
                     isEmpty.push(HorizontalTable.buildCell(newRow, column, row));
-                }
-
-                /** Insert query text in row on click */
-                if (this.table.classList.contains('stmt_stat')) {
-                    let queryRow = null;
-                    let queryCell = null;
-                    let planRow = null;
-                    let planCell = null;
-                    let queryIndex = null;
-
-                    if (!newRow.classList.contains('int1')) {
-                        /** Insert query row */
-                        queryRow = this.table.insertRow(-1);
-                        queryCell = queryRow.insertCell(-1);
-                        queryCell.setAttribute('colspan', '100');
-                        queryRow.classList.add('queryRow');
-                        queryRow.setAttribute('data-hexqueryid', row.hexqueryid);
-                        queryRow.style.display = 'none';
-
-                        /** Copy query text into clipboard button */
-                        let copyQueryTextButton = Copier.drawButton();
-                        copyQueryTextButton.setAttribute('class', 'copyQueryTextButton');
-                        queryCell.appendChild(copyQueryTextButton);
-
-                    }
-
-                    /** Insert query text and plan text 'on click' */
-                    if (row.hexqueryid) {
-                        newRow.addEventListener('click', event => {
-                            /** Trigger event only if user clicked not on rect and link*/
-                            if (event.target.tagName.toLowerCase() !== 'a' && event.target.tagName.toLowerCase() !== 'rect') {
-                                if (newRow.classList.contains('int1')) {
-                                    queryRow = newRow.nextSibling.nextSibling;
-                                    queryCell = queryRow.firstChild;
-                                }
-
-                                if (queryRow.style.display === 'none') {
-
-                                    queryIndex = Utilities.findQuery(row.hexqueryid);
-                                    let queryText = data.datasets.queries[queryIndex].query_texts[0];
-                                    Utilities.queryTextPreviewer(queryCell, queryRow, newRow, queryText);
-
-                                } else {
-                                    queryRow.style.display = 'none';
-                                }
-                            }
-                        })
-                    }
                 }
 
                 /** Remove row, if all cells in row are empty */
@@ -817,6 +789,12 @@ class VerticalTable extends BaseTable {
         let rows = this.section.data;
         for (let i = 0; i < columns.length; i++) {
             let newRow = this.table.insertRow(-1);
+
+            /** Set class to row */
+            if (i % 2 !== 0) {
+                newRow.classList.add('grey');
+            }
+
             VerticalTable.buildCell(newRow, columns[i], rows);
             columns[i].cells.forEach(cell => {
                 VerticalTable.buildCell(newRow, cell, rows);

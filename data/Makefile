@@ -9,6 +9,7 @@ includes = \
 	static/js/generate.js \
 	static/js/highlight.js \
 	static/js/navigator.js \
+	static/js/preview.js \
 	static/js/copier.js \
 	static/js/main.js \
 	static/css/style.css
@@ -20,6 +21,7 @@ report_templates.sql: $(data_files) $(includes)
 	static/js/generate.js \
 	static/js/highlight.js \
 	static/js/navigator.js \
+	static/js/preview.js \
 	static/js/copier.js \
 	static/js/main.js \
 	> static/js/script.js && \

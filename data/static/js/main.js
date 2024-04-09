@@ -30,6 +30,9 @@ function main() {
     /** Add highlight feature */
     Highlighter.init();
 
+    /** Add query text and plan feature */
+    Previewer.init();
+
     /** Add copy feature */
     Copier.init();
 

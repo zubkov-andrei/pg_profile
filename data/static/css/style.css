@@ -15,8 +15,20 @@
     --main-transition-delay: 500ms;
 }
 
+#container {
+    position: absolute;
+    top: 2%;
+    left: 25%;
+    overflow: auto;
+    margin-left: 10px;
+}
+
+#container .no-menu {
+    left: 0;
+}
 html {
     scroll-behavior: smooth;
+    scroll-padding-left: 30%;
     margin-top: 40px;
 }
 
@@ -33,21 +45,26 @@ a:hover {
 }
 
 #navigator {
-    position: var(--main-position);
-    box-shadow: var(--main-box-shadow);
+    position: fixed;
     background-color: white;
-    border-radius: 4px;
-    top: 2%;
-    height: 92%;
-    right: 0;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 25%;
     overflow: auto;
     display: flex;
     flex-direction: row;
     flex-wrap: nowrap;
 }
 
+#navigator .hidden {
+    width: 0;
+}
 #navigator ul.active {
     display: block;
+    font-family: Monospace, serif;
+    width: fit-content;
+    height: fit-content;
 }
 
 #navigator ul.hidden {
@@ -110,11 +127,7 @@ table p {
     margin: 0.2em;
 }
 
-table.stat tr:nth-child(even), table.setlist tr:nth-child(even) {
-    background-color: #eee;
-}
-
-table.setlist tr.new td.switch_bold {
+table tr.new td.switch_bold {
     font-weight: bold;
 }
 
@@ -131,23 +144,23 @@ table tr:target td:first-of-type, table td:target {
     font-weight: bold;
 }
 
-table.stat tr.active td {
+table tr.active td {
     background-color: #CCF1FF;
 }
 
-table.toast tr.active td {
+table tr.active td {
     background-color: #CCF1FF;
 }
 
-table.stmtlist tr.active td {
+table tr.active td {
     background-color: #CCF1FF;
 }
 
-table.diff tr.active td {
+table tr.active td {
     background-color: #CCF1FF;
 }
 
-table.diff tr.active td:not(.hdr) {
+table tr.active td:not(.hdr) {
     background-color: #CCF1FF;
 }
 
@@ -182,7 +195,6 @@ div.popup {
     right: var(--main-right);
     opacity: var(--main-opacity);
     border-radius: var(--main-border-radius);
-    box-shadow: var(--main-box-shadow);
     position: var(--main-position);
     max-width: var(--main-width);
     transition: bottom 250ms linear;
@@ -207,6 +219,7 @@ svg rect:hover, svg circle:hover, svg path:hover, a.copyButton svg:hover > rect 
 .topnav a {
     float: left;
     display: block;
+    background-color: #2196F3;
     color: black;
     text-align: center;
     padding: 14px 16px;
@@ -219,19 +232,16 @@ svg rect:hover, svg circle:hover, svg path:hover, a.copyButton svg:hover > rect 
 /* Change the color of links on hover */
 .topnav a:hover {
     background-color: #ddd;
-    color: black;
 }
 
 /* Style the "active" element to highlight the current page */
 .topnav a.active {
-    background-color: #2196F3;
     color: white;
 }
 
 /* Style the search box inside the navigation bar */
 .topnav input[type=search] {
     float: left;
-    padding: 6px;
     border: none;
     margin-top: 8px;
     margin-left: 200px;
@@ -258,57 +268,46 @@ svg rect:hover, svg circle:hover, svg path:hover, a.copyButton svg:hover > rect 
 
 /* ----------- Differential report styles ----------- */
 
-td.int1, .int1 td:not(.hdr), table.setlist tr.new_i1 {
+td.int1, .int1 td:not(.hdr), table tr.new_i1 {
     background-color: #FFEEEE;
 }
 
-td.int2, .int2 td:not(.hdr), table.setlist tr.new_i2 {
+td.int2, .int2 td:not(.hdr), table tr.new_i2 {
     background-color: #EEEEFF;
 }
 
-table.toast tr.int1:not(.active) td:not(.hdr) {
-    background-color: #D8E8C2;
+table tr.int1:not(.active) td:not(.hdr) {
+    background-color: #FFEEEE;
 }
 
-table.toast tr.int2:not(.active) td:not(.hdr) {
-    background-color: #BBDD97;
+table tr.int2:not(.active) td:not(.hdr) {
+    background-color: #EEEEFF;
 }
 
-table.diff tr.int2 td {
+table tr.int2 td {
     border-top: hidden;
 }
 
-table.diff:not(.stmt_stat) tr:nth-child(4n+1), table.toast tr:nth-child(4n+1) {
-    background-color: #eee;
-}
-
-table.stat tr:nth-child(even), table.setlist tr:nth-child(even):not(.new_i1):not(.new_i2) {
-    background-color: #eee;
-}
-
-table.stmt_stat.diff tr:nth-child(2n+2) {
-    background-color: #eee;
-}
-table.stmt_stat.diff tr.queryRow {
+table tr.queryRow {
     background-color: white;
 }
 
-table.stmt_stat.stat tr:nth-child(4n+1) {
+table tr.grey {
     background-color: #eee;
 }
-table.stmt_stat.stat tr.queryRow {
+table tr.queryRow {
     background-color: white;
 }
 
-table.stmt_stat tr.queryRow p, table.stmt_stat tr.queryRow a, table.stmt_stat tr.planRow p, table.stmt_stat tr.planRow a {
+table tr.queryRow p, table tr.queryRow a, table tr.planRow p, table tr.planRow a {
     display: inline-block;
 }
 
-table.stmt_stat tr.queryRow p, table.stmt_stat tr.planRow p {
+table tr.queryRow p, table tr.planRow p {
     width: 95%;
 }
 
-table.stmt_stat tr.queryRow a, table.stmt_stat tr.planRow a {
+table tr.queryRow a, table tr.planRow a {
     float: right;
 }
 
@@ -316,7 +315,7 @@ table tr td.queryText {
     font-size: 13px;
 }
 
-table.setlist tr.new_i1 td.switch_bold, table.setlist tr.new_i2 td.switch_bold, .new td.switch_bold {
+table tr.new_i1 td.switch_bold, table tr.new_i2 td.switch_bold, .new td.switch_bold {
     font-weight: bold;
 }
 
@@ -346,6 +345,6 @@ table tr.child td {
     border-top-style: hidden;
 }
 
-table.stat tr.active td {
+table tr.active td {
     background-color: #CCF1FF;
 }

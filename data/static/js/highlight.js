@@ -48,7 +48,7 @@ class Highlighter {
     }
 
     static getHighlightableRows() {
-        return document.querySelectorAll('table.highlightable tr:not(.queryRow)');
+        return document.querySelectorAll('table.highlight tr:not(.queryRow)');
     }
 
     /**
@@ -95,18 +95,22 @@ class Highlighter {
         }
     }
 
+    static getTargetDS(tr) {
+        let fieldsList = JSON.parse(tr.closest('table').dataset.highlight);
+        let targetDS = {};
+        fieldsList.forEach(field => {
+            targetDS[field.id] = tr.dataset[field.id]
+        })
+        return targetDS;
+    }
     /**
      * If datasets in target and in row are the same - highlight the row.
-     * @param targetDataset
-     * @param rowDataset
-     * @param elem
+     * @param tr
+     * @param row
      * @returns boolean
      */
-    /** TODO: Сейчас подсветка работает при совпадении всех data-attributes
-     * TODO: Надо сделать так чтобы подсветка работала также при частичном совпадении параметров
-     * TODO: Использовать для этого параметр index в поле header.attrs */
     static isDatasetEqual(tr, row) {
-        let targetDataset = tr.dataset;
+        let targetDataset = Highlighter.getTargetDS(tr);
         let rowDataset = row.dataset;
 
         /** Highlighting statements texts. If data-queryid and (data-planid) in statement list match */

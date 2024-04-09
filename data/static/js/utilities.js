@@ -160,39 +160,4 @@ class Utilities {
             Utilities.searchWithParam(rowsForSearch, keyword, searchParam);
         }
     }
-
-    static findQuery(hexQueryId) {
-        for (let i = 0; i < data.datasets.queries.length; i++) {
-            if (data.datasets.queries[i].hexqueryid === hexQueryId) {
-                return i
-            }
-        }
-    }
-
-    static queryTextPreviewer(queryCell, queryRow, newRow, queryString) {
-        queryCell.style.width = `${Math.floor(newRow.offsetWidth * 0.95)}px`;
-        queryCell.style.fontFamily = 'Monospace';
-        queryRow.style.display = '';
-
-        /** Query text preview */
-        if (queryCell.firstChild && queryCell.firstChild.tagName.toLowerCase() !== 'p') {
-            let preprocessedText = Utilities.preprocessQueryString(queryString);
-            queryCell.insertAdjacentHTML('afterbegin', `<p><i>${preprocessedText}</i></p>`);
-        }
-    }
-
-    static preprocessQueryString(queryString) {
-        let etc = '';
-        queryString = queryString.split(',').join(', ');
-        queryString = queryString.split('+').join(' + ');
-        queryString = queryString.split('/').join(' / ');
-
-        /** Max length = 3000 chars */
-        if (queryString.length > 1000) {
-            queryString = queryString.substring(0, 1000);
-            etc = ' ...'
-        }
-
-        return `${queryString}${etc}`
-    }
 }

@@ -18,10 +18,10 @@ $js$
   '<script>const data={dynamic:data1}</script>'
   '<title>Postgres profile report ({properties:start1_id} -'
   ' {properties:end1_id})</title></head><body>'
-  '<H1>Postgres profile report</H1>'
+  '<div id="container">'
   '<div id="topnav" class="topnav"></div>'
-  '<ul id="content"></ul>'
-  '<div id="container"></div>'
+  '<H1>Postgres profile report</H1>'
+  '</div>'
   '<script>{static:script_js}</script>'
   '</body></html>'),
 ('diffreport',
@@ -32,10 +32,11 @@ $js$
   '<title>Postgres profile differential report (1): ({properties:start1_id} -'
   ' {properties:end1_id}) with (2): ({properties:start2_id} -'
   ' {properties:end2_id})</title></head><body>'
-  '<H1>Postgres profile differential report</H1>'
-  '<div id="topnav" class="topnav"></div>'
   '<ul id="content"></ul>'
-  '<div id="container"></div>'
+  '<div id="container">'
+  '<div id="topnav" class="topnav"></div>'
+  '<H1>Postgres profile differential report</H1>'
+  '</div>'
   '<script>{static:script_js}</script>'
   '</body></html>')
 ;
