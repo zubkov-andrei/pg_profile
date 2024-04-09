@@ -2,7 +2,7 @@
 CREATE FUNCTION profile_checkavail_walstats(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS BOOLEAN
 SET search_path=@extschema@ AS $$
--- Check if there is table sizes collected in both bounds
+-- Check if there is WAL stats collected
   SELECT
     count(wal_bytes) > 0
   FROM sample_stat_wal

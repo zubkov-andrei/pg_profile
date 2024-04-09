@@ -16,6 +16,14 @@ BEGIN
     VALUES (server,description,server_connstr,server_enabled,max_sample_age)
     RETURNING server_id INTO sserver_id;
 
+    -- Subsample settings table entry
+    INSERT INTO server_subsample(
+      server_id,
+      subsample_enabled)
+    VALUES (
+      sserver_id,
+      true);
+
     /*
     * We might create server sections to avoid concurrency on tables
     */
@@ -126,6 +134,32 @@ BEGIN
         'REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE RESTRICT',
         sserver_id);
 
+    -- Create last_stat_activity table partition
+    EXECUTE format(
+      'CREATE TABLE last_stat_activity_srv%1$s PARTITION OF last_stat_activity '
+      'FOR VALUES IN (%1$s)',
+      sserver_id);
+    EXECUTE format(
+      'ALTER TABLE last_stat_activity_srv%1$s '
+      'ADD CONSTRAINT pk_last_stat_activity_srv%1$s '
+        'PRIMARY KEY (server_id, sample_id, pid, subsample_ts), '
+      'ADD CONSTRAINT fk_last_stat_activity_sample_srv%1$s '
+        'FOREIGN KEY (server_id, sample_id) '
+        'REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT',
+        sserver_id);
+
+    -- Create last_stat_activity table partition
+    EXECUTE format(
+      'CREATE TABLE last_stat_activity_count_srv%1$s PARTITION OF last_stat_activity_count '
+      'FOR VALUES IN (%1$s)',
+      sserver_id);
+    EXECUTE format(
+      'ALTER TABLE last_stat_activity_count_srv%1$s '
+      'ADD CONSTRAINT fk_last_stat_activity_count_sample_srv%1$s '
+        'FOREIGN KEY (server_id, sample_id) '
+        'REFERENCES samples(server_id, sample_id) ON DELETE RESTRICT',
+        sserver_id);
+
 --<extension_start>
     /*
     * Check if partition is already in our extension. This happens when function
@@ -152,6 +186,10 @@ BEGIN
       EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_indexes_srv%1$s',
         sserver_id);
       EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_user_functions_srv%1$s',
+        sserver_id);
+      EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_activity_srv%1$s',
+        sserver_id);
+      EXECUTE format('ALTER EXTENSION {pg_profile} ADD TABLE last_stat_activity_count_srv%1$s',
         sserver_id);
     END IF;
 --<extension_end>
@@ -182,6 +220,10 @@ BEGIN
       dserver_id);
     EXECUTE format('ALTER EXTENSION {pg_profile} DROP TABLE last_stat_user_functions_srv%1$s',
       dserver_id);
+    EXECUTE format('ALTER EXTENSION {pg_profile} DROP TABLE last_stat_activity_srv%1$s',
+      dserver_id);
+    EXECUTE format('ALTER EXTENSION {pg_profile} DROP TABLE last_stat_activity_count_srv%1$s',
+      dserver_id);
 --<extension_end>
     EXECUTE format(
       'DROP TABLE last_stat_kcache_srv%1$s',
@@ -203,6 +245,12 @@ BEGIN
       dserver_id);
     EXECUTE format(
       'DROP TABLE last_stat_user_functions_srv%1$s',
+      dserver_id);
+    EXECUTE format(
+      'DROP TABLE last_stat_activity_srv%1$s',
+      dserver_id);
+    EXECUTE format(
+      'DROP TABLE last_stat_activity_count_srv%1$s',
       dserver_id);
     DELETE FROM last_stat_cluster WHERE server_id = dserver_id;
     DELETE FROM last_stat_io WHERE server_id = dserver_id;
@@ -305,6 +353,57 @@ END;
 $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION enable_server(IN server name) IS 'Enable existing server (will be included in take_sample() call)';
+
+CREATE FUNCTION set_server_subsampling(IN server name, IN subsample_enabled boolean,
+  IN min_query_duration interval hour to second,
+  IN min_xact_duration interval hour to second,
+  IN min_xact_age integer,
+  IN min_idle_xact_dur interval hour to second,
+  IN min_wait_dur interval hour to second)
+RETURNS integer SET search_path=@extschema@ AS $$
+DECLARE
+    upd_rows integer;
+BEGIN
+    INSERT INTO server_subsample(
+      server_id,
+      subsample_enabled,
+      min_query_dur,
+      min_xact_dur,
+      min_xact_age,
+      min_idle_xact_dur,
+      min_wait_dur
+    )
+    SELECT
+      s.server_id,
+      set_server_subsampling.subsample_enabled,
+      set_server_subsampling.min_query_duration,
+      set_server_subsampling.min_xact_duration,
+      set_server_subsampling.min_xact_age,
+      set_server_subsampling.min_idle_xact_dur,
+      set_server_subsampling.min_wait_dur
+    FROM servers s
+    WHERE server_name = set_server_subsampling.server
+    ON CONFLICT (server_id) DO
+    UPDATE SET
+      (subsample_enabled, min_query_dur, min_xact_dur, min_xact_age,
+       min_idle_xact_dur, min_wait_dur) =
+      (
+        COALESCE(EXCLUDED.subsample_enabled,server_subsample.subsample_enabled),
+        COALESCE(EXCLUDED.min_query_dur,server_subsample.min_query_dur),
+        COALESCE(EXCLUDED.min_xact_dur,server_subsample.min_xact_dur),
+        COALESCE(EXCLUDED.min_xact_age,server_subsample.min_xact_age),
+        COALESCE(EXCLUDED.min_idle_xact_dur,server_subsample.min_idle_xact_dur),
+        COALESCE(EXCLUDED.min_lock_dur,server_subsample.min_wait_dur)
+      );
+
+    GET DIAGNOSTICS upd_rows = ROW_COUNT;
+    RETURN upd_rows;
+END;
+$$ LANGUAGE plpgsql;
+COMMENT ON FUNCTION set_server_subsampling(IN name, IN boolean,
+  IN interval hour to second, IN interval hour to second, IN integer,
+  IN interval hour to second, IN interval hour to second)
+IS 'Setup subsampling for a server';
 
 CREATE FUNCTION disable_server(IN server name) RETURNS integer SET search_path=@extschema@ AS $$
 DECLARE

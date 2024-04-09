@@ -1,5 +1,6 @@
 schema_files = \
 	core.sql \
+	subsample.sql \
 	cluster.sql \
 	tablespaces.sql \
 	roles.sql \

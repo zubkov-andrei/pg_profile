@@ -1,4 +1,4 @@
-PGPROFILE_VERSION = 4.5
+PGPROFILE_VERSION = 4.6
 EXTENSION = pg_profile
 
 TAR_pkg = $(EXTENSION)--$(PGPROFILE_VERSION).tar.gz $(EXTENSION)--$(PGPROFILE_VERSION)_manual.tar.gz
@@ -58,6 +58,7 @@ sample = \
 	sample/sample_pg_stat_statements.sql \
 	sample/pg_wait_sampling.sql \
 	sample/sample.sql \
+	sample/subsample.sql \
 	sample/compat.sql
 
 report = report/report_build.sql

@@ -44,7 +44,7 @@ BEGIN
             LEFT OUTER JOIN fkdeps con ON (con.reloid = dep.objid)
           WHERE ext.extname = $1 AND rel.relname NOT IN
               ('import_queries', 'import_queries_version_order',
-              'report', 'report_static', 'report_struct')
+              'report', 'report_static', 'report_struct', 'last_stat_activity')
             AND NOT rel.relispartition
             AND con.reloid IS NULL
       UNION
@@ -65,7 +65,7 @@ BEGIN
         JOIN pg_constraint con ON (con.conrelid = dep.objid AND con.contype = 'f')
       WHERE ext.extname = $1 AND rel.relname NOT IN
         ('import_queries', 'import_queries_version_order',
-        'report', 'report_static', 'report_struct')
+        'report', 'report_static', 'report_struct', 'last_stat_activity')
         AND NOT rel.relispartition
       GROUP BY rel.oid, rel.relname
     )
@@ -156,6 +156,28 @@ BEGIN
                 last_sample_id
                FROM %I AS rows WHERE (server_id,queryid_md5) IN
                 (SELECT server_id, queryid_md5 FROM sample_statements WHERE
+                  ($2 IS NULL OR $2 = server_id) AND
+                ($3 IS NULL OR sample_id >= $3) AND
+                ($4 IS NULL OR sample_id <= $4))) dt$sql$,
+            r_result.relname
+          )
+        USING
+          section_counter,
+          sserver_id,
+          min_sample_id,
+          max_sample_id,
+          obfuscate_queries;
+      WHEN r_result.relname = 'act_query' THEN
+        RETURN QUERY EXECUTE format(
+            $sql$SELECT $1,row_to_json(dt) FROM
+              (SELECT rows.server_id, rows.act_query_md5,
+                CASE $5
+                  WHEN TRUE THEN pg_catalog.md5(rows.act_query)
+                  ELSE rows.act_query
+                END AS act_query,
+                last_sample_id
+               FROM %I AS rows WHERE (server_id, act_query_md5) IN
+                (SELECT server_id, act_query_md5 FROM sample_act_statement WHERE
                   ($2 IS NULL OR $2 = server_id) AND
                 ($3 IS NULL OR sample_id >= $3) AND
                 ($4 IS NULL OR sample_id <= $4))) dt$sql$,
@@ -434,13 +456,26 @@ BEGIN
         RAISE NOTICE 'Started processing table %', r_result.relname;
         func_processed = 0;
 
-        SELECT rows_processed, COALESCE(new_import_meta, import_meta) INTO func_processed, import_meta
+        SELECT rows_processed, COALESCE(new_import_meta, import_meta)
+          INTO func_processed, import_meta
         FROM import_section_data_profile(
           c_datarows,
           r_result.relname,
           tmp_srv_map,
           import_meta,
           dump_versions);
+        -- try subsample import
+        IF func_processed = -1 THEN
+          SELECT rows_processed, COALESCE(new_import_meta, import_meta)
+          INTO func_processed, import_meta
+          FROM import_section_data_subsample(
+            c_datarows,
+            r_result.relname,
+            tmp_srv_map,
+            import_meta,
+            dump_versions);
+        END IF;
+
         IF func_processed = -1 THEN
           RAISE 'No import method for table %', r_result.relname;
         END IF;
@@ -526,25 +561,20 @@ BEGIN
       (rlu.server_id, rlu.userid) = (sserver_id, rl.userid);
 
     -- Cleanup last_ tables
-    DELETE FROM last_stat_tablespaces WHERE server_id = sserver_id AND sample_id != s_id;
-
-    DELETE FROM last_stat_database WHERE server_id = sserver_id AND sample_id != s_id;
-
-    DELETE FROM last_stat_cluster WHERE server_id = sserver_id AND sample_id != s_id;
-
-    DELETE FROM last_stat_io WHERE server_id = sserver_id AND sample_id != s_id;
-
-    DELETE FROM last_stat_slru WHERE server_id = sserver_id AND sample_id != s_id;
-
-    DELETE FROM last_stat_wal WHERE server_id = sserver_id AND sample_id != s_id;
-
+    DELETE FROM last_stat_activity WHERE server_id = sserver_id AND sample_id != s_id;
+    DELETE FROM last_stat_activity_count WHERE server_id = sserver_id AND sample_id != s_id;
     DELETE FROM last_stat_archiver WHERE server_id = sserver_id AND sample_id != s_id;
-
-    DELETE FROM last_stat_tables WHERE server_id=sserver_id AND sample_id != s_id;
-
+    DELETE FROM last_stat_cluster WHERE server_id = sserver_id AND sample_id != s_id;
+    DELETE FROM last_stat_database WHERE server_id = sserver_id AND sample_id != s_id;
     DELETE FROM last_stat_indexes WHERE server_id=sserver_id AND sample_id != s_id;
-
+    DELETE FROM last_stat_io WHERE server_id = sserver_id AND sample_id != s_id;
+    DELETE FROM last_stat_kcache WHERE server_id = sserver_id AND sample_id != s_id;
+    DELETE FROM last_stat_slru WHERE server_id = sserver_id AND sample_id != s_id;
+    DELETE FROM last_stat_statements WHERE server_id = sserver_id AND sample_id != s_id;
+    DELETE FROM last_stat_tables WHERE server_id=sserver_id AND sample_id != s_id;
+    DELETE FROM last_stat_tablespaces WHERE server_id = sserver_id AND sample_id != s_id;
     DELETE FROM last_stat_user_functions WHERE server_id=sserver_id AND sample_id != s_id;
+    DELETE FROM last_stat_wal WHERE server_id = sserver_id AND sample_id != s_id;
   END LOOP; --over import servers
   SET CONSTRAINTS ALL IMMEDIATE;
   RETURN tot_processed;
@@ -1431,8 +1461,8 @@ BEGIN
             GET DIAGNOSTICS row_proc = ROW_COUNT;
             rowcnt := rowcnt + row_proc;
             IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
-          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
-        END IF;
+              RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+            END IF;
           END LOOP; -- over data rows
         WHEN array_position(versions_array, '0.3.1:pg_profile') IS NOT NULL THEN
           LOOP
@@ -1563,8 +1593,8 @@ BEGIN
             GET DIAGNOSTICS row_proc = ROW_COUNT;
             rowcnt := rowcnt + row_proc;
             IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
-          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
-        END IF;
+              RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+            END IF;
           END LOOP; -- over data rows
         ELSE
           RAISE '%', format('[import %s]: Unsupported extension version: %s %s',
@@ -2978,6 +3008,670 @@ BEGIN
           flushes        bigint,
           truncates      bigint,
           stats_reset    timestamp with time zone
+          )
+        ON CONFLICT DO NOTHING;
+        GET DIAGNOSTICS row_proc = ROW_COUNT;
+        rowcnt := rowcnt + row_proc;
+        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+        END IF;
+      END LOOP; -- over data rows
+    WHEN 'act_query' THEN
+      LOOP
+        FETCH data INTO datarow;
+        EXIT WHEN NOT FOUND;
+        INSERT INTO act_query(server_id, act_query_md5, act_query, last_sample_id)
+        SELECT
+          (srv_map ->> dr.server_id::text)::integer,
+          dr.act_query_md5,
+          dr.act_query,
+          s.sample_id
+        FROM json_to_record(datarow.row_data) AS dr(
+            server_id      integer,
+            act_query_md5  char(32),
+            act_query      text,
+            last_sample_id integer
+          )
+          LEFT JOIN samples s ON (s.server_id, s.sample_id) =
+            ((srv_map ->> dr.server_id::text)::integer, dr.last_sample_id)
+        ON CONFLICT ON CONSTRAINT pk_act_query DO
+          NOTHING;
+        GET DIAGNOSTICS row_proc = ROW_COUNT;
+        rowcnt := rowcnt + row_proc;
+        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+        END IF;
+      END LOOP; -- over data rows
+    WHEN 'server_subsample' THEN
+      LOOP
+        FETCH data INTO datarow;
+        EXIT WHEN NOT FOUND;
+        INSERT INTO server_subsample(server_id, subsample_enabled, min_query_dur, min_xact_dur,
+          min_xact_age, min_idle_xact_dur)
+        SELECT
+          (srv_map ->> dr.server_id::text)::integer,
+          dr.subsample_enabled,
+          dr.min_query_dur,
+          dr.min_xact_dur,
+          dr.min_xact_age,
+          dr.min_idle_xact_dur
+        FROM json_to_record(datarow.row_data) AS dr(
+            server_id         integer,
+            subsample_enabled boolean,
+            min_query_dur     interval hour to second,
+            min_xact_dur      interval hour to second,
+            min_xact_age      bigint,
+            min_idle_xact_dur interval hour to second
+          )
+        ON CONFLICT ON CONSTRAINT pk_server_subsample DO
+        UPDATE SET (subsample_enabled, min_query_dur, min_xact_dur,
+          min_xact_age, min_idle_xact_dur) =
+          (EXCLUDED.subsample_enabled, EXCLUDED.min_query_dur, EXCLUDED.min_xact_dur,
+          EXCLUDED.min_xact_age, EXCLUDED.min_idle_xact_dur)
+        WHERE (server_subsample.subsample_enabled, server_subsample.min_query_dur,
+          server_subsample.min_xact_dur, server_subsample.min_xact_age,
+          server_subsample.min_idle_xact_dur)
+          IS DISTINCT FROM
+          (EXCLUDED.subsample_enabled, EXCLUDED.min_query_dur, EXCLUDED.min_xact_dur,
+          EXCLUDED.min_xact_age, EXCLUDED.min_idle_xact_dur);
+        GET DIAGNOSTICS row_proc = ROW_COUNT;
+        rowcnt := rowcnt + row_proc;
+        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+        END IF;
+      END LOOP; -- over data rows
+    WHEN 'sample_act_backend' THEN
+      LOOP
+        FETCH data INTO datarow;
+        EXIT WHEN NOT FOUND;
+        INSERT INTO sample_act_backend(server_id, sample_id, pid,
+          backend_start, datid, datname, usesysid, usename,
+          client_addr, client_hostname, client_port, backend_type,
+          backend_last_ts)
+        SELECT
+          (srv_map ->> dr.server_id::text)::integer,
+          dr.sample_id,
+          dr.pid,
+          dr.backend_start,
+          dr.datid,
+          dr.datname,
+          dr.usesysid,
+          dr.usename,
+          dr.client_addr,
+          dr.client_hostname,
+          dr.client_port,
+          dr.backend_type,
+          dr.backend_last_ts
+        FROM json_to_record(datarow.row_data) AS dr(
+            server_id         integer,
+            sample_id         integer,
+            pid               integer,
+            backend_start     timestamp with time zone,
+            datid             oid,
+            datname           name,
+            usesysid          oid,
+            usename           name,
+            application_name  text,
+            client_addr       inet,
+            client_hostname   text,
+            client_port       integer,
+            backend_type      text,
+            backend_last_ts   timestamp with time zone
+          )
+        ON CONFLICT ON CONSTRAINT pk_sample_backends DO NOTHING;
+        GET DIAGNOSTICS row_proc = ROW_COUNT;
+        rowcnt := rowcnt + row_proc;
+        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+        END IF;
+      END LOOP; -- over data rows
+    WHEN 'sample_act_xact' THEN
+      LOOP
+        FETCH data INTO datarow;
+        EXIT WHEN NOT FOUND;
+        INSERT INTO sample_act_xact(server_id, sample_id, pid, backend_start, xact_start,
+          backend_xid, xact_last_ts)
+        SELECT
+          (srv_map ->> dr.server_id::text)::integer,
+          dr.sample_id,
+          dr.pid,
+          dr.backend_start,
+          dr.xact_start,
+          dr.backend_xid,
+          dr.xact_last_ts
+        FROM json_to_record(datarow.row_data) AS dr(
+            server_id         integer,
+            sample_id         integer,
+            pid               integer,
+            backend_start     timestamp with time zone,
+            xact_start        timestamp with time zone,
+            backend_xid       xid,
+            xact_last_ts      timestamp with time zone
+          )
+        ON CONFLICT ON CONSTRAINT pk_sample_xact DO NOTHING;
+        GET DIAGNOSTICS row_proc = ROW_COUNT;
+        rowcnt := rowcnt + row_proc;
+        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+        END IF;
+      END LOOP; -- over data rows
+    WHEN 'sample_act_backend_state' THEN
+      LOOP
+        FETCH data INTO datarow;
+        EXIT WHEN NOT FOUND;
+        INSERT INTO sample_act_backend_state(server_id, sample_id,
+          pid, backend_start, application_name, state_code,
+          state_change, state_last_ts, xact_start, backend_xmin,
+          backend_xmin_age)
+        SELECT
+          (srv_map ->> dr.server_id::text)::integer,
+          dr.sample_id,
+          dr.pid,
+          dr.backend_start,
+          dr.application_name,
+          dr.state_code,
+          dr.state_change,
+          dr.state_last_ts,
+          dr.xact_start,
+          dr.backend_xmin,
+          dr.backend_xmin_age
+        FROM json_to_record(datarow.row_data) AS dr(
+            server_id         integer,
+            sample_id         integer,
+            pid               integer,
+            backend_start     timestamp with time zone,
+            application_name  text,
+            state_code        integer,
+            state_change      timestamp with time zone,
+            state_last_ts     timestamp with time zone,
+            xact_start        timestamp with time zone,
+            backend_xmin      xid,
+            backend_xmin_age  bigint
+          )
+        ON CONFLICT ON CONSTRAINT pk_sample_bk_state DO NOTHING;
+        GET DIAGNOSTICS row_proc = ROW_COUNT;
+        rowcnt := rowcnt + row_proc;
+        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+        END IF;
+      END LOOP; -- over data rows
+    WHEN 'sample_act_statement' THEN
+      LOOP
+        FETCH data INTO datarow;
+        EXIT WHEN NOT FOUND;
+        INSERT INTO sample_act_statement(server_id, sample_id, pid, leader_pid, state_change,
+          query_start, query_id, act_query_md5, stmt_last_ts)
+        SELECT
+          (srv_map ->> dr.server_id::text)::integer,
+          dr.sample_id,
+          dr.pid,
+          dr.leader_pid,
+          dr.state_change,
+          dr.query_start,
+          dr.query_id,
+          dr.act_query_md5,
+          dr.stmt_last_ts
+        FROM json_to_record(datarow.row_data) AS dr(
+            server_id         integer,
+            sample_id         integer,
+            pid               integer,
+            leader_pid        integer,
+            state_change      timestamp with time zone,
+            query_start       timestamp with time zone,
+            query_id          bigint,
+            act_query_md5     char(32),
+            stmt_last_ts      timestamp with time zone
+          )
+        ON CONFLICT ON CONSTRAINT pk_sample_act_stmt DO NOTHING;
+        GET DIAGNOSTICS row_proc = ROW_COUNT;
+        rowcnt := rowcnt + row_proc;
+        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+        END IF;
+      END LOOP; -- over data rows
+    ELSE
+      rows_processed := -1;
+      RETURN; -- table not found
+  END CASE; -- over table name
+  rows_processed := rowcnt;
+  RETURN;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE FUNCTION import_section_data_subsample(IN data refcursor, IN imp_table_name name, IN srv_map jsonb,
+  IN import_meta jsonb, IN versions_array text[],
+  OUT rows_processed bigint, OUT new_import_meta jsonb)
+SET search_path=profile AS $$
+DECLARE
+  datarow          record;
+  rowcnt           bigint = 0;
+  row_proc         bigint = 0;
+  section_meta     jsonb;
+BEGIN
+  new_import_meta := import_meta;
+  CASE imp_table_name
+    WHEN 'last_stat_activity_count' THEN NULL; -- skip table withoup PK
+    WHEN 'server_subsample' THEN
+      LOOP
+        FETCH data INTO datarow;
+        EXIT WHEN NOT FOUND;
+        INSERT INTO server_subsample(server_id, subsample_enabled, min_query_dur,
+          min_xact_dur, min_xact_age, min_idle_xact_dur)
+        SELECT
+          (srv_map ->> dr.server_id::text)::integer,
+          dr.subsample_enabled,
+          dr.min_query_dur,
+          dr.min_xact_dur,
+          dr.min_xact_age,
+          dr.min_idle_xact_dur
+        FROM json_to_record(datarow.row_data) AS dr(
+            server_id           integer,
+            subsample_enabled   boolean,
+            min_query_dur       interval hour to second,
+            min_xact_dur        interval hour to second,
+            min_xact_age        bigint,
+            min_idle_xact_dur   interval hour to second
+          )
+        ON CONFLICT ON CONSTRAINT pk_server_subsample DO NOTHING;
+        GET DIAGNOSTICS row_proc = ROW_COUNT;
+        rowcnt := rowcnt + row_proc;
+        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+        END IF;
+      END LOOP; -- over data rows
+    WHEN 'sample_act_backend' THEN
+      LOOP
+        FETCH data INTO datarow;
+        EXIT WHEN NOT FOUND;
+        INSERT INTO sample_act_backend(server_id, sample_id, pid, backend_start, datid,
+          datname, usesysid, usename, application_name, client_addr, client_hostname,
+          client_port, backend_type, backend_last_ts)
+        SELECT
+          (srv_map ->> dr.server_id::text)::integer,
+          dr.sample_id,
+          dr.pid,
+          dr.backend_start,
+          dr.datid,
+          dr.datname,
+          dr.usesysid,
+          dr.usename,
+          dr.application_name,
+          dr.client_addr,
+          dr.client_hostname,
+          dr.client_port,
+          dr.backend_type,
+          dr.backend_last_ts,
+        FROM json_to_record(datarow.row_data) AS dr(
+            server_id         integer,
+            sample_id         integer,
+            pid               integer,
+            backend_start     timestamp with time zone,
+            datid             oid,
+            datname           name,
+            usesysid          oid,
+            usename           name,
+            application_name  text,
+            client_addr       inet,
+            client_hostname   text,
+            client_port       integer,
+            backend_type      text,
+            backend_last_ts   timestamp with time zone
+          )
+        ON CONFLICT ON CONSTRAINT pk_sample_backends DO NOTHING;
+        GET DIAGNOSTICS row_proc = ROW_COUNT;
+        rowcnt := rowcnt + row_proc;
+        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+        END IF;
+      END LOOP; -- over data rows
+    WHEN 'sample_act_xact' THEN
+      LOOP
+        FETCH data INTO datarow;
+        EXIT WHEN NOT FOUND;
+        INSERT INTO sample_act_xact(server_id, sample_id, pid, backend_start,xact_start,
+          backend_xid,xact_last_ts)
+        SELECT
+          (srv_map ->> dr.server_id::text)::integer,
+          dr.sample_id,
+          dr.pid,
+          dr.backend_start,
+          dr.xact_start,
+          dr.backend_xid,
+          dr.xact_last_ts
+        FROM json_to_record(datarow.row_data) AS dr(
+            server_id         integer,
+            sample_id         integer,
+            pid               integer,
+            backend_start     timestamp with time zone,
+            xact_start        timestamp with time zone,
+            backend_xid       xid,
+            xact_last_ts      timestamp with time zone
+          )
+        ON CONFLICT ON CONSTRAINT pk_sample_xact DO NOTHING;
+        GET DIAGNOSTICS row_proc = ROW_COUNT;
+        rowcnt := rowcnt + row_proc;
+        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+        END IF;
+      END LOOP; -- over data rows
+    WHEN 'sample_act_backend_state' THEN
+      LOOP
+        FETCH data INTO datarow;
+        EXIT WHEN NOT FOUND;
+        INSERT INTO sample_act_backend_state(server_id, sample_id,
+          pid, backend_start, state_code, state_last_ts, xact_start,
+          backend_xmin, backend_xmin_age)
+        SELECT
+          (srv_map ->> dr.server_id::text)::integer,
+          dr.sample_id,
+          dr.pid,
+          dr.backend_start,
+          dr.state_code,
+          dr.state_change,
+          dr.state_last_ts,
+          dr.xact_start,
+          dr.backend_xmin,
+          dr.backend_xmin_age
+        FROM json_to_record(datarow.row_data) AS dr(
+            server_id         integer,
+            sample_id         integer,
+            pid               integer,
+            backend_start     timestamp with time zone,
+            state_code        integer,
+            state_change      timestamp with time zone,
+            state_last_ts     timestamp with time zone,
+            xact_start        timestamp with time zone,
+            backend_xmin      xid,
+            backend_xmin_age  bigint
+          )
+        ON CONFLICT ON CONSTRAINT pk_sample_bk_state DO NOTHING;
+        GET DIAGNOSTICS row_proc = ROW_COUNT;
+        rowcnt := rowcnt + row_proc;
+        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+        END IF;
+      END LOOP; -- over data rows
+    WHEN 'act_query' THEN
+      LOOP
+        FETCH data INTO datarow;
+        EXIT WHEN NOT FOUND;
+        INSERT INTO act_query(server_id, act_query_md5, act_query, last_sample_id)
+        SELECT
+          (srv_map ->> dr.server_id::text)::integer,
+          act_query_md5,
+          act_query,
+          NULL
+        FROM json_to_record(datarow.row_data) AS dr(
+            server_id      integer,
+            act_query_md5  char(32),
+            act_query      text,
+            last_sample_id integer
+          )
+        ON CONFLICT ON CONSTRAINT pk_act_query DO NOTHING;
+        GET DIAGNOSTICS row_proc = ROW_COUNT;
+        rowcnt := rowcnt + row_proc;
+        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+        END IF;
+      END LOOP; -- over data rows
+    WHEN 'sample_act_statement' THEN
+      LOOP
+        FETCH data INTO datarow;
+        EXIT WHEN NOT FOUND;
+        INSERT INTO sample_act_statement(server_id, sample_id, pid,
+          leader_pid, state_change, query_start, query_id,
+          act_query_md5, stmt_last_ts)
+        SELECT
+          (srv_map ->> dr.server_id::text)::integer,
+          dr.sample_id,
+          dr.pid,
+          dr.leader_pid,
+          dr.state_change,
+          dr.query_start,
+          dr.query_id,
+          dr.act_query_md5,
+          dr.stmt_last_ts
+        FROM json_to_record(datarow.row_data) AS dr(
+            server_id         integer,
+            sample_id         integer,
+            pid               integer,
+            leader_pid        integer,
+            state_change      timestamp with time zone,
+            query_start       timestamp with time zone,
+            query_id          bigint,
+            act_query_md5     char(32),
+            stmt_last_ts      timestamp with time zone
+          )
+        ON CONFLICT ON CONSTRAINT pk_sample_act_stmt DO NOTHING;
+        GET DIAGNOSTICS row_proc = ROW_COUNT;
+        rowcnt := rowcnt + row_proc;
+        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+        END IF;
+      END LOOP; -- over data rows
+    WHEN 'last_stat_activity' THEN
+      LOOP
+        FETCH data INTO datarow;
+        EXIT WHEN NOT FOUND;
+        INSERT INTO last_stat_activity(server_id, sample_id,
+          subsample_ts, datid, datname, pid, leader_pid, usesysid,
+          usename, application_name, client_addr, client_hostname,
+          client_port, backend_start, xact_start, query_start,
+          state_change, state, backend_xid, backend_xmin, query_id,
+          query, backend_type, backend_xmin_age
+        )
+        SELECT
+          (srv_map ->> dr.server_id::text)::integer,
+          dr.sample_id         integer,
+          dr.subsample_ts      timestamp with time zone,
+          dr.datid             oid,
+          dr.datname           name,
+          dr.pid               integer,
+          dr.leader_pid        integer,
+          dr.usesysid          oid,
+          dr.usename           name,
+          dr.application_name  text,
+          dr.client_addr       inet,
+          dr.client_hostname   text,
+          dr.client_port       integer,
+          dr.backend_start     timestamp with time zone,
+          dr.xact_start        timestamp with time zone,
+          dr.query_start       timestamp with time zone,
+          dr.state_change      timestamp with time zone,
+          dr.state             text,
+          dr.backend_xid       xid,
+          dr.backend_xmin      xid,
+          dr.query_id          bigint,
+          dr.query             text,
+          dr.backend_type      text,
+          dr.backend_xmin_age  bigint
+        FROM json_to_record(datarow.row_data) AS dr(
+            server_id         integer,
+            sample_id         integer,
+            subsample_ts      timestamp with time zone,
+            datid             oid,
+            datname           name,
+            pid               integer,
+            leader_pid        integer,
+            usesysid          oid,
+            usename           name,
+            application_name  text,
+            client_addr       inet,
+            client_hostname   text,
+            client_port       integer,
+            backend_start     timestamp with time zone,
+            xact_start        timestamp with time zone,
+            query_start       timestamp with time zone,
+            state_change      timestamp with time zone,
+            state             text,
+            backend_xid       xid,
+            backend_xmin      xid,
+            query_id          bigint,
+            query             text,
+            backend_type      text,
+            backend_xmin_age  bigint
+          )
+        ON CONFLICT DO NOTHING;
+        GET DIAGNOSTICS row_proc = ROW_COUNT;
+        rowcnt := rowcnt + row_proc;
+        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+        END IF;
+      END LOOP; -- over data rows
+    WHEN 'session_attr' THEN
+      LOOP
+        FETCH data INTO datarow;
+        EXIT WHEN NOT FOUND;
+        INSERT INTO session_attr(server_id, sess_attr_id,
+          backend_type, datid, datname, usesysid, usename,
+          application_name, client_addr, last_sample_id)
+        SELECT
+          (srv_map ->> dr.server_id::text)::integer,
+          dr.sess_attr_id      serial,
+          dr.backend_type      text,
+          dr.datid             oid,
+          dr.datname           name,
+          dr.usesysid          oid,
+          dr.usename           name,
+          dr.application_name  text,
+          dr.client_addr       inet,
+          dr.last_sample_id    integer
+        FROM json_to_record(datarow.row_data) AS dr(
+            server_id         integer,
+            sess_attr_id      integer,
+            backend_type      text,
+            datid             oid,
+            datname           name,
+            usesysid          oid,
+            usename           name,
+            application_name  text,
+            client_addr       inet,
+            last_sample_id    integer
+          )
+        ON CONFLICT ON CONSTRAINT pk_subsample_sa DO NOTHING;
+        GET DIAGNOSTICS row_proc = ROW_COUNT;
+        rowcnt := rowcnt + row_proc;
+        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+        END IF;
+      END LOOP; -- over data rows
+    WHEN 'sample_stat_activity_cnt' THEN
+      LOOP
+        FETCH data INTO datarow;
+        EXIT WHEN NOT FOUND;
+        INSERT INTO sample_stat_activity_cnt(server_id, sample_id,
+          subsample_ts, sess_attr_id, total, active, idle, idle_t,
+          idle_ta, state_null, lwlock, lock, bufferpin, activity,
+          extension, client, ipc, timeout, io)
+        SELECT
+          (srv_map ->> dr.server_id::text)::integer,
+          dr.sample_id,
+          dr.subsample_ts,
+          dr.sess_attr_id,
+          dr.total,
+          dr.active,
+          dr.idle,
+          dr.idle_t,
+          dr.idle_ta,
+          dr.state_null,
+          dr.lwlock,
+          dr.lock,
+          dr.bufferpin,
+          dr.activity,
+          dr.extension,
+          dr.client,
+          dr.ipc,
+          dr.timeout,
+          dr.io
+        FROM json_to_record(datarow.row_data) AS dr(
+            server_id         integer,
+            sample_id         integer,
+            subsample_ts      timestamp with time zone,
+            sess_attr_id      integer,
+            total             integer,
+            active            integer,
+            idle              integer,
+            idle_t            integer,
+            idle_ta           integer,
+            state_null        integer,
+            lwlock            integer,
+            lock              integer,
+            bufferpin         integer,
+            activity          integer,
+            extension         integer,
+            client            integer,
+            ipc               integer,
+            timeout           integer,
+            io                integer
+          )
+        ON CONFLICT ON CONSTRAINT pk_sample_stat_activity_cnt DO NOTHING;
+        GET DIAGNOSTICS row_proc = ROW_COUNT;
+        rowcnt := rowcnt + row_proc;
+        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+        END IF;
+      END LOOP; -- over data rows
+    WHEN 'last_stat_activity_count' THEN
+      LOOP
+        FETCH data INTO datarow;
+        EXIT WHEN NOT FOUND;
+        INSERT INTO last_stat_activity_count(server_id, sample_id,
+          subsample_ts, backend_type, datid, datname, usesysid,
+          usename, application_name, client_addr, total, active, idle,
+          idle_t, idle_ta, state_null, lwlock, lock, bufferpin,
+          activity, extension, client, ipc, timeout, io)
+        SELECT
+          (srv_map ->> dr.server_id::text)::integer,
+          dr.sample_id,
+          dr.subsample_ts,
+          dr.backend_type,
+          dr.datid,
+          dr.datname,
+          dr.usesysid,
+          dr.usename,
+          dr.application_name,
+          dr.client_addr,
+          dr.total,
+          dr.active,
+          dr.idle,
+          dr.idle_t,
+          dr.idle_ta,
+          dr.state_null,
+          dr.lwlock,
+          dr.lock,
+          dr.bufferpin,
+          dr.activity,
+          dr.extension,
+          dr.client,
+          dr.ipc,
+          dr.timeout,
+          dr.io
+        FROM json_to_record(datarow.row_data) AS dr(
+            server_id         integer,
+            sample_id         integer,
+            subsample_ts      timestamp with time zone,
+            backend_type      text,
+            datid             oid,
+            datname           name,
+            usesysid          oid,
+            usename           name,
+            application_name  text,
+            client_addr       inet,
+            total             integer,
+            active            integer,
+            idle              integer,
+            idle_t            integer,
+            idle_ta           integer,
+            state_null        integer,
+            lwlock            integer,
+            lock              integer,
+            bufferpin         integer,
+            activity          integer,
+            extension         integer,
+            client            integer,
+            ipc               integer,
+            timeout           integer,
+            io                integer
           )
         ON CONFLICT DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;

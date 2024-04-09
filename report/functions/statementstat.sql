@@ -1054,8 +1054,9 @@ BEGIN
     IF NOT has_column_privilege('stmt_list', 'query', 'SELECT') THEN
       -- Return empty set when permissions denied to see query text
       hexqueryid := '';
+      query_texts := '[]'::jsonb;
       query_texts := jsonb_insert(query_texts, '{-1}',
-        to_jsonb('You must be a member of pg_read_all_stats to access query texts'));
+        to_jsonb('You must be a member of pg_read_all_stats to access query texts'::text));
       RETURN NEXT;
       RETURN;
     END IF;

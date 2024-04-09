@@ -1,5 +1,3 @@
-/* ========= Reporting functions ========= */
-
 /* ========= Cluster databases report functions ========= */
 CREATE FUNCTION profile_checkavail_io_times(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS BOOLEAN

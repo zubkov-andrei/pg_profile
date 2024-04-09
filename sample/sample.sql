@@ -4,6 +4,7 @@ CREATE FUNCTION init_sample(IN sserver_id integer
 DECLARE
     server_properties jsonb = '{"extensions":[],"settings":[],"timings":{},"properties":{}}'; -- version, extensions, etc.
     qres              record;
+    qres_subsample    record;
     server_connstr    text;
 
     server_query      text;
@@ -54,13 +55,6 @@ BEGIN
         PERFORM dblink_disconnect('server_connection');
     END IF;
 
-    -- Only one running take_sample() function allowed per server!
-    -- Explicitly lock server in servers table
-    BEGIN
-        SELECT * INTO qres FROM servers WHERE server_id = sserver_id FOR UPDATE NOWAIT;
-    EXCEPTION
-        WHEN OTHERS THEN RAISE 'Can''t get lock on server. Is there another take_sample() function running on this server?';
-    END;
     IF (server_properties #>> '{collect_timings}')::boolean THEN
       server_properties := jsonb_set(server_properties,'{timings,connect}',jsonb_build_object('start',clock_timestamp()));
       server_properties := jsonb_set(server_properties,'{timings,total}',jsonb_build_object('start',clock_timestamp()));
@@ -150,6 +144,114 @@ BEGIN
         '"local" server';
     END IF;
 
+    -- Subsample settings collection
+    -- Get last base sample identifier of a server
+    SELECT
+      last_sample_id,
+      subsample_enabled,
+      min_query_dur,
+      min_xact_dur,
+      min_xact_age,
+      min_idle_xact_dur
+      INTO STRICT qres_subsample
+    FROM servers JOIN server_subsample USING (server_id)
+    WHERE server_id = sserver_id;
+
+    server_properties := jsonb_set(server_properties,
+      '{properties,last_sample_id}',
+      to_jsonb(qres_subsample.last_sample_id)
+    );
+
+    /* Getting subsample GUC thresholds used as defaults*/
+    BEGIN
+        SELECT current_setting('{pg_profile}.subsample_enabled')::boolean AS subsample_enabled INTO qres;
+        server_properties := jsonb_set(
+          server_properties,
+          '{properties,subsample_enabled}',
+          to_jsonb(COALESCE(qres_subsample.subsample_enabled, qres.subsample_enabled))
+        );
+    EXCEPTION
+        WHEN OTHERS THEN
+          server_properties := jsonb_set(server_properties,
+            '{properties,subsample_enabled}',
+            to_jsonb(COALESCE(qres_subsample.subsample_enabled, true))
+          );
+    END;
+
+    -- Setup subsample settings when they are enabled
+    IF (server_properties #>> '{properties,subsample_enabled}')::boolean THEN
+      BEGIN
+          SELECT current_setting('{pg_profile}.min_query_duration')::interval AS min_query_dur INTO qres;
+          server_properties := jsonb_set(
+            server_properties,
+            '{properties,min_query_dur}',
+            to_jsonb(COALESCE(qres_subsample.min_query_dur, qres.min_query_dur))
+          );
+      EXCEPTION
+          WHEN OTHERS THEN
+            server_properties := jsonb_set(server_properties,
+              '{properties,min_query_dur}',
+              COALESCE (
+                to_jsonb(qres_subsample.min_query_dur)
+                , 'null'::jsonb
+              )
+            );
+      END;
+
+      BEGIN
+          SELECT current_setting('{pg_profile}.min_xact_duration')::interval AS min_xact_dur INTO qres;
+          server_properties := jsonb_set(
+            server_properties,
+            '{properties,min_xact_dur}',
+            to_jsonb(COALESCE(qres_subsample.min_xact_dur, qres.min_xact_dur))
+          );
+      EXCEPTION
+          WHEN OTHERS THEN
+            server_properties := jsonb_set(server_properties,
+              '{properties,min_xact_dur}',
+              COALESCE (
+                to_jsonb(qres_subsample.min_xact_dur)
+                , 'null'::jsonb
+              )
+            );
+      END;
+
+      BEGIN
+          SELECT current_setting('{pg_profile}.min_xact_age')::integer AS min_xact_age INTO qres;
+          server_properties := jsonb_set(
+            server_properties,
+            '{properties,min_xact_age}',
+            to_jsonb(COALESCE(qres_subsample.min_xact_age, qres.min_xact_age))
+          );
+      EXCEPTION
+          WHEN OTHERS THEN
+            server_properties := jsonb_set(server_properties,
+              '{properties,min_xact_age}',
+              COALESCE (
+                to_jsonb(qres_subsample.min_xact_age)
+                , 'null'::jsonb
+              )
+            );
+      END;
+
+      BEGIN
+          SELECT current_setting('{pg_profile}.min_idle_xact_duration')::interval AS min_idle_xact_dur INTO qres;
+          server_properties := jsonb_set(
+            server_properties,
+            '{properties,min_idle_xact_dur}',
+            to_jsonb(COALESCE(qres_subsample.min_idle_xact_dur, qres.min_idle_xact_dur))
+          );
+      EXCEPTION
+          WHEN OTHERS THEN
+            server_properties := jsonb_set(server_properties,
+              '{properties,min_idle_xact_dur}',
+              COALESCE (
+                to_jsonb(qres_subsample.min_idle_xact_dur)
+                , 'null'::jsonb
+              )
+            );
+      END;
+    END IF; -- when subsamples enabled
     RETURN server_properties;
 END;
 $$ LANGUAGE plpgsql;
@@ -167,10 +269,6 @@ DECLARE
 
     server_query      text;
 BEGIN
-    -- Initialize sample
-    server_properties := init_sample(sserver_id);
-    ASSERT server_properties IS NOT NULL, 'lost properties';
-
     -- Adding dblink extension schema to search_path if it does not already there
     IF (SELECT count(*) = 0 FROM pg_catalog.pg_extension WHERE extname = 'dblink') THEN
       RAISE 'dblink extension must be installed';
@@ -181,6 +279,18 @@ BEGIN
       EXECUTE 'SET LOCAL search_path TO ' || current_setting('search_path')||','|| qres.dblink_schema;
     END IF;
 
+    -- Only one running take_sample() function allowed per server!
+    -- Explicitly lock server in servers table
+    BEGIN
+        SELECT * INTO qres FROM servers WHERE server_id = sserver_id FOR UPDATE NOWAIT;
+    EXCEPTION
+        WHEN OTHERS THEN RAISE 'Can''t get lock on server. Is there another take_sample() function running on this server?';
+    END;
+
+    -- Initialize sample
+    server_properties := init_sample(sserver_id);
+    ASSERT server_properties IS NOT NULL, 'lost properties';
+
     topn := (server_properties #>> '{properties,topn}')::integer;
 
     -- Creating a new sample record
@@ -189,6 +299,13 @@ BEGIN
     INSERT INTO samples(sample_time,server_id,sample_id)
       VALUES (now(),sserver_id,s_id);
 
+    -- Once the new sample is created it becomes last one
+    server_properties := jsonb_set(
+      server_properties,
+      '{properties,last_sample_id}',
+      to_jsonb(s_id)
+    );
+
     -- Getting max_sample_age setting
     BEGIN
         ret := COALESCE(current_setting('{pg_profile}.max_sample_age')::integer);
@@ -196,7 +313,6 @@ BEGIN
         WHEN OTHERS THEN ret := 7;
     END;
     -- Applying skip sizes policy
-    SELECT * INTO qres FROM servers WHERE server_id = sserver_id;
     IF skip_sizes IS NULL THEN
       IF num_nulls(qres.size_smp_wnd_start, qres.size_smp_wnd_dur, qres.size_smp_interval) > 0 THEN
         skip_sizes := false;
@@ -1211,14 +1327,6 @@ BEGIN
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
       server_properties := jsonb_set(server_properties,'{timings,query pg_stat_archiver,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,disconnect}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
-
-    PERFORM dblink('server_connection', 'COMMIT');
-    PERFORM dblink_disconnect('server_connection');
-
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,disconnect,end}',to_jsonb(clock_timestamp()));
       server_properties := jsonb_set(server_properties,'{timings,collect object stats}',jsonb_build_object('start',clock_timestamp()));
     END IF;
 
@@ -1228,6 +1336,35 @@ BEGIN
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
       server_properties := jsonb_set(server_properties,'{timings,collect object stats,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,processing subsamples}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
+    /*
+     We must get a lock on subsample before taking a subsample to avoid
+     sample failure due to lock held in concurrent take_subsample() call.
+     take_subsample() function acquires a lock in NOWAIT mode to avoid long
+     waits in a subsample. But we should wait here in sample because sample
+     must be taken anyway and we need to avoid subsample interfere.
+    */
+    PERFORM
+    FROM server_subsample
+    WHERE server_id = sserver_id
+    FOR UPDATE;
+
+    server_properties := take_subsample(sserver_id, server_properties);
+    server_properties := collect_subsamples(sserver_id, s_id, server_properties);
+    ASSERT server_properties IS NOT NULL, 'lost properties';
+
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,processing subsamples,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,disconnect}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
+    PERFORM dblink('server_connection', 'COMMIT');
+    PERFORM dblink_disconnect('server_connection');
+
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,disconnect,end}',to_jsonb(clock_timestamp()));
       server_properties := jsonb_set(server_properties,'{timings,maintain repository}',jsonb_build_object('start',clock_timestamp()));
     END IF;
 

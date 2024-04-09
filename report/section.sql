@@ -131,6 +131,66 @@ BEGIN
         'report_end1', end1_time
         )
       );
+
+      -- stat_activity features
+      IF has_table_privilege('sample_act_backend', 'SELECT') THEN
+        report_context := jsonb_set(report_context, '{report_features,act_backend}',
+          (
+          SELECT
+            to_jsonb(COUNT(*) > 0) FROM (
+              SELECT 1
+              FROM sample_act_backend
+              WHERE server_id = sserver_id AND (
+                  sample_id BETWEEN start1_id + 1 AND end1_id
+                )
+              LIMIT 1
+            ) c
+          )
+        );
+        report_context := jsonb_set(report_context, '{report_features,act_ix}',
+          (
+          SELECT
+            to_jsonb(COUNT(*) > 0) FROM (
+              SELECT 1
+              FROM sample_act_backend_state
+              WHERE server_id = sserver_id AND
+                state_code = 1 AND (
+                  sample_id BETWEEN start1_id + 1 AND end1_id
+                )
+              LIMIT 1
+            ) c
+          )
+        );
+        report_context := jsonb_set(report_context, '{report_features,act_ixa}',
+          (
+          SELECT
+            to_jsonb(COUNT(*) > 0) FROM (
+              SELECT 1
+              FROM sample_act_backend_state
+              WHERE server_id = sserver_id AND
+                state_code = 2 AND (
+                  sample_id BETWEEN start1_id + 1 AND end1_id
+                )
+              LIMIT 1
+            ) c
+          )
+        );
+        report_context := jsonb_set(report_context, '{report_features,act_active}',
+          (
+          SELECT
+            to_jsonb(COUNT(*) > 0) FROM (
+              SELECT 1
+              FROM sample_act_backend_state JOIN sample_act_statement
+                USING (server_id, sample_id, pid, state_change)
+              WHERE server_id = sserver_id AND
+                state_code = 3 AND (
+                  sample_id BETWEEN start1_id + 1 AND end1_id
+                )
+              LIMIT 1
+            ) c
+          )
+        );
+      END IF;
     ELSIF num_nulls(start2_id, end2_id) = 0 THEN
       -- Get report times
       SELECT sample_time::text INTO STRICT start2_time FROM samples
@@ -271,6 +331,69 @@ BEGIN
         'report_end2', end2_time
         )
       );
+
+      -- stat_activity features
+      IF has_table_privilege('sample_act_backend', 'SELECT') THEN
+        report_context := jsonb_set(report_context, '{report_features,act_backend}',
+          (
+          SELECT
+            to_jsonb(COUNT(*) > 0) FROM (
+              SELECT 1
+              FROM sample_act_backend
+              WHERE server_id = sserver_id AND (
+                  sample_id BETWEEN start1_id + 1 AND end1_id OR
+                  sample_id BETWEEN start2_id + 1 AND end2_id
+                )
+              LIMIT 1
+            ) c
+          )
+        );
+        report_context := jsonb_set(report_context, '{report_features,act_ix}',
+          (
+          SELECT
+            to_jsonb(COUNT(*) > 0) FROM (
+              SELECT 1
+              FROM sample_act_backend_state
+              WHERE server_id = sserver_id AND
+                state_code = 1 AND (
+                  sample_id BETWEEN start1_id + 1 AND end1_id OR
+                  sample_id BETWEEN start2_id + 1 AND end2_id
+                )
+              LIMIT 1
+            ) c
+          )
+        );
+        report_context := jsonb_set(report_context, '{report_features,act_ixa}',
+          (
+          SELECT
+            to_jsonb(COUNT(*) > 0) FROM (
+              SELECT 1
+              FROM sample_act_backend_state
+              WHERE server_id = sserver_id AND
+                state_code = 2 AND (
+                  sample_id BETWEEN start1_id + 1 AND end1_id OR
+                  sample_id BETWEEN start2_id + 1 AND end2_id
+                )
+              LIMIT 1
+            ) c
+          )
+        );
+        report_context := jsonb_set(report_context, '{report_features,act_active}',
+          (
+          SELECT
+            to_jsonb(COUNT(*) > 0) FROM (
+              SELECT 1
+              FROM sample_act_backend_state
+              WHERE server_id = sserver_id AND
+                state_code = 3 AND (
+                  sample_id BETWEEN start1_id + 1 AND end1_id OR
+                  sample_id BETWEEN start2_id + 1 AND end2_id
+                )
+              LIMIT 1
+            ) c
+          )
+        );
+      END IF;
     ELSE
       RAISE 'Two bounds must be specified for second interval';
     END IF;
@@ -375,11 +498,12 @@ DECLARE
   end1_id     integer = (report_context #>> '{report_properties,end1_id}')::integer;
   end2_id     integer = (report_context #>> '{report_properties,end2_id}')::integer;
 
-  datasets    jsonb = '{}';
-  dataset     jsonb;
-  queries_set jsonb = '[]';
-  r_result    RECORD;
-  r_dataset   text;
+  datasets         jsonb = '{}';
+  dataset          jsonb;
+  queries_set      jsonb = '[]';
+  act_queries_set  jsonb = '[]';
+  r_result         RECORD;
+  r_dataset        text;
 BEGIN
   IF num_nulls(start1_id, end1_id) = 0 AND num_nulls(start2_id, end2_id) > 0 THEN
     -- Regular report
@@ -612,6 +736,32 @@ BEGIN
       datasets := jsonb_set(datasets, '{top_rusage_statements}', dataset);
     END IF;
 
+    IF (report_context #>> '{report_features,act_backend}')::boolean THEN
+      -- Session states and queries cartured by subsamples
+      -- Database aggregated data
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM stat_activity_agg_format(sserver_id, start1_id, end1_id)
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{db_activity_agg}', dataset);
+      -- Top states dataset
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM stat_activity_states_format(sserver_id, start1_id, end1_id)
+          WHERE least(
+              ord_dur,
+              ord_age
+            ) <= (report_context #>> '{report_properties,topn}')::numeric
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{act_top_states}', dataset);
+    END IF;
+
     dataset := '[]'::jsonb;
     FOR r_result IN (
         SELECT *
@@ -732,6 +882,27 @@ BEGIN
       END LOOP; -- over dataset entries
     END LOOP; -- over datasets
 
+    -- Collect stat_activity queries over datasets
+    FOR r_dataset IN (SELECT jsonb_object_keys(datasets)) LOOP
+      -- skip datasets without queries
+      CONTINUE WHEN NOT
+        (datasets #> ARRAY[r_dataset, '0']) ?| ARRAY['act_query_md5'];
+      FOR r_result IN (
+        SELECT
+          act_query_md5
+        FROM
+          jsonb_to_recordset(datasets #> ARRAY[r_dataset]) AS
+            entry(
+              act_query_md5  text
+            )
+        )
+      LOOP
+        act_queries_set := act_queries_set || jsonb_build_object(
+          'act_query_md5', r_result.act_query_md5
+        );
+      END LOOP; -- over dataset entries
+    END LOOP; -- over datasets
+
     -- Query texts dataset should be formed the last
     dataset := '[]'::jsonb;
     FOR r_result IN (
@@ -741,6 +912,19 @@ BEGIN
       dataset := dataset || to_jsonb(r_result);
     END LOOP;
     datasets := jsonb_set(datasets, '{queries}', dataset);
+
+    -- stat_activity queries list construction
+    IF (report_context #>> '{report_features,act_backend}')::boolean THEN
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM report_active_queries_format(report_context, sserver_id, act_queries_set)
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{act_queries}', dataset);
+    END IF;
+
   ELSIF num_nulls(start1_id, end1_id, start2_id, end2_id) = 0 THEN
     -- Differential report
     -- report properties dataset
@@ -989,6 +1173,34 @@ BEGIN
       datasets := jsonb_set(datasets, '{top_rusage_statements}', dataset);
     END IF;
 
+    IF (report_context #>> '{report_features,act_backend}')::boolean THEN
+      -- Session states and queries cartured by subsamples
+      -- Database aggregated data
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM stat_activity_agg_format(sserver_id, start1_id, end1_id,
+            start2_id, end2_id)
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{db_activity_agg}', dataset);
+      -- Top states dataset
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM stat_activity_states_format(sserver_id, start1_id, end1_id,
+            start2_id, end2_id)
+          WHERE least(
+              ord_dur,
+              ord_age
+            ) <= (report_context #>> '{report_properties,topn}')::numeric
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{act_top_states}', dataset);
+    END IF;
+
     dataset := '[]'::jsonb;
     FOR r_result IN (
         SELECT *
@@ -1098,6 +1310,27 @@ BEGIN
       END LOOP; -- over dataset entries
     END LOOP; -- over datasets
 
+    -- Collect stat_activity queries over datasets
+    FOR r_dataset IN (SELECT jsonb_object_keys(datasets)) LOOP
+      -- skip datasets without queries
+      CONTINUE WHEN NOT
+        (datasets #> ARRAY[r_dataset, '0']) ?| ARRAY['act_query_md5'];
+      FOR r_result IN (
+        SELECT
+          act_query_md5
+        FROM
+          jsonb_to_recordset(datasets #> ARRAY[r_dataset]) AS
+            entry(
+              act_query_md5  text
+            )
+        )
+      LOOP
+        act_queries_set := act_queries_set || jsonb_build_object(
+          'act_query_md5', r_result.act_query_md5
+        );
+      END LOOP; -- over dataset entries
+    END LOOP; -- over datasets
+
     -- Query texts dataset should be formed the last
     dataset := '[]'::jsonb;
     FOR r_result IN (
@@ -1109,6 +1342,19 @@ BEGIN
       dataset := dataset || to_jsonb(r_result);
     END LOOP;
     datasets := jsonb_set(datasets, '{queries}', dataset);
+
+    -- stat_activity queries list construction
+    IF (report_context #>> '{report_features,act_backend}')::boolean THEN
+      dataset := '[]'::jsonb;
+      FOR r_result IN (
+          SELECT *
+          FROM report_active_queries_format(report_context, sserver_id, act_queries_set)
+        ) LOOP
+        dataset := dataset || to_jsonb(r_result);
+      END LOOP;
+      datasets := jsonb_set(datasets, '{act_queries}', dataset);
+    END IF;
+
   END IF;
   RETURN datasets;
 END;

@@ -17,6 +17,7 @@ report_files = \
 	functions/tablestat.sql \
 	functions/top_io_stat.sql \
 	functions/walstat.sql \
+	functions/subsample.sql \
 	section.sql \
 	report.sql \
 	reportdiff.sql
