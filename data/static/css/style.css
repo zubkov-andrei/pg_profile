@@ -17,7 +17,7 @@
 
 #container {
     position: absolute;
-    top: 2%;
+    top: 40px;
     left: 25%;
     overflow: auto;
     margin-left: 10px;
@@ -47,7 +47,8 @@ a:hover {
 #navigator {
     position: fixed;
     background-color: white;
-    top: 0;
+    box-shadow: rgba(0, 0, 0, 0.35) 0 5px 15px;
+    top: 40px;
     left: 0;
     bottom: 0;
     width: 25%;
@@ -57,7 +58,7 @@ a:hover {
     flex-wrap: nowrap;
 }
 
-#navigator .hidden {
+#navigator.hidden {
     width: 0;
 }
 #navigator ul.active {
@@ -75,7 +76,9 @@ a:hover {
     border: 2px solid black;
     border-radius: 3px;
 }
-
+#navigator li.hidden {
+    display: none;
+}
 #navigator li.active {
     background-color: var(--secondary-bg-color);
     border-radius: 3px;
@@ -213,6 +216,7 @@ svg rect:hover, svg circle:hover, svg path:hover, a.copyButton svg:hover > rect 
     top: 0;
     width: 100%;
     background-color: #e9e9e9;
+    z-index: 999;
 }
 
 /* Style the links inside the navigation bar */

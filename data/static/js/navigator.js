@@ -17,12 +17,13 @@ class ReportNavigator {
         }
     }
 
-    static buildPageContent(data, parentNode) {
+    static buildPageContent(data, parentNode, visibility) {
         data.sections.forEach(section => {
             let hasTableCap = ('tbl_cap' in section);
             let hasNestedSections = ('sections' in section);
             let ul = document.createElement('ul');
             let li = document.createElement('li');
+            li.classList.add(visibility);
 
             /** Creating <li> and <a> tags inside <ul> */
             if (hasTableCap) {
@@ -35,14 +36,28 @@ class ReportNavigator {
 
                 li.setAttribute('id', `navigator_${section.href}`);
                 li.appendChild(a);
+
                 parentNode.appendChild(li);
             } else {
                 ul = li;
             }
             /** Recursive call for building nested content */
             if (hasNestedSections) {
-                parentNode.appendChild(this.buildPageContent(section, ul));
+                parentNode.appendChild(this.buildPageContent(section, ul, "visible"));
             }
+            li.addEventListener("click", ev => {
+                if (ev.target.parentNode.nextSibling.tagName === "UL") {
+                    ev.target.parentNode.nextSibling.childNodes.forEach(el => {
+                        if (el.classList.contains("hidden")) {
+                            el.classList.remove("hidden");
+                            el.classList.add("visible");
+                        } else {
+                            el.classList.remove("visible");
+                            el.classList.add("hidden")
+                        }
+                    })
+                }
+            })
         })
 
         return parentNode;
@@ -131,7 +146,7 @@ class ReportNavigator {
             }
         })
         document.querySelector('body').appendChild(NAVIGATOR);
-        ReportNavigator.buildPageContent(data, ul);
+        ReportNavigator.buildPageContent(data, ul, "visible");
         /** Add some useful events */
         ReportNavigator.buildReportNavigator(NAVIGATOR);
     }

@@ -19,7 +19,19 @@ VALUES
           '{"id": "report_start1", "class": "table_obj_value", "caption": "start"},'
           '{"id": "report_end1", "class": "table_obj_value", "caption": "end"}'
         ']}'
-    ']}]'::jsonb),
+    ']}'
+  ']'::jsonb),
+(1, 'rep_settings', NULL, 11, NULL, NULL, NULL, NULL, 'rep_settings', NULL,
+  '[{'
+    '"type": "row_table",'
+    '"source": "settings",'
+    '"filter": {"type": "exists", "field": "h_ord"},'
+    '"ordering": "h_ord",'
+    '"columns": ['
+      '{"caption": "Setting", "id": "name", "class": "table_obj_name"},'
+      '{"caption": "Value", "id": "reset_val", "class": "table_obj_value"}'
+    ']'
+  '}]'::jsonb),
 (1, 'stmt_cmt1', NULL, 100, NULL, NULL, 'stmt_cnt_range', NULL, NULL,
   '{"class": "warning", "text": "This interval contains sample(s) with captured statements count more than 90% of pg_stat_statements.max parameter. '
   'Consider increasing pg_stat_statements.max parameter"}',
@@ -35,7 +47,7 @@ VALUES
   ']}]'::jsonb),
 (1, 'srvstat', NULL, 200, 'Server statistics', 'Server statistics', NULL, NULL, 'cl_stat', NULL, NULL),
 (1, 'actsesshdr', NULL, 250, 'Session states', 'Session states observed by subsamples', 'act_backend', NULL, 'stat_act',
-  '{"class": "notice", "text": "Statistics about session states exceeding subsample capturing thresholds."}', NULL),
+  '{"class": "notice", "text": "Statistics about session states exceeding capturing thresholds."}', NULL),
 (1, 'sqlsthdr', NULL, 300, 'SQL query statistics', 'SQL query statistics', 'statstatements', NULL, 'sql_stat', NULL, NULL),
 (1, 'objects', NULL, 400, 'Schema object statistics', 'Schema object statistics', NULL, NULL, 'schema_stat', NULL, NULL),
 (1, 'funchdr', NULL, 500, 'User function statistics', 'User function statistics', 'function_stats', NULL, 'func_stat', NULL, NULL),
@@ -1885,6 +1897,17 @@ VALUES
           '{"id": ["report_end1", "report_end2"], "class": "table_obj_value", "caption": "end"}'
         ']}'
     ']}]'::jsonb),
+(2, 'rep_settings', NULL, 11, NULL, NULL, NULL, NULL, 'rep_settings', NULL,
+  '[{'
+    '"type": "row_table",'
+    '"source": "settings",'
+    '"filter": {"type": "exists", "field": "h_ord"},'
+    '"ordering": "h_ord",'
+    '"columns": ['
+      '{"caption": "Setting", "id": "name", "class": "table_obj_name"},'
+      '{"caption": "Value", "id": "reset_val", "class": "table_obj_value"}'
+    ']'
+  '}]'::jsonb),
 (2, 'stmt_cmt1', NULL, 100, NULL, NULL, 'stmt_cnt_range', NULL, NULL,
   '{"class": "warning", "text": "Report interval contains sample(s) with captured statements count more than 90% of pg_stat_statements.max. '
   'Consider increasing pg_stat_statements.max parameter."}',
@@ -1900,7 +1923,7 @@ VALUES
     ']}]'::jsonb),
 (2, 'srvstat', NULL, 300, 'Server statistics', 'Server statistics', NULL, NULL, 'cl_stat', NULL, NULL),
 (2, 'actsesshdr', NULL, 350, 'Session states', 'Session states observed by subsamples', 'act_backend', NULL, 'stat_act',
-  '{"class": "notice", "text": "Statistics about session states exceeding subsample capturing thresholds."}', NULL),
+  '{"class": "notice", "text": "Statistics about session states exceeding capturing thresholds."}', NULL),
 (2, 'sqlsthdr', NULL, 400, 'SQL query statistics', 'SQL query statistics', 'statstatements', NULL, 'sql_stat', NULL, NULL),
 (2, 'objects', NULL, 500, 'Schema object statistics', 'Schema object statistics', NULL, NULL, 'schema_stat', NULL, NULL),
 (2, 'funchdr', NULL, 600, 'User function statistics', 'User function statistics', 'function_stats', NULL, 'func_stat', NULL, NULL),
