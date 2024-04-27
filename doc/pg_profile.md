@@ -185,6 +185,19 @@ Function arguments:
 * **set_server_description(server name, description text)**
   Set new server description.
 
+* **set_server_subsampling(server name,
+    subsample_enabled boolean,
+    min_query_duration interval,
+    min_xact_duration interval,
+    min_xact_age integer,
+    min_idle_xact_dur interval hour to second)**
+  Set subsample settings for a *server*.
+  * *subsample_enabled* - should the *take_subsample()* function perform a subsample actually.
+  * *min_query_duration* - query duration threshold
+  * *min_xact_duration* - transaction duration threshold
+  * *min_xact_age* - transaction age threshold
+  * *min_idle_xact_dur* - idle transaction threshold
+
 * **show_servers()**
 Display existing servers.
 
@@ -348,9 +361,62 @@ Event descriptions:
 * **calculate archiver stats** - Calculating archiever differential statistics.
 * **delete obsolete samples** - Deleting obsolete baselines and samples.
 
+### Subsamples
+
+Some performance-related data available in postgres is not cumulative. For example, the most often used data about session states is available through the *pg_stat_activity* view and can be obtained only with frequent samples. *take_sample()* function is heavy and can take considerable amount of time and is not suitable for that.
+
+The subsample feature provides a new fast *take_subsample()* function - it can be used to collect relatively fast changing data. Every subsample will be bound to the next regular sample and will be deleted by retention policy with it.
+
+#### Track session states
+
+The subsample feature can be used to capture the most interesting session states:
+* Long running queries
+* Long transactions
+* Aged transactions (transactions holding a snapshot behind a lot of other transactions)
+* Transactions in an idle state for a long time
+
+#### Subsample settings
+
+The following settings affect subsample behaviour:
+* *pg_profile.subsample_enabled* (bool) - should the *take_subsample()* function actually perform a subsample
+* *pg_profile.min_query_duration* (interval) - long running query threshold
+* *pg_profile.min_xact_duration* (interval) - long transaction threshold
+* *pg_profile.min_xact_age* (integer) - transaction age threshold
+* *pg_profile.min_idle_xact_duration* (integer) - idle transaction threshold
+Any setting of the above can be defined on a server level using the *set_server_subsampling()* function.
+
+The last seen session state will be saved in the repository when either one of the following thresholds will be exceeded:
+* During query execution the difference between *now()* and *query_start* exceeds the *pg_profile.min_query_duration* threshold
+* During a transaction the difference between *now()* and *xact_start* exceeds the *pg_profile.min_xact_duration* threshold
+* During a transaction the *age(backend_xmin)* exceeds the *pg_profile.min_xact_age* threshold
+* During a transaction in states *idle in transaction* and *idle in transaction (aborted)* the difference between *now()* and *state_change* exceeds the *pg_profile.min_idle_xact_duration*
+Every subsample will hold at most *pg_profile.topn* entries for every threshold type.
+
+#### Scheduling subsamples
+
+Subsamples are fast enough to take them quite often. However usually you don't need more than 2-4 subsamples per minute. Obviously subsample frequency depends on the shortest used duration threshold setting.
+
+Cron will only allow you a one call per minute so some effort is needed to schedule more frequent subsamples. For example the *\watch* psql command can be used:
+```
+echo "select take_subsample(); \watch 15" | psql &> /dev/null
+```
+psql call can be wrapped into systemd service like this:
+```
+[Unit]
+Description=pg_profile subsampling unit
+
+[Service]
+Type=simple
+ExecStart=/bin/sh -c 'echo "select take_subsample(); \\watch 15" | /path/to/psql -qo /dev/null'
+User=postgres
+Group=postgres
+
+[Install]
+WantedBy=multi-user.target
+```
 ### Baselines
 
-Baseline is a named sample sequence, having its own retention setting. Baseline can be used in report-building functions as a sample interval. Undefined baseline retention means infinite retention.
+Baseline is a named sample sequence, having its own retention setting. Baseline can be used in report-building functions as a sample interval. Undefined baseline retention means /infinite retention.
 You can use baselines to save information about database workload on certain time period. For example, you may want to save samples, gathered during load testing, or during regular load on your system for further reference.
 Baseline management functions:
 
@@ -699,6 +765,74 @@ This table contains top _pg_profile.topn_ wait events by summary time waited inc
 * *Wait exent* - wait event name (see *pg_stat_activity*)
 * *Waited (s)* - amount of time waited in event by all backends in seconds
 * *%Total* - time waited in event by all backends as a percentage of overall time waited by backends
+
+### Session states observed by subsamples
+
+This report section provides information about session states captured by subsamples during report interval.
+
+#### Session state statistics by database
+
+Aggregated session states data. Only session states captured in subsamples are counted.
+* *Database* - database name
+* *Summary* - summary values for the report interval
+  * *Active* - overall time of *active* states captured in subsamples
+  * *Idle in xact* - overall time of *idle in transaction* states captured in subsamples
+  * *Idle in xact (A)* - overall time of *idle in transaction (aborted)* states captured in subsamples
+* *Maximal* - maximal values for the report interval
+  * *Active* - time of the longest *active* state captured in subsamples
+  * *Idle in xact* - time of the longest *idle in transaction* state captured in subsamples
+  * *Idle in xact (A)* - time of the longest *idle in transaction (aborted)* state captured in subsamples
+  * *xact age* - maximal transaction age detected in subsamples
+
+#### Top 'idle in transaction' session states by duration
+
+Information about top _pg_profile.topn_ longest *idle in transaction* states as it was in *pg_stat_activity* view last time.
+* *Database* - database name (*datname*)
+* *User* - user name (*usename*)
+* *App* - application name (*application_name*)
+* *Pid* - process ID (*pid*)
+* *Xact start* - transaction start timestamp (*xact_start*)
+* *State change* - state change timestamp (*state_change*)
+* *State duration* - state duration, i.e. difference between *clock_timestamp()* and *state_change*
+
+#### Top 'active' session states by duration
+
+Information about top _pg_profile.topn_ longest *active* states as it was in *pg_stat_activity* view last time.
+* *Database* - database name (*datname*)
+* *User* - user name (*usename*)
+* *App* - application name (*application_name*)
+* *Pid* - process ID (*pid*)
+* *Xact start* - transaction start timestamp (*xact_start*)
+* *State change* - state change timestamp (*state_change*)
+* *State duration* - state duration, i.e. difference between *clock_timestamp()* and *state_change*
+
+#### Top states by transaction age
+
+Session states ordered by transaction age as it was in *pg_stat_activity* view last time in a transaction.
+* *Database* - database name (*datname*)
+* *User* - user name (*usename*)
+* *App* - application name (*application_name*)
+* *Pid* - process ID (*pid*)
+* *Xact start* - transaction start timestamp (*xact_start*)
+* *Xact duration* - transaction duration, i.e. difference between *clock_timestamp()* and *xact_start*
+* *Age* - transaction age (*age(backend_xmin)*)
+* *State* - session state at the maximum age detected
+* *State change* - state change timestamp (*state_change*)
+* *State duration* - state duration, i.e. difference between *clock_timestamp()* and *state_change*
+
+#### Top states by transaction duration
+
+Similar to previous table. Session states ordered by transaction duration as it was in *pg_stat_activity* view last time in a transaction.
+* *Database* - database name (*datname*)
+* *User* - user name (*usename*)
+* *App* - application name (*application_name*)
+* *Pid* - process ID (*pid*)
+* *Xact start* - transaction start timestamp (*xact_start*)
+* *Xact duration* - transaction duration, i.e. difference between *clock_timestamp()* and *xact_start*
+* *Age* - transaction age (*age(backend_xmin)*)
+* *State* - session state at the maximum age detected
+* *State change* - state change timestamp (*state_change*)
+* *State duration* - state duration, i.e. difference between *clock_timestamp()* and *state_change*
 
 ### SQL query statistics
 This report section contains tables of top statements during report interval sorted by several important statistics. Data is captured from *pg_stat_statements* view if it was available at the time of samples. Statements can be highlighted in all SQL-related sections by a single mouse click on it. Also this click will show a query text preview just under the query statistics row. Query text preview can be hidden with a second click on a query.

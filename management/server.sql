@@ -358,8 +358,7 @@ CREATE FUNCTION set_server_subsampling(IN server name, IN subsample_enabled bool
   IN min_query_duration interval hour to second,
   IN min_xact_duration interval hour to second,
   IN min_xact_age integer,
-  IN min_idle_xact_dur interval hour to second,
-  IN min_wait_dur interval hour to second)
+  IN min_idle_xact_dur interval hour to second)
 RETURNS integer SET search_path=@extschema@ AS $$
 DECLARE
     upd_rows integer;
@@ -380,7 +379,7 @@ BEGIN
       set_server_subsampling.min_xact_duration,
       set_server_subsampling.min_xact_age,
       set_server_subsampling.min_idle_xact_dur,
-      set_server_subsampling.min_wait_dur
+      NULL
     FROM servers s
     WHERE server_name = set_server_subsampling.server
     ON CONFLICT (server_id) DO
@@ -402,7 +401,7 @@ END;
 $$ LANGUAGE plpgsql;
 COMMENT ON FUNCTION set_server_subsampling(IN name, IN boolean,
   IN interval hour to second, IN interval hour to second, IN integer,
-  IN interval hour to second, IN interval hour to second)
+  IN interval hour to second)
 IS 'Setup subsampling for a server';
 
 CREATE FUNCTION disable_server(IN server name) RETURNS integer SET search_path=@extschema@ AS $$

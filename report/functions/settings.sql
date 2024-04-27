@@ -59,7 +59,8 @@ RETURNS TABLE (
     source      text,
     notes       text,
     default_val boolean,
-    defined_val boolean
+    defined_val boolean,
+    h_ord       integer -- report header ordering
   )
 SET search_path=@extschema@ AS $$
   SELECT
@@ -73,7 +74,14 @@ SET search_path=@extschema@ AS $$
       CASE WHEN pending_restart THEN 'Pending restart' ELSE NULL END
     ) AS notes,
     default_val,
-    NOT default_val
+    NOT default_val,
+    CASE name
+      WHEN 'version' THEN 10
+      WHEN 'pgpro_version' THEN 21
+      WHEN 'pgpro_edition' THEN 22
+      WHEN 'pgpro_build' THEN 23
+      ELSE NULL
+    END AS h_ord
   FROM
     settings_and_changes(sserver_id, start_id, end_id)
   ORDER BY
@@ -91,7 +99,8 @@ RETURNS TABLE (
     source      text,
     notes       text,
     default_val boolean,
-    defined_val boolean
+    defined_val boolean,
+    h_ord       integer -- report header ordering
   )
 SET search_path=@extschema@ AS $$
   SELECT
@@ -114,7 +123,14 @@ SET search_path=@extschema@ AS $$
       CASE WHEN pending_restart THEN 'Pending restart' ELSE NULL END
     ) AS notes,
     default_val,
-    NOT default_val
+    NOT default_val,
+    CASE name
+      WHEN 'version' THEN 10
+      WHEN 'pgpro_version' THEN 21
+      WHEN 'pgpro_edition' THEN 22
+      WHEN 'pgpro_build' THEN 23
+      ELSE NULL
+    END AS h_ord
   FROM
     settings_and_changes(sserver_id, start1_id, end1_id) s1
     FULL OUTER JOIN

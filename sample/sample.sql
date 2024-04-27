@@ -91,6 +91,19 @@ BEGIN
       server_properties := jsonb_insert(server_properties,'{"settings",0}',to_jsonb(qres));
     END LOOP;
 
+    -- Is it PostgresPro?
+    IF (SELECT pgpro_fxs = 3
+        FROM dblink('server_connection',
+          'select count(1) as pgpro_fxs '
+          'from pg_catalog.pg_proc '
+          'where proname IN (''pgpro_build'',''pgpro_edition'',''pgpro_version'')'
+        ) AS pgpro (pgpro_fxs integer))
+    THEN
+      server_properties := jsonb_set(server_properties,'{properties,pgpro}',to_jsonb(true));
+    ELSE
+      server_properties := jsonb_set(server_properties,'{properties,pgpro}',to_jsonb(false));
+    END IF;
+
     -- Get extensions, that we need to perform statements stats collection
     FOR qres IN
       SELECT * FROM dblink('server_connection',
@@ -368,6 +381,15 @@ BEGIN
       'UNION ALL SELECT 2 as setting_scope,''system_identifier'','
       'system_identifier::text,system_identifier::text,system_identifier::text,'
       'NULL,NULL,NULL,False FROM pg_catalog.pg_control_system()';
+
+    -- Is it PostgresPro?
+    IF (server_properties #>> '{properties,pgpro}')::boolean THEN
+      server_query := concat_ws(' ',server_query,
+          'UNION ALL SELECT 2 as setting_scope,''pgpro_build'',pgpro_build(),pgpro_build(),NULL,NULL,NULL,NULL,False '
+          'UNION ALL SELECT 2 as setting_scope,''pgpro_edition'',pgpro_edition(),pgpro_edition(),NULL,NULL,NULL,NULL,False '
+          'UNION ALL SELECT 2 as setting_scope,''pgpro_version'',pgpro_version(),pgpro_version(),NULL,NULL,NULL,NULL,False '
+      );
+    END IF;
 
     INSERT INTO sample_settings(
       server_id,

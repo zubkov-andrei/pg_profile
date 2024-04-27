@@ -10,3 +10,5 @@ DROP FUNCTION init_sample;
 DROP FUNCTION profile_checkavail_walstats;
 DROP FUNCTION report_queries_format;
 DROP FUNCTION take_sample(integer, boolean);
+DROP FUNCTION settings_format;
+DROP FUNCTION settings_format_diff;

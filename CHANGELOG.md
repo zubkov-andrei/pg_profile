@@ -1,5 +1,12 @@
 # pg_profile changelog
 
+## 4.6
+- Query text preview available in all query statistic sections
+- Hidable report contents on the left edge
+- The new subsample feature allows to track session states and include them in the report. See [Subsamples](doc/pg_profile.md#subsamples)
+- New grafana dashboard *pg_profile_activity* visualizing session states distribution over time using the data collected by subsamples. See [Grafana README](grafana/README.md)
+- Added database version section to the top of the report
+
 ## 4.5
 - Fix broken *take_sample()* function after performing a sample during execution of *pg_repack*
 - Test stability improved for *retention_and_baselines* test

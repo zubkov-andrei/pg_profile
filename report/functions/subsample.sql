@@ -337,20 +337,20 @@ RETURNS TABLE(
     xact_start_format     timestamp with time zone,
     state_change_format   timestamp with time zone,
 
-    flt_state_code    integer,
-    state_code        integer,
-    state             text,
-    state_duration    interval,
-    xact_duration     interval,
-    xmin_age          bigint,
+    flt_state_code        integer,
+    state_code            integer,
+    state                 text,
+    state_duration_format interval,
+    xact_duration_format  interval,
+    xmin_age              bigint,
 
-    query_id          bigint,
-    act_query_md5     char(32),
+    query_id              bigint,
+    act_query_md5         char(32),
 
-    ord_dur           integer,
-    ord_age           integer,
-    ord_xact          integer,
-    flt_age           boolean
+    ord_dur               integer,
+    ord_age               integer,
+    ord_xact              integer,
+    flt_age               boolean
 ) SET search_path=@extschema@ AS $$
     SELECT
       datid,
