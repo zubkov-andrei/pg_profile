@@ -382,7 +382,7 @@ The following settings affect subsample behaviour:
 * *pg_profile.min_query_duration* (interval) - long running query threshold
 * *pg_profile.min_xact_duration* (interval) - long transaction threshold
 * *pg_profile.min_xact_age* (integer) - transaction age threshold
-* *pg_profile.min_idle_xact_duration* (integer) - idle transaction threshold
+* *pg_profile.min_idle_xact_duration* (interval) - idle transaction threshold
 Any setting of the above can be defined on a server level using the *set_server_subsampling()* function.
 
 The last seen session state will be saved in the repository when either one of the following thresholds will be exceeded:

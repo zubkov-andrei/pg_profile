@@ -369,8 +369,7 @@ BEGIN
       min_query_dur,
       min_xact_dur,
       min_xact_age,
-      min_idle_xact_dur,
-      min_wait_dur
+      min_idle_xact_dur
     )
     SELECT
       s.server_id,
@@ -378,21 +377,19 @@ BEGIN
       set_server_subsampling.min_query_duration,
       set_server_subsampling.min_xact_duration,
       set_server_subsampling.min_xact_age,
-      set_server_subsampling.min_idle_xact_dur,
-      NULL
+      set_server_subsampling.min_idle_xact_dur
     FROM servers s
     WHERE server_name = set_server_subsampling.server
     ON CONFLICT (server_id) DO
     UPDATE SET
       (subsample_enabled, min_query_dur, min_xact_dur, min_xact_age,
-       min_idle_xact_dur, min_wait_dur) =
+       min_idle_xact_dur) =
       (
         COALESCE(EXCLUDED.subsample_enabled,server_subsample.subsample_enabled),
         COALESCE(EXCLUDED.min_query_dur,server_subsample.min_query_dur),
         COALESCE(EXCLUDED.min_xact_dur,server_subsample.min_xact_dur),
         COALESCE(EXCLUDED.min_xact_age,server_subsample.min_xact_age),
-        COALESCE(EXCLUDED.min_idle_xact_dur,server_subsample.min_idle_xact_dur),
-        COALESCE(EXCLUDED.min_lock_dur,server_subsample.min_wait_dur)
+        COALESCE(EXCLUDED.min_idle_xact_dur,server_subsample.min_idle_xact_dur)
       );
 
     GET DIAGNOSTICS upd_rows = ROW_COUNT;

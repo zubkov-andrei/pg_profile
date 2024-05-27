@@ -6,6 +6,9 @@ DELETE FROM report_struct;
 DELETE FROM report;
 DELETE FROM report_static;
 
+INSERT INTO server_subsample(server_id, subsample_enabled)
+SELECT server_id, true FROM servers;
+
 DO $$
 DECLARE
   sserver_id    integer;
