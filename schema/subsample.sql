@@ -2,7 +2,7 @@
 
 CREATE TABLE server_subsample (
     server_id           integer,
-    subsample_enabled   boolean DEFAULT true NOT NULL,
+    subsample_enabled   boolean DEFAULT true,
     min_query_dur       interval hour to second,
     min_xact_dur        interval hour to second,
     min_xact_age        bigint,

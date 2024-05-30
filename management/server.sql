@@ -22,7 +22,7 @@ BEGIN
       subsample_enabled)
     VALUES (
       sserver_id,
-      true);
+      null);
 
     /*
     * We might create server sections to avoid concurrency on tables
@@ -363,34 +363,17 @@ RETURNS integer SET search_path=@extschema@ AS $$
 DECLARE
     upd_rows integer;
 BEGIN
-    INSERT INTO server_subsample(
-      server_id,
-      subsample_enabled,
-      min_query_dur,
-      min_xact_dur,
-      min_xact_age,
-      min_idle_xact_dur
-    )
-    SELECT
-      s.server_id,
-      set_server_subsampling.subsample_enabled,
-      set_server_subsampling.min_query_duration,
-      set_server_subsampling.min_xact_duration,
-      set_server_subsampling.min_xact_age,
-      set_server_subsampling.min_idle_xact_dur
-    FROM servers s
-    WHERE server_name = set_server_subsampling.server
-    ON CONFLICT (server_id) DO
-    UPDATE SET
+    UPDATE server_subsample smp
+    SET
       (subsample_enabled, min_query_dur, min_xact_dur, min_xact_age,
-       min_idle_xact_dur) =
-      (
-        COALESCE(EXCLUDED.subsample_enabled,server_subsample.subsample_enabled),
-        COALESCE(EXCLUDED.min_query_dur,server_subsample.min_query_dur),
-        COALESCE(EXCLUDED.min_xact_dur,server_subsample.min_xact_dur),
-        COALESCE(EXCLUDED.min_xact_age,server_subsample.min_xact_age),
-        COALESCE(EXCLUDED.min_idle_xact_dur,server_subsample.min_idle_xact_dur)
-      );
+        min_idle_xact_dur) =
+      (set_server_subsampling.subsample_enabled, set_server_subsampling.min_query_duration,
+      set_server_subsampling.min_xact_duration, set_server_subsampling.min_xact_age,
+      set_server_subsampling.min_idle_xact_dur)
+    FROM servers s
+    WHERE
+      s.server_name = set_server_subsampling.server AND
+      smp.server_id = s.server_id;
 
     GET DIAGNOSTICS upd_rows = ROW_COUNT;
     RETURN upd_rows;

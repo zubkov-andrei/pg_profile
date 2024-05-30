@@ -177,7 +177,8 @@ BEGIN
 
     /* Getting subsample GUC thresholds used as defaults*/
     BEGIN
-        SELECT current_setting('{pg_profile}.subsample_enabled')::boolean AS subsample_enabled INTO qres;
+        SELECT current_setting('{pg_profile}.subsample_enabled')::boolean AS subsample_enabled
+          INTO qres;
         server_properties := jsonb_set(
           server_properties,
           '{properties,subsample_enabled}',
@@ -1361,21 +1362,33 @@ BEGIN
       server_properties := jsonb_set(server_properties,'{timings,processing subsamples}',jsonb_build_object('start',clock_timestamp()));
     END IF;
 
-    /*
-     We must get a lock on subsample before taking a subsample to avoid
-     sample failure due to lock held in concurrent take_subsample() call.
-     take_subsample() function acquires a lock in NOWAIT mode to avoid long
-     waits in a subsample. But we should wait here in sample because sample
-     must be taken anyway and we need to avoid subsample interfere.
-    */
-    PERFORM
-    FROM server_subsample
-    WHERE server_id = sserver_id
-    FOR UPDATE;
+    -- Process subsamples if enabled
+    IF (server_properties #>> '{properties,subsample_enabled}')::boolean THEN
+      /*
+       We must get a lock on subsample before taking a subsample to avoid
+       sample failure due to lock held in concurrent take_subsample() call.
+       take_subsample() function acquires a lock in NOWAIT mode to avoid long
+       waits in a subsample. But we should wait here in sample because sample
+       must be taken anyway and we need to avoid subsample interfere.
+      */
+      PERFORM
+      FROM server_subsample
+      WHERE server_id = sserver_id
+      FOR UPDATE;
 
-    server_properties := take_subsample(sserver_id, server_properties);
-    server_properties := collect_subsamples(sserver_id, s_id, server_properties);
-    ASSERT server_properties IS NOT NULL, 'lost properties';
+      server_properties := take_subsample(sserver_id, server_properties);
+      server_properties := collect_subsamples(sserver_id, s_id, server_properties);
+      ASSERT server_properties IS NOT NULL, 'lost properties';
+    END IF;
+
+    IF (SELECT count(*) > 0 FROM last_stat_activity_count WHERE server_id = sserver_id) OR
+       (SELECT count(*) > 0 FROM last_stat_activity WHERE server_id = sserver_id)
+    THEN
+      EXECUTE format('TRUNCATE TABLE last_stat_activity_srv%1$s',
+        sserver_id);
+      EXECUTE format('TRUNCATE TABLE last_stat_activity_count_srv%1$s',
+        sserver_id);
+    END IF;
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
       server_properties := jsonb_set(server_properties,'{timings,processing subsamples,end}',to_jsonb(clock_timestamp()));

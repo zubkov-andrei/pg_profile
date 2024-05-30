@@ -32,7 +32,7 @@ BEGIN
   END IF; -- empty properties
 
   -- Skip subsampling if it is disabled
-  IF (NOT (properties #>> '{settings,subsample_enabled}')::boolean) THEN
+  IF (NOT (properties #>> '{properties,subsample_enabled}')::boolean) THEN
     RETURN properties;
   END IF;
 
@@ -507,8 +507,8 @@ DECLARE
     c_servers CURSOR FOR
       SELECT server_id,server_name FROM (
         SELECT server_id,server_name, row_number() OVER () AS srv_rn
-        FROM servers JOIN server_subsample USING (server_id)
-        WHERE enabled AND subsample_enabled
+        FROM servers
+        WHERE enabled
         ) AS t1
       WHERE srv_rn % sets_cnt = current_set;
     etext               text := '';
@@ -588,9 +588,6 @@ DECLARE
     WHERE (server_id, sample_id) = (sserver_id, s_id - 1)
     ;
 BEGIN
-    IF (SELECT NOT subsample_enabled FROM server_subsample WHERE server_id = sserver_id) THEN
-      RETURN properties;
-    END IF;
 
     INSERT INTO sample_act_backend (
       server_id,
@@ -849,11 +846,6 @@ BEGIN
       sq.last_sample_id IS NULL AND
       ss.server_id IS NULL AND
       (squ.server_id, squ.act_query_md5) = (sserver_id, sq.act_query_md5);
-
-    EXECUTE format('TRUNCATE TABLE last_stat_activity_srv%1$s',
-      sserver_id);
-    EXECUTE format('TRUNCATE TABLE last_stat_activity_count_srv%1$s',
-      sserver_id);
 
     RETURN properties;
 END;
