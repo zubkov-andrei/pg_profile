@@ -55,7 +55,6 @@ BEGIN
   WHERE name = 'server_version_num';
 
   -- Current session states collection
-  PERFORM dblink_exec('server_connection', 'BEGIN TRANSACTION READ ONLY');
   -- collect sessions and their states
   CASE
     WHEN srv_version >= 140000 THEN
@@ -469,8 +468,6 @@ BEGIN
           timeout           integer,
           io                integer
       );
-
-  PERFORM dblink_exec('server_connection', 'COMMIT');
 
   RETURN properties;
 END
