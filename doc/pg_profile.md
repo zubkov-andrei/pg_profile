@@ -365,7 +365,38 @@ Event descriptions:
 
 Some performance-related data available in postgres is not cumulative. For example, the most often used data about session states is available through the *pg_stat_activity* view and can be obtained only with frequent samples. *take_sample()* function is heavy and can take considerable amount of time and is not suitable for that.
 
-The subsample feature provides a new fast *take_subsample()* function - it can be used to collect relatively fast changing data. Every subsample will be bound to the next regular sample and will be deleted by retention policy with it.
+The subsample feature provides a fast *take_subsample()* function - it can be used to collect relatively fast changing data. Every subsample will be bound to the next regular sample and will be deleted by retention policy with it.
+
+#### Subsampling functions
+* **take_subsample()**
+  Function *take_subsample()* will perform a subsample on all *enabled* servers having subsampling enabled. Server subsamples will be taken serially one by one. Function returns a table:
+  ```
+  server      name,
+  result      text,
+  elapsed     interval
+  ```
+  Where:
+  * *server* is a server name
+  * *result* is a result of taken subsample. It can be 'OK' if the subsample was taken successively, and will contain error text in case of an exception.
+  * *elapsed* is a time elapsed taking a subsample for *server*
+  Such return makes it easy to control samples creation using SQL query. Note that trying to take a subsample during taking a sample will fail.
+
+* **take_subsample_subset([sets_cnt integer], [current_set integer])**
+  Subsamples should be fast enough for serial processing, but it can be done in parallel as regular samples. Function *take_subsample_subset()* will take subsamples for a subset of enabled servers. *sets_cnt* is number of servers subsets. *current_set* is a subset to process, taking values between 0 and *sets_cnt - 1* inclusive.
+  Function returns a table:
+  ```
+  server      name,
+  result      text,
+  elapsed     interval
+  ```
+  Where:
+  * *server* is a server name
+  * *result* is a result of taken subsample. It can be 'OK' if subsample was taken successively, and will contain error text in case of exception
+  * *elapsed* is a time elapsed taking a subsample for *server*
+
+* **take_subsample(server name)**
+  Will collect a subsample for specified server. Use it, for example, when you want to use different subsampling frequencies, or if you want to take explicit subsample on a specific server.
+  * *server* - name of a server to take a subsample
 
 #### Track session states
 
