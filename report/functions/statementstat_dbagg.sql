@@ -53,8 +53,10 @@ RETURNS TABLE(
         plans               bigint,
         total_exec_time     double precision,
         total_plan_time     double precision,
-        blk_read_time       double precision,
-        blk_write_time      double precision,
+        shared_blk_read_time       double precision,
+        shared_blk_write_time      double precision,
+        local_blk_read_time       double precision,
+        local_blk_write_time      double precision,
         trg_fn_total_time   double precision,
         shared_gets         bigint,
         local_gets          bigint,
@@ -75,7 +77,15 @@ RETURNS TABLE(
         jit_optimization_count  bigint,
         jit_optimization_time   double precision,
         jit_emission_count  bigint,
-        jit_emission_time   double precision
+        jit_emission_time   double precision,
+        jit_deform_count    bigint,
+        jit_deform_time     double precision,
+        mean_max_plan_time  double precision,
+        mean_max_exec_time  double precision,
+        mean_min_plan_time  double precision,
+        mean_min_exec_time  double precision,
+        min_max_plan_delta  double precision,
+        min_max_exec_delta  double precision
 )
 SET search_path=@extschema@ AS $$
     SELECT
@@ -85,8 +95,10 @@ SET search_path=@extschema@ AS $$
         sum(st.plans)::bigint AS plans,
         sum(st.total_exec_time)/1000::double precision AS total_exec_time,
         sum(st.total_plan_time)/1000::double precision AS total_plan_time,
-        sum(st.blk_read_time)/1000::double precision AS blk_read_time,
-        sum(st.blk_write_time)/1000::double precision AS blk_write_time,
+        sum(st.shared_blk_read_time)/1000::double precision AS shared_blk_read_time,
+        sum(st.shared_blk_write_time)/1000::double precision AS shared_blk_write_time,
+        sum(st.local_blk_read_time)/1000::double precision AS local_blk_read_time,
+        sum(st.local_blk_write_time)/1000::double precision AS local_blk_write_time,
         (sum(trg.total_time)/1000)::double precision AS trg_fn_total_time,
         sum(st.shared_blks_hit)::bigint + sum(st.shared_blks_read)::bigint AS shared_gets,
         sum(st.local_blks_hit)::bigint + sum(st.local_blks_read)::bigint AS local_gets,
@@ -107,7 +119,21 @@ SET search_path=@extschema@ AS $$
         sum(st.jit_optimization_count)::bigint AS jit_optimization_count,
         sum(st.jit_optimization_time)/1000::double precision AS jit_optimization_time,
         sum(st.jit_emission_count)::bigint AS jit_emission_count,
-        sum(st.jit_emission_time)/1000::double precision AS jit_emission_time
+        sum(st.jit_emission_time)/1000::double precision AS jit_emission_time,
+        sum(st.jit_deform_count)::bigint AS jit_deform_count,
+        sum(st.jit_deform_time)/1000::double precision AS jit_deform_time,
+        sum(st.mean_max_plan_time * st.statements)::double precision /
+          sum(st.statements) AS mean_max_plan_time,
+        sum(st.mean_max_exec_time * st.statements)::double precision /
+          sum(st.statements) AS mean_max_exec_time,
+        sum(st.mean_min_plan_time * st.statements)::double precision /
+          sum(st.statements) AS mean_min_plan_time,
+        sum(st.mean_min_exec_time * st.statements)::double precision /
+          sum(st.statements) AS mean_min_exec_time,
+        sum(st.mean_max_plan_time - st.mean_min_plan_time)::double precision * 100 /
+          NULLIF(sum(st.mean_min_plan_time), 0.0) AS min_max_plan_delta,
+        sum(st.mean_max_exec_time - st.mean_min_exec_time)::double precision * 100 /
+          NULLIF(sum(st.mean_min_exec_time), 0.0) AS min_max_exec_delta
     FROM sample_statements_total st
         LEFT OUTER JOIN sample_stat_user_func_total trg
           ON (st.server_id = trg.server_id AND st.sample_id = trg.sample_id AND st.datid = trg.datid AND trg.trg_fn)
@@ -126,8 +152,10 @@ RETURNS TABLE(
     plans               numeric,
     total_exec_time     numeric,
     total_plan_time     numeric,
-    blk_read_time       numeric,
-    blk_write_time      numeric,
+    shared_blk_read_time       numeric,
+    shared_blk_write_time      numeric,
+    local_blk_read_time       numeric,
+    local_blk_write_time      numeric,
     trg_fn_total_time   numeric,
     shared_gets         numeric,
     local_gets          numeric,
@@ -150,6 +178,14 @@ RETURNS TABLE(
     jit_optimization_time   numeric,
     jit_emission_count  numeric,
     jit_emission_time   numeric,
+    jit_deform_count    numeric,
+    jit_deform_time     numeric,
+    mean_max_plan_time  numeric,
+    mean_max_exec_time  numeric,
+    mean_min_plan_time  numeric,
+    mean_min_exec_time  numeric,
+    min_max_plan_delta  numeric,
+    min_max_exec_delta  numeric,
     -- ordering fields
     ord_db              integer
 ) AS $$
@@ -160,8 +196,10 @@ RETURNS TABLE(
     NULLIF(sum(plans), 0) AS plans,
     round(CAST(NULLIF(sum(total_exec_time), 0.0) AS numeric),2) AS total_exec_time,
     round(CAST(NULLIF(sum(total_plan_time), 0.0) AS numeric),2) AS total_plan_time,
-    round(CAST(NULLIF(sum(blk_read_time), 0.0) AS numeric),2) AS blk_read_time,
-    round(CAST(NULLIF(sum(blk_write_time), 0.0) AS numeric),2) AS blk_write_time,
+    round(CAST(NULLIF(sum(shared_blk_read_time), 0.0) AS numeric),2) AS shared_blk_read_time,
+    round(CAST(NULLIF(sum(shared_blk_write_time), 0.0) AS numeric),2) AS shared_blk_write_time,
+    round(CAST(NULLIF(sum(local_blk_read_time), 0.0) AS numeric),2) AS local_blk_read_time,
+    round(CAST(NULLIF(sum(local_blk_write_time), 0.0) AS numeric),2) AS local_blk_write_time,
     round(CAST(NULLIF(sum(trg_fn_total_time), 0.0) AS numeric),2) AS trg_fn_total_time,
     NULLIF(sum(shared_gets), 0) AS shared_gets,
     NULLIF(sum(local_gets), 0) AS local_gets,
@@ -184,6 +222,20 @@ RETURNS TABLE(
     round(CAST(NULLIF(sum(jit_optimization_time), 0.0) AS numeric),2) AS jit_optimization_time,
     NULLIF(sum(jit_emission_count), 0) AS jit_emission_count,
     round(CAST(NULLIF(sum(jit_emission_time), 0.0) AS numeric),2) AS jit_emission_time,
+    NULLIF(sum(jit_deform_count), 0) AS jit_deform_count,
+    round(CAST(NULLIF(sum(jit_deform_time), 0.0) AS numeric),2) AS jit_deform_time,
+    round(CAST(NULLIF(sum(mean_max_plan_time * statements) /
+      NULLIF(sum(statements), 0.0), 0.0) AS numeric),2) AS mean_max_plan_time,
+    round(CAST(NULLIF(sum(mean_max_exec_time * statements) /
+      NULLIF(sum(statements), 0.0), 0.0) AS numeric),2) AS mean_max_exec_time,
+    round(CAST(NULLIF(sum(mean_min_plan_time * statements) /
+      NULLIF(sum(statements), 0.0), 0.0) AS numeric),2) AS mean_min_plan_time,
+    round(CAST(NULLIF(sum(mean_min_exec_time * statements) /
+      NULLIF(sum(statements), 0.0), 0.0) AS numeric),2) AS mean_min_exec_time,
+    round(CAST(NULLIF(sum(min_max_plan_delta * statements) /
+      NULLIF(sum(statements), 0.0), 0.0) AS numeric),2) AS min_max_plan_delta,
+    round(CAST(NULLIF(sum(min_max_exec_delta * statements) /
+      NULLIF(sum(statements), 0.0), 0.0) AS numeric),2) AS min_max_exec_delta,
     -- ordering fields
     row_number() OVER (ORDER BY dbname NULLS LAST)::integer AS ord_db
   FROM statements_dbstats(sserver_id, start_id, end_id)
@@ -200,8 +252,10 @@ RETURNS TABLE(
     plans1               numeric,
     total_exec_time1     numeric,
     total_plan_time1     numeric,
-    blk_read_time1       numeric,
-    blk_write_time1      numeric,
+    shared_blk_read_time1       numeric,
+    shared_blk_write_time1      numeric,
+    local_blk_read_time1       numeric,
+    local_blk_write_time1      numeric,
     trg_fn_total_time1   numeric,
     shared_gets1         numeric,
     local_gets1          numeric,
@@ -224,12 +278,23 @@ RETURNS TABLE(
     jit_optimization_time1   numeric,
     jit_emission_count1  numeric,
     jit_emission_time1   numeric,
+    jit_deform_count1    numeric,
+    jit_deform_time1     numeric,
+    mean_max_plan_time1  numeric,
+    mean_max_exec_time1  numeric,
+    mean_min_plan_time1  numeric,
+    mean_min_exec_time1  numeric,
+    min_max_plan_delta1  numeric,
+    min_max_exec_delta1  numeric,
+
     calls2               numeric,
     plans2               numeric,
     total_exec_time2     numeric,
     total_plan_time2     numeric,
-    blk_read_time2       numeric,
-    blk_write_time2      numeric,
+    shared_blk_read_time2       numeric,
+    shared_blk_write_time2      numeric,
+    local_blk_read_time2       numeric,
+    local_blk_write_time2      numeric,
     trg_fn_total_time2   numeric,
     shared_gets2         numeric,
     local_gets2          numeric,
@@ -252,6 +317,14 @@ RETURNS TABLE(
     jit_optimization_time2   numeric,
     jit_emission_count2  numeric,
     jit_emission_time2   numeric,
+    jit_deform_count2    numeric,
+    jit_deform_time2     numeric,
+    mean_max_plan_time2  numeric,
+    mean_max_exec_time2  numeric,
+    mean_min_plan_time2  numeric,
+    mean_min_exec_time2  numeric,
+    min_max_plan_delta2  numeric,
+    min_max_exec_delta2  numeric,
     -- ordering fields
     ord_db              integer
 ) AS $$
@@ -262,8 +335,10 @@ RETURNS TABLE(
     NULLIF(sum(st1.plans), 0) AS plans1,
     round(CAST(NULLIF(sum(st1.total_exec_time), 0.0) AS numeric),2) AS total_exec_time1,
     round(CAST(NULLIF(sum(st1.total_plan_time), 0.0) AS numeric),2) AS total_plan_time1,
-    round(CAST(NULLIF(sum(st1.blk_read_time), 0.0) AS numeric),2) AS blk_read_time1,
-    round(CAST(NULLIF(sum(st1.blk_write_time), 0.0) AS numeric),2) AS blk_write_time1,
+    round(CAST(NULLIF(sum(st1.shared_blk_read_time), 0.0) AS numeric),2) AS shared_blk_read_time1,
+    round(CAST(NULLIF(sum(st1.shared_blk_write_time), 0.0) AS numeric),2) AS shared_blk_write_time1,
+    round(CAST(NULLIF(sum(st1.local_blk_read_time), 0.0) AS numeric),2) AS local_blk_read_time1,
+    round(CAST(NULLIF(sum(st1.local_blk_write_time), 0.0) AS numeric),2) AS local_blk_write_time1,
     round(CAST(NULLIF(sum(st1.trg_fn_total_time), 0.0) AS numeric),2) AS trg_fn_total_time1,
     NULLIF(sum(st1.shared_gets), 0) AS shared_gets1,
     NULLIF(sum(st1.local_gets), 0) AS local_gets1,
@@ -286,12 +361,29 @@ RETURNS TABLE(
     round(CAST(NULLIF(sum(st1.jit_optimization_time), 0.0) AS numeric),2) AS jit_optimization_time1,
     NULLIF(sum(st1.jit_emission_count), 0) AS jit_emission_count1,
     round(CAST(NULLIF(sum(st1.jit_emission_time), 0.0) AS numeric),2) AS jit_emission_time1,
+    NULLIF(sum(st1.jit_deform_count), 0) AS jit_deform_count1,
+    round(CAST(NULLIF(sum(st1.jit_deform_time), 0.0) AS numeric),2) AS jit_deform_time1,
+    round(CAST(NULLIF(sum(st1.mean_max_plan_time * st1.statements) /
+      NULLIF(sum(st1.statements), 0.0), 0.0) AS numeric),2) AS mean_max_plan_time1,
+    round(CAST(NULLIF(sum(st1.mean_max_exec_time * st1.statements) /
+      NULLIF(sum(st1.statements), 0.0), 0.0) AS numeric),2) AS mean_max_exec_time1,
+    round(CAST(NULLIF(sum(st1.mean_min_plan_time * st1.statements) /
+      NULLIF(sum(st1.statements), 0.0), 0.0) AS numeric),2) AS mean_min_plan_time1,
+    round(CAST(NULLIF(sum(st1.mean_min_exec_time * st1.statements) /
+      NULLIF(sum(st1.statements), 0.0), 0.0) AS numeric),2) AS mean_min_exec_time1,
+    round(CAST(NULLIF(sum(st1.min_max_plan_delta * st1.statements) /
+      NULLIF(sum(st1.statements), 0.0), 0.0) AS numeric),2) AS min_max_plan_delta1,
+    round(CAST(NULLIF(sum(st1.min_max_exec_delta * st1.statements) /
+      NULLIF(sum(st1.statements), 0.0), 0.0) AS numeric),2) AS min_max_exec_delta1,
+
     NULLIF(sum(st2.calls), 0) AS calls2,
     NULLIF(sum(st2.plans), 0) AS plans2,
     round(CAST(NULLIF(sum(st2.total_exec_time), 0.0) AS numeric),2) AS total_exec_time2,
     round(CAST(NULLIF(sum(st2.total_plan_time), 0.0) AS numeric),2) AS total_plan_time2,
-    round(CAST(NULLIF(sum(st2.blk_read_time), 0.0) AS numeric),2) AS blk_read_time2,
-    round(CAST(NULLIF(sum(st2.blk_write_time), 0.0) AS numeric),2) AS blk_write_time2,
+    round(CAST(NULLIF(sum(st2.shared_blk_read_time), 0.0) AS numeric),2) AS shared_blk_read_time2,
+    round(CAST(NULLIF(sum(st2.shared_blk_write_time), 0.0) AS numeric),2) AS shared_blk_write_time2,
+    round(CAST(NULLIF(sum(st2.local_blk_read_time), 0.0) AS numeric),2) AS local_blk_read_time2,
+    round(CAST(NULLIF(sum(st2.local_blk_write_time), 0.0) AS numeric),2) AS local_blk_write_time2,
     round(CAST(NULLIF(sum(st2.trg_fn_total_time), 0.0) AS numeric),2) AS trg_fn_total_time2,
     NULLIF(sum(st2.shared_gets), 0) AS shared_gets2,
     NULLIF(sum(st2.local_gets), 0) AS local_gets2,
@@ -314,6 +406,20 @@ RETURNS TABLE(
     round(CAST(NULLIF(sum(st2.jit_optimization_time), 0.0) AS numeric),2) AS jit_optimization_time2,
     NULLIF(sum(st2.jit_emission_count), 0) AS jit_emission_count2,
     round(CAST(NULLIF(sum(st2.jit_emission_time), 0.0) AS numeric),2) AS jit_emission_time2,
+    NULLIF(sum(st2.jit_deform_count), 0) AS jit_deform_count2,
+    round(CAST(NULLIF(sum(st2.jit_deform_time), 0.0) AS numeric),2) AS jit_deform_time2,
+    round(CAST(NULLIF(sum(st2.mean_max_plan_time * st2.statements) /
+      NULLIF(sum(st2.statements), 0.0), 0.0) AS numeric),2) AS mean_max_plan_time2,
+    round(CAST(NULLIF(sum(st2.mean_max_exec_time * st2.statements) /
+      NULLIF(sum(st2.statements), 0.0), 0.0) AS numeric),2) AS mean_max_exec_time2,
+    round(CAST(NULLIF(sum(st2.mean_min_plan_time * st2.statements) /
+      NULLIF(sum(st2.statements), 0.0), 0.0) AS numeric),2) AS mean_min_plan_time2,
+    round(CAST(NULLIF(sum(st2.mean_min_exec_time * st2.statements) /
+      NULLIF(sum(st2.statements), 0.0), 0.0) AS numeric),2) AS mean_min_exec_time2,
+    round(CAST(NULLIF(sum(st2.min_max_plan_delta * st2.statements) /
+      NULLIF(sum(st2.statements), 0.0), 0.0) AS numeric),2) AS min_max_plan_delta2,
+    round(CAST(NULLIF(sum(st2.min_max_exec_delta * st2.statements) /
+      NULLIF(sum(st2.statements), 0.0), 0.0) AS numeric),2) AS min_max_exec_delta2,
     -- ordering fields
     row_number() OVER (ORDER BY COALESCE(st1.dbname,st2.dbname) NULLS LAST)::integer AS ord_db
   FROM statements_dbstats(sserver_id, start1_id, end1_id) st1

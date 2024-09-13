@@ -150,7 +150,8 @@ BEGIN
             $sql$SELECT $1,row_to_json(dt) FROM
               (SELECT rows.server_id, rows.queryid_md5,
                 CASE $5
-                  WHEN TRUE THEN pg_catalog.md5(rows.query)
+                  WHEN TRUE THEN
+                    encode(sha224(convert_to(rows.query, 'UTF8')), 'base64')
                   ELSE rows.query
                 END AS query,
                 last_sample_id
@@ -172,7 +173,8 @@ BEGIN
             $sql$SELECT $1,row_to_json(dt) FROM
               (SELECT rows.server_id, rows.act_query_md5,
                 CASE $5
-                  WHEN TRUE THEN pg_catalog.md5(rows.act_query)
+                  WHEN TRUE THEN
+                    encode(sha224(convert_to(rows.act_query, 'UTF8')), 'base64')
                   ELSE rows.act_query
                 END AS act_query,
                 last_sample_id
@@ -1120,8 +1122,8 @@ BEGIN
             GET DIAGNOSTICS row_proc = ROW_COUNT;
             rowcnt := rowcnt + row_proc;
             IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
-          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
-        END IF;
+              RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+            END IF;
           END LOOP; -- over data rows
         WHEN array_position(versions_array, '0.3.1:pg_profile') >= 1 THEN
           LOOP
@@ -1133,13 +1135,16 @@ BEGIN
             END IF;
             section_meta := jsonb_set(section_meta,
               ARRAY[datarow.row_data->>'queryid_md5', datarow.row_data->>'server_id'],
-              to_jsonb(md5(datarow.row_data->>'query'))
+              to_jsonb(left(encode(sha224(convert_to(
+                datarow.row_data->>'query',
+                'UTF8')
+              ), 'base64'), 32))
             );
             INSERT INTO stmt_list(server_id, last_sample_id, queryid_md5, query)
             SELECT
               (srv_map ->> dr.server_id::text)::integer,
               NULL,
-              md5(dr.query),
+              left(encode(sha224(convert_to(dr.query ,'UTF8')), 'base64'), 32),
               dr.query
             FROM json_to_record(datarow.row_data) AS dr (
                 server_id      integer,
@@ -1350,20 +1355,22 @@ BEGIN
       END LOOP; -- over data rows
     WHEN 'sample_statements' THEN
       CASE -- Import version selector
-        WHEN array_position(versions_array, '4.0:pg_profile') >= 1 THEN
+        WHEN array_position(versions_array, '4.7:pg_profile') >= 1 THEN
           LOOP
             FETCH data INTO datarow;
             EXIT WHEN NOT FOUND;
             INSERT INTO sample_statements(server_id, sample_id, userid, datid, queryid, queryid_md5,
               plans, total_plan_time, min_plan_time, max_plan_time, mean_plan_time,
-              stddev_plan_time, calls, total_exec_time, min_exec_time, max_exec_time, mean_exec_time,
-              stddev_exec_time, rows, shared_blks_hit, shared_blks_read, shared_blks_dirtied,
-              shared_blks_written, local_blks_hit, local_blks_read, local_blks_dirtied,
-              local_blks_written, temp_blks_read, temp_blks_written, blk_read_time, blk_write_time,
-              wal_records, wal_fpi, wal_bytes, toplevel
-              , jit_functions, jit_generation_time, jit_inlining_count, jit_inlining_time,
-              jit_optimization_count, jit_optimization_time, jit_emission_count, jit_emission_time,
-              temp_blk_read_time, temp_blk_write_time)
+              sum_plan_time_sq, calls, total_exec_time, min_exec_time, max_exec_time,
+              mean_exec_time, sum_exec_time_sq, rows, shared_blks_hit, shared_blks_read,
+              shared_blks_dirtied, shared_blks_written, local_blks_hit, local_blks_read,
+              local_blks_dirtied, local_blks_written, temp_blks_read, temp_blks_written,
+              shared_blk_read_time, shared_blk_write_time, wal_records, wal_fpi, wal_bytes,
+              toplevel , jit_functions, jit_generation_time, jit_inlining_count,
+              jit_inlining_time, jit_optimization_count, jit_optimization_time,
+              jit_emission_count, jit_emission_time, temp_blk_read_time, temp_blk_write_time,
+              local_blk_read_time, local_blk_write_time, jit_deform_count, jit_deform_time,
+              stats_since, minmax_stats_since)
             SELECT
               (srv_map ->> dr.server_id::text)::integer,
               dr.sample_id,
@@ -1376,13 +1383,13 @@ BEGIN
               dr.min_plan_time,
               dr.max_plan_time,
               dr.mean_plan_time,
-              dr.stddev_plan_time,
+              dr.sum_plan_time_sq,
               dr.calls,
               dr.total_exec_time,
               dr.min_exec_time,
               dr.max_exec_time,
               dr.mean_exec_time,
-              dr.stddev_exec_time,
+              dr.sum_exec_time_sq,
               dr.rows,
               dr.shared_blks_hit,
               dr.shared_blks_read,
@@ -1394,8 +1401,148 @@ BEGIN
               dr.local_blks_written,
               dr.temp_blks_read,
               dr.temp_blks_written,
-              dr.blk_read_time,
-              dr.blk_write_time,
+              dr.shared_blk_read_time,
+              dr.shared_blk_write_time,
+              dr.wal_records,
+              dr.wal_fpi,
+              dr.wal_bytes,
+              COALESCE(dr.toplevel, true),
+              dr.jit_functions,
+              dr.jit_generation_time,
+              dr.jit_inlining_count,
+              dr.jit_inlining_time,
+              dr.jit_optimization_count,
+              dr.jit_optimization_time,
+              dr.jit_emission_count,
+              dr.jit_emission_time,
+              dr.temp_blk_read_time,
+              dr.temp_blk_write_time,
+              dr.local_blk_read_time,
+              dr.local_blk_write_time,
+              dr.jit_deform_count,
+              dr.jit_deform_time,
+              dr.stats_since,
+              dr.minmax_stats_since
+            FROM json_to_record(datarow.row_data) AS dr(
+              server_id            integer,
+              sample_id            integer,
+              userid               oid,
+              datid                oid,
+              queryid              bigint,
+              queryid_md5          character(32),
+              plans                bigint,
+              total_plan_time      double precision,
+              min_plan_time        double precision,
+              max_plan_time        double precision,
+              mean_plan_time       double precision,
+              sum_plan_time_sq     numeric,
+              calls                bigint,
+              total_exec_time      double precision,
+              min_exec_time        double precision,
+              max_exec_time        double precision,
+              mean_exec_time       double precision,
+              sum_exec_time_sq     numeric,
+              rows                 bigint,
+              shared_blks_hit      bigint,
+              shared_blks_read     bigint,
+              shared_blks_dirtied  bigint,
+              shared_blks_written  bigint,
+              local_blks_hit       bigint,
+              local_blks_read      bigint,
+              local_blks_dirtied   bigint,
+              local_blks_written   bigint,
+              temp_blks_read       bigint,
+              temp_blks_written    bigint,
+              shared_blk_read_time  double precision,
+              shared_blk_write_time double precision,
+              wal_records          bigint,
+              wal_fpi              bigint,
+              wal_bytes            numeric,
+              toplevel             boolean,
+              jit_functions        bigint,
+              jit_generation_time  double precision,
+              jit_inlining_count   bigint,
+              jit_inlining_time    double precision,
+              jit_optimization_count  bigint,
+              jit_optimization_time   double precision,
+              jit_emission_count   bigint,
+              jit_emission_time    double precision,
+              temp_blk_read_time   double precision,
+              temp_blk_write_time  double precision,
+              local_blk_read_time  double precision,
+              local_blk_write_time double precision,
+              jit_deform_count     bigint,
+              jit_deform_time      double precision,
+              stats_since          timestamp with time zone,
+              minmax_stats_since   timestamp with time zone
+              )
+            ON CONFLICT ON CONSTRAINT pk_sample_statements_n DO NOTHING;
+            GET DIAGNOSTICS row_proc = ROW_COUNT;
+            rowcnt := rowcnt + row_proc;
+            IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+              RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+            END IF;
+          END LOOP; -- over data rows
+        WHEN array_position(versions_array, '4.0:pg_profile') >= 1 THEN
+          LOOP
+            FETCH data INTO datarow;
+            EXIT WHEN NOT FOUND;
+            INSERT INTO sample_statements(server_id, sample_id, userid, datid, queryid, queryid_md5,
+              plans, total_plan_time, min_plan_time, max_plan_time, mean_plan_time,
+              sum_plan_time_sq, calls, total_exec_time, min_exec_time, max_exec_time,
+              mean_exec_time, sum_exec_time_sq, rows, shared_blks_hit, shared_blks_read,
+              shared_blks_dirtied, shared_blks_written, local_blks_hit, local_blks_read,
+              local_blks_dirtied, local_blks_written, temp_blks_read, temp_blks_written,
+              shared_blk_read_time, shared_blk_write_time, wal_records, wal_fpi, wal_bytes,
+              toplevel , jit_functions, jit_generation_time, jit_inlining_count,
+              jit_inlining_time, jit_optimization_count, jit_optimization_time,
+              jit_emission_count, jit_emission_time, temp_blk_read_time, temp_blk_write_time)
+            SELECT
+              (srv_map ->> dr.server_id::text)::integer,
+              dr.sample_id,
+              dr.userid,
+              dr.datid,
+              dr.queryid,
+              dr.queryid_md5,
+              dr.plans,
+              dr.total_plan_time,
+              dr.min_plan_time,
+              dr.max_plan_time,
+              dr.mean_plan_time,
+              CASE
+                WHEN dr.plans = 0 THEN 0
+                WHEN dr.plans = 1 THEN
+                  pow(dr.total_plan_time::numeric, 2)
+                ELSE
+                  pow(dr.stddev_plan_time::numeric, 2) * dr.plans +
+                  pow(dr.mean_plan_time::numeric, 2) * dr.plans
+              END AS sum_plan_time_sq,
+              dr.calls,
+              dr.total_exec_time,
+              dr.min_exec_time,
+              dr.max_exec_time,
+              dr.mean_exec_time,
+              CASE
+                WHEN dr.calls = 0 THEN 0
+                WHEN dr.calls = 1 THEN
+                  pow(dr.total_exec_time::numeric, 2)
+                ELSE
+                  pow(dr.stddev_exec_time::numeric, 2) * dr.calls +
+                  pow(dr.mean_exec_time::numeric, 2) * dr.calls
+              END AS sum_exec_time_sq,
+              dr.rows,
+              dr.shared_blks_hit,
+              dr.shared_blks_read,
+              dr.shared_blks_dirtied,
+              dr.shared_blks_written,
+              dr.local_blks_hit,
+              dr.local_blks_read,
+              dr.local_blks_dirtied,
+              dr.local_blks_written,
+              dr.temp_blks_read,
+              dr.temp_blks_written,
+              dr.blk_read_time as shared_blk_read_time,
+              dr.blk_write_time as  as shared_blk_write_time,
               dr.wal_records,
               dr.wal_fpi,
               dr.wal_bytes,
@@ -1484,14 +1631,14 @@ BEGIN
 
             INSERT INTO sample_statements(server_id, sample_id, userid, datid, queryid, queryid_md5,
               plans, total_plan_time, min_plan_time, max_plan_time, mean_plan_time,
-              stddev_plan_time, calls, total_exec_time, min_exec_time, max_exec_time, mean_exec_time,
-              stddev_exec_time, rows, shared_blks_hit, shared_blks_read, shared_blks_dirtied,
-              shared_blks_written, local_blks_hit, local_blks_read, local_blks_dirtied,
-              local_blks_written, temp_blks_read, temp_blks_written, blk_read_time, blk_write_time,
-              wal_records, wal_fpi, wal_bytes, toplevel
-              , jit_functions, jit_generation_time, jit_inlining_count, jit_inlining_time,
-              jit_optimization_count, jit_optimization_time, jit_emission_count, jit_emission_time,
-              temp_blk_read_time, temp_blk_write_time)
+              sum_plan_time_sq, calls, total_exec_time, min_exec_time, max_exec_time,
+              mean_exec_time, sum_exec_time_sq, rows, shared_blks_hit, shared_blks_read,
+              shared_blks_dirtied, shared_blks_written, local_blks_hit, local_blks_read,
+              local_blks_dirtied, local_blks_written, temp_blks_read, temp_blks_written,
+              shared_blk_read_time, shared_blk_write_time, wal_records, wal_fpi, wal_bytes,
+              toplevel , jit_functions, jit_generation_time, jit_inlining_count,
+              jit_inlining_time, jit_optimization_count, jit_optimization_time,
+              jit_emission_count, jit_emission_time, temp_blk_read_time, temp_blk_write_time)
             SELECT
               (srv_map ->> dr.server_id::text)::integer,
               dr.sample_id,
@@ -1508,13 +1655,27 @@ BEGIN
               dr.min_plan_time,
               dr.max_plan_time,
               dr.mean_plan_time,
-              dr.stddev_plan_time,
+              CASE
+                WHEN dr.plans = 0 THEN 0
+                WHEN dr.plans = 1 THEN
+                  pow(dr.total_plan_time::numeric, 2)
+                ELSE
+                  pow(dr.stddev_plan_time::numeric, 2) * dr.plans +
+                  pow(dr.mean_plan_time::numeric, 2) * dr.plans
+              END AS sum_plan_time_sq,
               dr.calls,
               dr.total_exec_time,
               dr.min_exec_time,
               dr.max_exec_time,
               dr.mean_exec_time,
-              dr.stddev_exec_time,
+              CASE
+                WHEN dr.calls = 0 THEN 0
+                WHEN dr.calls = 1 THEN
+                  pow(dr.total_exec_time::numeric, 2)
+                ELSE
+                  pow(dr.stddev_exec_time::numeric, 2) * dr.calls +
+                  pow(dr.mean_exec_time::numeric, 2) * dr.calls
+              END AS sum_exec_time_sq,
               dr.rows,
               dr.shared_blks_hit,
               dr.shared_blks_read,
@@ -1601,95 +1762,218 @@ BEGIN
             imp_table_name, import_meta ->> 'extension', import_meta ->> 'version');
       END CASE; -- over import versions
     WHEN 'sample_statements_total' THEN
-      LOOP
-        FETCH data INTO datarow;
-        EXIT WHEN NOT FOUND;
-        INSERT INTO sample_statements_total(server_id, sample_id, datid, plans, total_plan_time,
-          calls, total_exec_time, rows, shared_blks_hit, shared_blks_read,
-          shared_blks_dirtied, shared_blks_written, local_blks_hit, local_blks_read,
-          local_blks_dirtied, local_blks_written, temp_blks_read, temp_blks_written,
-          blk_read_time, blk_write_time, wal_records, wal_fpi, wal_bytes, statements
-          , jit_functions, jit_generation_time, jit_inlining_count, jit_inlining_time,
-          jit_optimization_count, jit_optimization_time, jit_emission_count, jit_emission_time,
-          temp_blk_read_time, temp_blk_write_time)
-        SELECT
-          (srv_map ->> dr.server_id::text)::integer,
-          dr.sample_id,
-          dr.datid,
-          dr.plans,
-          dr.total_plan_time,
-          dr.calls,
-          dr.total_exec_time,
-          dr.rows,
-          dr.shared_blks_hit,
-          dr.shared_blks_read,
-          dr.shared_blks_dirtied,
-          dr.shared_blks_written,
-          dr.local_blks_hit,
-          dr.local_blks_read,
-          dr.local_blks_dirtied,
-          dr.local_blks_written,
-          dr.temp_blks_read,
-          dr.temp_blks_written,
-          dr.blk_read_time,
-          dr.blk_write_time,
-          dr.wal_records,
-          dr.wal_fpi,
-          dr.wal_bytes,
-          dr.statements,
-          dr.jit_functions,
-          dr.jit_generation_time,
-          dr.jit_inlining_count,
-          dr.jit_inlining_time,
-          dr.jit_optimization_count,
-          dr.jit_optimization_time,
-          dr.jit_emission_count,
-          dr.jit_emission_time,
-          dr.temp_blk_read_time,
-          dr.temp_blk_write_time
-        FROM json_to_record(datarow.row_data) AS dr(
-            server_id            integer,
-            sample_id            integer,
-            datid                oid,
-            plans                bigint,
-            total_plan_time      double precision,
-            calls                bigint,
-            total_exec_time      double precision,
-            rows                 bigint,
-            shared_blks_hit      bigint,
-            shared_blks_read     bigint,
-            shared_blks_dirtied  bigint,
-            shared_blks_written  bigint,
-            local_blks_hit       bigint,
-            local_blks_read      bigint,
-            local_blks_dirtied   bigint,
-            local_blks_written   bigint,
-            temp_blks_read       bigint,
-            temp_blks_written    bigint,
-            blk_read_time        double precision,
-            blk_write_time       double precision,
-            wal_records          bigint,
-            wal_fpi              bigint,
-            wal_bytes            numeric,
-            statements           bigint,
-            jit_functions        bigint,
-            jit_generation_time  double precision,
-            jit_inlining_count   bigint,
-            jit_inlining_time    double precision,
-            jit_optimization_count  bigint,
-            jit_optimization_time   double precision,
-            jit_emission_count   bigint,
-            jit_emission_time    double precision,
-            temp_blk_read_time   double precision,
-            temp_blk_write_time  double precision
-          )
-        ON CONFLICT ON CONSTRAINT pk_sample_statements_total DO NOTHING;
-        GET DIAGNOSTICS row_proc = ROW_COUNT;
-        rowcnt := rowcnt + row_proc;
-        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
-          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
-        END IF;
-      END LOOP; -- over data rows
+      CASE -- Import version selector
+        WHEN array_position(versions_array, '4.7:pg_profile') >= 1 THEN
+          LOOP
+            FETCH data INTO datarow;
+            EXIT WHEN NOT FOUND;
+            INSERT INTO sample_statements_total(server_id, sample_id, datid, plans, total_plan_time,
+              calls, total_exec_time, rows, shared_blks_hit, shared_blks_read, shared_blks_dirtied,
+              shared_blks_written, local_blks_hit, local_blks_read, local_blks_dirtied,
+              local_blks_written, temp_blks_read, temp_blks_written, shared_blk_read_time,
+              shared_blk_write_time, wal_records, wal_fpi, wal_bytes, statements, jit_functions,
+              jit_generation_time, jit_inlining_count, jit_inlining_time, jit_optimization_count,
+              jit_optimization_time, jit_emission_count, jit_emission_time, temp_blk_read_time,
+              temp_blk_write_time, mean_max_plan_time, mean_max_exec_time, mean_min_plan_time,
+              mean_min_exec_time, local_blk_read_time, local_blk_write_time, jit_deform_count,
+              jit_deform_time)
+            SELECT
+              (srv_map ->> dr.server_id::text)::integer,
+              dr.sample_id,
+              dr.datid,
+              dr.plans,
+              dr.total_plan_time,
+              dr.calls,
+              dr.total_exec_time,
+              dr.rows,
+              dr.shared_blks_hit,
+              dr.shared_blks_read,
+              dr.shared_blks_dirtied,
+              dr.shared_blks_written,
+              dr.local_blks_hit,
+              dr.local_blks_read,
+              dr.local_blks_dirtied,
+              dr.local_blks_written,
+              dr.temp_blks_read,
+              dr.temp_blks_written,
+              dr.shared_blk_read_time,
+              dr.shared_blk_write_time,
+              dr.wal_records,
+              dr.wal_fpi,
+              dr.wal_bytes,
+              dr.statements,
+              dr.jit_functions,
+              dr.jit_generation_time,
+              dr.jit_inlining_count,
+              dr.jit_inlining_time,
+              dr.jit_optimization_count,
+              dr.jit_optimization_time,
+              dr.jit_emission_count,
+              dr.jit_emission_time,
+              dr.temp_blk_read_time,
+              dr.temp_blk_write_time,
+              dr.mean_max_plan_time,
+              dr.mean_max_exec_time,
+              dr.mean_min_plan_time,
+              dr.mean_min_exec_time,
+              dr.local_blk_read_time,
+              dr.local_blk_write_time,
+              dr.jit_deform_count,
+              dr.jit_deform_time
+            FROM json_to_record(datarow.row_data) AS dr(
+                server_id            integer,
+                sample_id            integer,
+                datid                oid,
+                plans                bigint,
+                total_plan_time      double precision,
+                calls                bigint,
+                total_exec_time      double precision,
+                rows                 bigint,
+                shared_blks_hit      bigint,
+                shared_blks_read     bigint,
+                shared_blks_dirtied  bigint,
+                shared_blks_written  bigint,
+                local_blks_hit       bigint,
+                local_blks_read      bigint,
+                local_blks_dirtied   bigint,
+                local_blks_written   bigint,
+                temp_blks_read       bigint,
+                temp_blks_written    bigint,
+                shared_blk_read_time  double precision,
+                shared_blk_write_time double precision,
+                wal_records          bigint,
+                wal_fpi              bigint,
+                wal_bytes            numeric,
+                statements           bigint,
+                jit_functions        bigint,
+                jit_generation_time  double precision,
+                jit_inlining_count   bigint,
+                jit_inlining_time    double precision,
+                jit_optimization_count  bigint,
+                jit_optimization_time   double precision,
+                jit_emission_count   bigint,
+                jit_emission_time    double precision,
+                temp_blk_read_time   double precision,
+                temp_blk_write_time  double precision,
+                mean_max_plan_time  double precision,
+                mean_max_exec_time  double precision,
+                mean_min_plan_time  double precision,
+                mean_min_exec_time  double precision,
+                local_blk_read_time double precision,
+                local_blk_write_time  double precision,
+                jit_deform_count    bigint,
+                jit_deform_time     double precision
+              )
+            ON CONFLICT ON CONSTRAINT pk_sample_statements_total DO NOTHING;
+            GET DIAGNOSTICS row_proc = ROW_COUNT;
+            rowcnt := rowcnt + row_proc;
+            IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+              RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+            END IF;
+          END LOOP; -- over data rows
+        WHEN array_position(versions_array, '0.3.1:pg_profile') IS NOT NULL THEN
+          LOOP
+            FETCH data INTO datarow;
+            EXIT WHEN NOT FOUND;
+            INSERT INTO sample_statements_total(server_id, sample_id, datid, plans, total_plan_time,
+              calls, total_exec_time, rows, shared_blks_hit, shared_blks_read, shared_blks_dirtied,
+              shared_blks_written, local_blks_hit, local_blks_read, local_blks_dirtied,
+              local_blks_written, temp_blks_read, temp_blks_written, shared_blk_read_time,
+              shared_blk_write_time, wal_records, wal_fpi, wal_bytes, statements, jit_functions,
+              jit_generation_time, jit_inlining_count, jit_inlining_time, jit_optimization_count,
+              jit_optimization_time, jit_emission_count, jit_emission_time, temp_blk_read_time,
+              temp_blk_write_time, mean_max_plan_time, mean_max_exec_time, mean_min_plan_time,
+              mean_min_exec_time)
+            SELECT
+              (srv_map ->> dr.server_id::text)::integer,
+              dr.sample_id,
+              dr.datid,
+              dr.plans,
+              dr.total_plan_time,
+              dr.calls,
+              dr.total_exec_time,
+              dr.rows,
+              dr.shared_blks_hit,
+              dr.shared_blks_read,
+              dr.shared_blks_dirtied,
+              dr.shared_blks_written,
+              dr.local_blks_hit,
+              dr.local_blks_read,
+              dr.local_blks_dirtied,
+              dr.local_blks_written,
+              dr.temp_blks_read,
+              dr.temp_blks_written,
+              dr.blk_read_time as shared_blk_read_time,
+              dr.blk_write_time as shared_blk_write_time,
+              dr.wal_records,
+              dr.wal_fpi,
+              dr.wal_bytes,
+              dr.statements,
+              dr.jit_functions,
+              dr.jit_generation_time,
+              dr.jit_inlining_count,
+              dr.jit_inlining_time,
+              dr.jit_optimization_count,
+              dr.jit_optimization_time,
+              dr.jit_emission_count,
+              dr.jit_emission_time,
+              dr.temp_blk_read_time,
+              dr.temp_blk_write_time,
+              dr.mean_max_plan_time,
+              dr.mean_max_exec_time,
+              dr.mean_min_plan_time,
+              dr.mean_min_exec_time
+            FROM json_to_record(datarow.row_data) AS dr(
+                server_id            integer,
+                sample_id            integer,
+                datid                oid,
+                plans                bigint,
+                total_plan_time      double precision,
+                calls                bigint,
+                total_exec_time      double precision,
+                rows                 bigint,
+                shared_blks_hit      bigint,
+                shared_blks_read     bigint,
+                shared_blks_dirtied  bigint,
+                shared_blks_written  bigint,
+                local_blks_hit       bigint,
+                local_blks_read      bigint,
+                local_blks_dirtied   bigint,
+                local_blks_written   bigint,
+                temp_blks_read       bigint,
+                temp_blks_written    bigint,
+                blk_read_time        double precision,
+                blk_write_time       double precision,
+                wal_records          bigint,
+                wal_fpi              bigint,
+                wal_bytes            numeric,
+                statements           bigint,
+                jit_functions        bigint,
+                jit_generation_time  double precision,
+                jit_inlining_count   bigint,
+                jit_inlining_time    double precision,
+                jit_optimization_count  bigint,
+                jit_optimization_time   double precision,
+                jit_emission_count   bigint,
+                jit_emission_time    double precision,
+                temp_blk_read_time   double precision,
+                temp_blk_write_time  double precision,
+                mean_max_plan_time  double precision,
+                mean_max_exec_time  double precision,
+                mean_min_plan_time  double precision,
+                mean_min_exec_time  double precision
+              )
+            ON CONFLICT ON CONSTRAINT pk_sample_statements_total DO NOTHING;
+            GET DIAGNOSTICS row_proc = ROW_COUNT;
+            rowcnt := rowcnt + row_proc;
+            IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+              RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+            END IF;
+          END LOOP; -- over data rows
+        ELSE
+          RAISE '%', format('[import %s]: Unsupported extension version: %s %s',
+            imp_table_name, import_meta ->> 'extension', import_meta ->> 'version');
+      END CASE; -- over import versions
     WHEN 'sample_kcache_total' THEN
       LOOP
         FETCH data INTO datarow;
@@ -1939,6 +2223,25 @@ BEGIN
           RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
         END IF;
       END LOOP; -- over data rows
+      /*
+       Before v 4.5 it was possible to collect a heap statistics without toast statistics
+       and it didn't cause any conflicts. Now sample_stat_tables references itself for a
+       toast statistics. Setting a reltoastrelid field from old tables_list will cause a
+       constraint violation. So, we should remove toasts references from samples without
+       toast statistics collected.
+      */
+      IF array_position(versions_array, '4.5:pg_profile') IS NULL THEN
+        ANALYZE sample_stat_tables;
+        RAISE NOTICE 'Cleanup possible missing toast statistics from sample_stat_tables ...';
+        UPDATE sample_stat_tables usst
+        SET reltoastrelid = NULL
+        FROM sample_stat_tables h LEFT JOIN sample_stat_tables t ON
+          (t.server_id, t.sample_id, t.datid, t.relid) =
+          (h.server_id, h.sample_id, h.datid, h.reltoastrelid)
+        WHERE (usst.server_id, usst.sample_id, usst.datid, usst.relid) =
+          (h.server_id, h.sample_id, h.datid, h.relid)
+          AND t.relid IS NULL;
+      END IF;
     WHEN 'sample_stat_tables_total' THEN
       LOOP
         FETCH data INTO datarow;
@@ -2800,124 +3103,263 @@ BEGIN
         END IF;
       END LOOP; -- over data rows
     WHEN 'last_stat_statements' THEN
-      LOOP
-        FETCH data INTO datarow;
-        EXIT WHEN NOT FOUND;
-        INSERT INTO last_stat_statements (server_id,sample_id,userid,username,datid,queryid,
-          queryid_md5,plans,total_plan_time,min_plan_time,max_plan_time,mean_plan_time,
-          stddev_plan_time,calls,total_exec_time,min_exec_time,max_exec_time,mean_exec_time,
-          stddev_exec_time,rows,shared_blks_hit,shared_blks_read,shared_blks_dirtied,
-          shared_blks_written,local_blks_hit,local_blks_read,local_blks_dirtied,
-          local_blks_written,temp_blks_read,temp_blks_written,blk_read_time,blk_write_time,
-          wal_records,wal_fpi,wal_bytes,toplevel,in_sample
-          ,jit_functions,jit_generation_time,jit_inlining_count,jit_inlining_time,
-          jit_optimization_count,jit_optimization_time,jit_emission_count,jit_emission_time,
-          temp_blk_read_time,temp_blk_write_time
-          )
-        SELECT
-          (srv_map ->> dr.server_id::text)::integer,
-          dr.sample_id,
-          dr.userid,
-          dr.username,
-          dr.datid,
-          dr.queryid,
-          dr.queryid_md5,
-          dr.plans,
-          dr.total_plan_time,
-          dr.min_plan_time,
-          dr.max_plan_time,
-          dr.mean_plan_time,
-          dr.stddev_plan_time,
-          dr.calls,
-          dr.total_exec_time,
-          dr.min_exec_time,
-          dr.max_exec_time,
-          dr.mean_exec_time,
-          dr.stddev_exec_time,
-          dr.rows,
-          dr.shared_blks_hit,
-          dr.shared_blks_read,
-          dr.shared_blks_dirtied,
-          dr.shared_blks_written,
-          dr.local_blks_hit,
-          dr.local_blks_read,
-          dr.local_blks_dirtied,
-          dr.local_blks_written,
-          dr.temp_blks_read,
-          dr.temp_blks_written,
-          dr.blk_read_time,
-          dr.blk_write_time,
-          dr.wal_records,
-          dr.wal_fpi,
-          dr.wal_bytes,
-          dr.toplevel,
-          dr.in_sample,
-          dr.jit_functions,
-          dr.jit_generation_time,
-          dr.jit_inlining_count,
-          dr.jit_inlining_time,
-          dr.jit_optimization_count,
-          dr.jit_optimization_time,
-          dr.jit_emission_count,
-          dr.jit_emission_time,
-          dr.temp_blk_read_time,
-          dr.temp_blk_write_time
-        FROM json_to_record(datarow.row_data) AS dr(
-          server_id            integer,
-          sample_id            integer,
-          userid               oid,
-          username             name,
-          datid                oid,
-          queryid              bigint,
-          queryid_md5          character(32),
-          plans                bigint,
-          total_plan_time      double precision,
-          min_plan_time        double precision,
-          max_plan_time        double precision,
-          mean_plan_time       double precision,
-          stddev_plan_time     double precision,
-          calls                bigint,
-          total_exec_time      double precision,
-          min_exec_time        double precision,
-          max_exec_time        double precision,
-          mean_exec_time       double precision,
-          stddev_exec_time     double precision,
-          rows                 bigint,
-          shared_blks_hit      bigint,
-          shared_blks_read     bigint,
-          shared_blks_dirtied  bigint,
-          shared_blks_written  bigint,
-          local_blks_hit       bigint,
-          local_blks_read      bigint,
-          local_blks_dirtied   bigint,
-          local_blks_written   bigint,
-          temp_blks_read       bigint,
-          temp_blks_written    bigint,
-          blk_read_time        double precision,
-          blk_write_time       double precision,
-          wal_records          bigint,
-          wal_fpi              bigint,
-          wal_bytes            numeric,
-          toplevel             boolean,
-          in_sample            boolean,
-          jit_functions        bigint,
-          jit_generation_time  double precision,
-          jit_inlining_count   bigint,
-          jit_inlining_time    double precision,
-          jit_optimization_count  bigint,
-          jit_optimization_time   double precision,
-          jit_emission_count   bigint,
-          jit_emission_time    double precision,
-          temp_blk_read_time   double precision,
-          temp_blk_write_time  double precision
-          )
-        ON CONFLICT DO NOTHING;
-        GET DIAGNOSTICS row_proc = ROW_COUNT;
-        rowcnt := rowcnt + row_proc;
-        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
-          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
-        END IF;
-      END LOOP; -- over data rows
+      CASE -- Import version selector
+        WHEN array_position(versions_array, '4.7:pg_profile') >= 1 THEN
+          LOOP
+            FETCH data INTO datarow;
+            EXIT WHEN NOT FOUND;
+            INSERT INTO last_stat_statements (server_id, sample_id, userid, username, datid, queryid, 
+              queryid_md5, plans, total_plan_time, min_plan_time, max_plan_time, mean_plan_time,
+              stddev_plan_time, calls, total_exec_time, min_exec_time, max_exec_time,
+              mean_exec_time, stddev_exec_time, rows, shared_blks_hit, shared_blks_read,
+              shared_blks_dirtied, shared_blks_written, local_blks_hit, local_blks_read,
+              local_blks_dirtied, local_blks_written, temp_blks_read, temp_blks_written,
+              shared_blk_read_time, shared_blk_write_time, wal_records, wal_fpi, wal_bytes,
+              toplevel, in_sample, jit_functions, jit_generation_time, jit_inlining_count,
+              jit_inlining_time, jit_optimization_count, jit_optimization_time,
+              jit_emission_count, jit_emission_time, temp_blk_read_time, temp_blk_write_time,
+              local_blk_read_time, local_blk_write_time, jit_deform_count, jit_deform_time,
+              stats_since, minmax_stats_since
+              )
+            SELECT
+              (srv_map ->> dr.server_id::text)::integer,
+              dr.sample_id,
+              dr.userid,
+              dr.username,
+              dr.datid,
+              dr.queryid,
+              dr.queryid_md5,
+              dr.plans,
+              dr.total_plan_time,
+              dr.min_plan_time,
+              dr.max_plan_time,
+              dr.mean_plan_time,
+              dr.stddev_plan_time,
+              dr.calls,
+              dr.total_exec_time,
+              dr.min_exec_time,
+              dr.max_exec_time,
+              dr.mean_exec_time,
+              dr.stddev_exec_time,
+              dr.rows,
+              dr.shared_blks_hit,
+              dr.shared_blks_read,
+              dr.shared_blks_dirtied,
+              dr.shared_blks_written,
+              dr.local_blks_hit,
+              dr.local_blks_read,
+              dr.local_blks_dirtied,
+              dr.local_blks_written,
+              dr.temp_blks_read,
+              dr.temp_blks_written,
+              dr.blk_read_time,
+              dr.blk_write_time,
+              dr.wal_records,
+              dr.wal_fpi,
+              dr.wal_bytes,
+              dr.toplevel,
+              dr.in_sample,
+              dr.jit_functions,
+              dr.jit_generation_time,
+              dr.jit_inlining_count,
+              dr.jit_inlining_time,
+              dr.jit_optimization_count,
+              dr.jit_optimization_time,
+              dr.jit_emission_count,
+              dr.jit_emission_time,
+              dr.temp_blk_read_time,
+              dr.temp_blk_write_time,
+              dr.local_blk_read_time,
+              dr.local_blk_write_time,
+              dr.jit_deform_count,
+              dr.jit_deform_time,
+              dr.stats_since,
+              dr.minmax_stats_since
+            FROM json_to_record(datarow.row_data) AS dr(
+              server_id            integer,
+              sample_id            integer,
+              userid               oid,
+              username             name,
+              datid                oid,
+              queryid              bigint,
+              queryid_md5          character(32),
+              plans                bigint,
+              total_plan_time      double precision,
+              min_plan_time        double precision,
+              max_plan_time        double precision,
+              mean_plan_time       double precision,
+              stddev_plan_time     double precision,
+              calls                bigint,
+              total_exec_time      double precision,
+              min_exec_time        double precision,
+              max_exec_time        double precision,
+              mean_exec_time       double precision,
+              stddev_exec_time     double precision,
+              rows                 bigint,
+              shared_blks_hit      bigint,
+              shared_blks_read     bigint,
+              shared_blks_dirtied  bigint,
+              shared_blks_written  bigint,
+              local_blks_hit       bigint,
+              local_blks_read      bigint,
+              local_blks_dirtied   bigint,
+              local_blks_written   bigint,
+              temp_blks_read       bigint,
+              temp_blks_written    bigint,
+              blk_read_time        double precision,
+              blk_write_time       double precision,
+              wal_records          bigint,
+              wal_fpi              bigint,
+              wal_bytes            numeric,
+              toplevel             boolean,
+              in_sample            boolean,
+              jit_functions        bigint,
+              jit_generation_time  double precision,
+              jit_inlining_count   bigint,
+              jit_inlining_time    double precision,
+              jit_optimization_count  bigint,
+              jit_optimization_time   double precision,
+              jit_emission_count   bigint,
+              jit_emission_time    double precision,
+              temp_blk_read_time   double precision,
+              temp_blk_write_time  double precision,
+              local_blk_read_time  double precision,
+              local_blk_write_time double precision,
+              jit_deform_count     bigint,
+              jit_deform_time      double precision,
+              stats_since          timestamp with time zone,
+              minmax_stats_since   timestamp with time zone
+              )
+            ON CONFLICT DO NOTHING;
+            GET DIAGNOSTICS row_proc = ROW_COUNT;
+            rowcnt := rowcnt + row_proc;
+            IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+              RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+            END IF;
+          END LOOP; -- over data rows
+        WHEN array_position(versions_array, '0.3.1:pg_profile') IS NOT NULL THEN
+          LOOP
+            FETCH data INTO datarow;
+            EXIT WHEN NOT FOUND;
+            INSERT INTO last_stat_statements (server_id, sample_id, userid, username, datid, queryid, 
+              queryid_md5, plans, total_plan_time, min_plan_time, max_plan_time, mean_plan_time,
+              stddev_plan_time, calls, total_exec_time, min_exec_time, max_exec_time,
+              mean_exec_time, stddev_exec_time, rows, shared_blks_hit, shared_blks_read,
+              shared_blks_dirtied, shared_blks_written, local_blks_hit, local_blks_read,
+              local_blks_dirtied, local_blks_written, temp_blks_read, temp_blks_written,
+              shared_blk_read_time, shared_blk_write_time, wal_records, wal_fpi, wal_bytes,
+              toplevel, in_sample, jit_functions, jit_generation_time, jit_inlining_count,
+              jit_inlining_time, jit_optimization_count, jit_optimization_time,
+              jit_emission_count, jit_emission_time, temp_blk_read_time, temp_blk_write_time
+              )
+            SELECT
+              (srv_map ->> dr.server_id::text)::integer,
+              dr.sample_id,
+              dr.userid,
+              dr.username,
+              dr.datid,
+              dr.queryid,
+              dr.queryid_md5,
+              dr.plans,
+              dr.total_plan_time,
+              dr.min_plan_time,
+              dr.max_plan_time,
+              dr.mean_plan_time,
+              dr.stddev_plan_time,
+              dr.calls,
+              dr.total_exec_time,
+              dr.min_exec_time,
+              dr.max_exec_time,
+              dr.mean_exec_time,
+              dr.stddev_exec_time,
+              dr.rows,
+              dr.shared_blks_hit,
+              dr.shared_blks_read,
+              dr.shared_blks_dirtied,
+              dr.shared_blks_written,
+              dr.local_blks_hit,
+              dr.local_blks_read,
+              dr.local_blks_dirtied,
+              dr.local_blks_written,
+              dr.temp_blks_read,
+              dr.temp_blks_written,
+              dr.blk_read_time,
+              dr.blk_write_time,
+              dr.wal_records,
+              dr.wal_fpi,
+              dr.wal_bytes,
+              dr.toplevel,
+              dr.in_sample,
+              dr.jit_functions,
+              dr.jit_generation_time,
+              dr.jit_inlining_count,
+              dr.jit_inlining_time,
+              dr.jit_optimization_count,
+              dr.jit_optimization_time,
+              dr.jit_emission_count,
+              dr.jit_emission_time,
+              dr.temp_blk_read_time,
+              dr.temp_blk_write_time
+            FROM json_to_record(datarow.row_data) AS dr(
+              server_id            integer,
+              sample_id            integer,
+              userid               oid,
+              username             name,
+              datid                oid,
+              queryid              bigint,
+              queryid_md5          character(32),
+              plans                bigint,
+              total_plan_time      double precision,
+              min_plan_time        double precision,
+              max_plan_time        double precision,
+              mean_plan_time       double precision,
+              stddev_plan_time     double precision,
+              calls                bigint,
+              total_exec_time      double precision,
+              min_exec_time        double precision,
+              max_exec_time        double precision,
+              mean_exec_time       double precision,
+              stddev_exec_time     double precision,
+              rows                 bigint,
+              shared_blks_hit      bigint,
+              shared_blks_read     bigint,
+              shared_blks_dirtied  bigint,
+              shared_blks_written  bigint,
+              local_blks_hit       bigint,
+              local_blks_read      bigint,
+              local_blks_dirtied   bigint,
+              local_blks_written   bigint,
+              temp_blks_read       bigint,
+              temp_blks_written    bigint,
+              blk_read_time        double precision,
+              blk_write_time       double precision,
+              wal_records          bigint,
+              wal_fpi              bigint,
+              wal_bytes            numeric,
+              toplevel             boolean,
+              in_sample            boolean,
+              jit_functions        bigint,
+              jit_generation_time  double precision,
+              jit_inlining_count   bigint,
+              jit_inlining_time    double precision,
+              jit_optimization_count  bigint,
+              jit_optimization_time   double precision,
+              jit_emission_count   bigint,
+              jit_emission_time    double precision,
+              temp_blk_read_time   double precision,
+              temp_blk_write_time  double precision
+              )
+            ON CONFLICT DO NOTHING;
+            GET DIAGNOSTICS row_proc = ROW_COUNT;
+            rowcnt := rowcnt + row_proc;
+            IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+              RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+            END IF;
+          END LOOP; -- over data rows
+        ELSE
+          RAISE '%', format('[import %s]: Unsupported extension version: %s %s',
+            imp_table_name, import_meta ->> 'extension', import_meta ->> 'version');
+      END CASE; -- over import versions
     WHEN 'last_stat_io' THEN
       LOOP
         FETCH data INTO datarow;
@@ -3145,7 +3587,7 @@ BEGIN
             pid               integer,
             backend_start     timestamp with time zone,
             xact_start        timestamp with time zone,
-            backend_xid       xid,
+            backend_xid       text,
             xact_last_ts      timestamp with time zone
           )
         ON CONFLICT ON CONSTRAINT pk_sample_xact DO NOTHING;
@@ -3162,7 +3604,7 @@ BEGIN
         INSERT INTO sample_act_backend_state(server_id, sample_id,
           pid, backend_start, application_name, state_code,
           state_change, state_last_ts, xact_start, backend_xmin,
-          backend_xmin_age)
+          backend_xmin_age, query_start)
         SELECT
           (srv_map ->> dr.server_id::text)::integer,
           dr.sample_id,
@@ -3174,7 +3616,8 @@ BEGIN
           dr.state_last_ts,
           dr.xact_start,
           dr.backend_xmin,
-          dr.backend_xmin_age
+          dr.backend_xmin_age,
+          dr.query_start
         FROM json_to_record(datarow.row_data) AS dr(
             server_id         integer,
             sample_id         integer,
@@ -3185,8 +3628,9 @@ BEGIN
             state_change      timestamp with time zone,
             state_last_ts     timestamp with time zone,
             xact_start        timestamp with time zone,
-            backend_xmin      xid,
-            backend_xmin_age  bigint
+            backend_xmin      text,
+            backend_xmin_age  bigint,
+            query_start       timestamp with time zone
           )
         ON CONFLICT ON CONSTRAINT pk_sample_bk_state DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
@@ -3196,39 +3640,102 @@ BEGIN
         END IF;
       END LOOP; -- over data rows
     WHEN 'sample_act_statement' THEN
-      LOOP
-        FETCH data INTO datarow;
-        EXIT WHEN NOT FOUND;
-        INSERT INTO sample_act_statement(server_id, sample_id, pid, leader_pid, state_change,
-          query_start, query_id, act_query_md5, stmt_last_ts)
-        SELECT
-          (srv_map ->> dr.server_id::text)::integer,
-          dr.sample_id,
-          dr.pid,
-          dr.leader_pid,
-          dr.state_change,
-          dr.query_start,
-          dr.query_id,
-          dr.act_query_md5,
-          dr.stmt_last_ts
-        FROM json_to_record(datarow.row_data) AS dr(
-            server_id         integer,
-            sample_id         integer,
-            pid               integer,
-            leader_pid        integer,
-            state_change      timestamp with time zone,
-            query_start       timestamp with time zone,
-            query_id          bigint,
-            act_query_md5     char(32),
-            stmt_last_ts      timestamp with time zone
+      IF array_position(versions_array, '4.7:pg_profile') >= 1 THEN
+        /*
+         V4.6 released with little bit incorrect schema, so, we will
+         process it later. Here is V4.7+ import
+        */
+        LOOP
+          FETCH data INTO datarow;
+          EXIT WHEN NOT FOUND;
+
+          INSERT INTO sample_act_statement(server_id, sample_id, pid,
+            leader_pid, query_start, query_id, act_query_md5,
+            stmt_last_ts, xact_start)
+          SELECT
+            (srv_map ->> dr.server_id::text)::integer,
+            dr.sample_id,
+            dr.pid,
+            dr.leader_pid,
+            dr.query_start,
+            dr.query_id,
+            dr.act_query_md5,
+            dr.stmt_last_ts,
+            dr.xact_start
+          FROM json_to_record(datarow.row_data) AS dr(
+              server_id         integer,
+              sample_id         integer,
+              pid               integer,
+              leader_pid        integer,
+              state_change      timestamp with time zone,
+              query_start       timestamp with time zone,
+              query_id          bigint,
+              act_query_md5     char(32),
+              stmt_last_ts      timestamp with time zone,
+              xact_start        timestamp with time zone
+            )
+          ON CONFLICT ON CONSTRAINT pk_sample_act_stmt DO NOTHING;
+          GET DIAGNOSTICS row_proc = ROW_COUNT;
+          rowcnt := rowcnt + row_proc;
+          IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+            RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+          END IF;
+        END LOOP; -- over data rows
+      ELSE
+        /* V4.6 import special case
+          We should update sample_act_backend_state table with
+          query_start field obtained from the sample_act_statement
+          data row. By the way we should get xact_start from
+          sample_act_backend_state and finally insert the data in
+          sample_act_statement table
+        */
+        LOOP
+          FETCH data INTO datarow;
+          EXIT WHEN NOT FOUND;
+
+          WITH u AS (
+            UPDATE sample_act_backend_state usabs
+              SET query_start = dr.query_start
+            FROM json_to_record(datarow.row_data) AS dr(
+                server_id         integer,
+                sample_id         integer,
+                pid               integer,
+                leader_pid        integer,
+                state_change      timestamp with time zone,
+                query_start       timestamp with time zone,
+                query_id          bigint,
+                act_query_md5     char(32),
+                stmt_last_ts      timestamp with time zone
+              )
+            WHERE
+              (usabs.server_id, usabs.sample_id, usabs.pid, usabs.state_change) =
+              ((srv_map ->> dr.server_id::text)::integer, dr.sample_id, dr.pid, dr.state_change)
+            RETURNING usabs.server_id, usabs.sample_id, usabs.pid, dr.leader_pid,
+              dr.query_start, dr.query_id, dr.act_query_md5, dr.stmt_last_ts,
+              usabs.xact_start
           )
-        ON CONFLICT ON CONSTRAINT pk_sample_act_stmt DO NOTHING;
-        GET DIAGNOSTICS row_proc = ROW_COUNT;
-        rowcnt := rowcnt + row_proc;
-        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
-          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
-        END IF;
-      END LOOP; -- over data rows
+          INSERT INTO sample_act_statement(server_id, sample_id, pid,
+            leader_pid, query_start, query_id, act_query_md5,
+            stmt_last_ts, xact_start)
+          SELECT
+            u.server_id,
+            u.sample_id,
+            u.pid,
+            u.leader_pid,
+            u.query_start,
+            u.query_id,
+            u.act_query_md5,
+            u.stmt_last_ts,
+            u.xact_start
+          FROM u
+          ON CONFLICT ON CONSTRAINT pk_sample_act_stmt DO NOTHING;
+          GET DIAGNOSTICS row_proc = ROW_COUNT;
+          rowcnt := rowcnt + row_proc;
+          IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+            RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+          END IF;
+        END LOOP; -- over data rows
+      END IF;
     ELSE
       rows_processed := -1;
       RETURN; -- table not found
@@ -3344,7 +3851,7 @@ BEGIN
             pid               integer,
             backend_start     timestamp with time zone,
             xact_start        timestamp with time zone,
-            backend_xid       xid,
+            backend_xid       text,
             xact_last_ts      timestamp with time zone
           )
         ON CONFLICT ON CONSTRAINT pk_sample_xact DO NOTHING;
@@ -3381,7 +3888,7 @@ BEGIN
             state_change      timestamp with time zone,
             state_last_ts     timestamp with time zone,
             xact_start        timestamp with time zone,
-            backend_xmin      xid,
+            backend_xmin      text,
             backend_xmin_age  bigint
           )
         ON CONFLICT ON CONSTRAINT pk_sample_bk_state DO NOTHING;
@@ -3504,8 +4011,8 @@ BEGIN
             query_start       timestamp with time zone,
             state_change      timestamp with time zone,
             state             text,
-            backend_xid       xid,
-            backend_xmin      xid,
+            backend_xid       text,
+            backend_xmin      text,
             query_id          bigint,
             query             text,
             backend_type      text,

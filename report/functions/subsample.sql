@@ -19,8 +19,8 @@ RETURNS TABLE(
     state             text,
     state_change      timestamp with time zone,
     state_last_ts     timestamp with time zone,
-    backend_xid       xid,
-    backend_xmin      xid,
+    backend_xid       text,
+    backend_xmin      text,
     backend_xmin_age  bigint,
     backend_type      text,
     query_start       timestamp with time zone,
@@ -92,16 +92,6 @@ RETURNS TABLE(
       USING (server_id, pid, state_change, state_last_ts))
     USING (server_id, pid, backend_start)
     LEFT JOIN
-    (sample_act_statement q JOIN (
-        SELECT server_id, pid, query_start, max(stmt_last_ts) as stmt_last_ts
-        FROM sample_act_statement
-        WHERE server_id = sserver_id
-          AND sample_id BETWEEN start_id + 1 AND end_id
-        GROUP BY server_id, pid, query_start
-      ) as act_stmt
-      USING (server_id, pid, query_start, stmt_last_ts))
-    USING (server_id, pid, state_change)
-    LEFT JOIN
     (sample_act_xact x JOIN (
         SELECT server_id, pid, xact_start, max(xact_last_ts) as xact_last_ts
         FROM sample_act_xact
@@ -110,6 +100,16 @@ RETURNS TABLE(
         GROUP BY server_id, pid, xact_start
       ) as act_xact USING (server_id, pid, xact_start, xact_last_ts))
     USING (server_id, pid, backend_start, xact_start)
+    LEFT JOIN
+    (sample_act_statement q JOIN (
+        SELECT server_id, pid, query_start, max(stmt_last_ts) as stmt_last_ts
+        FROM sample_act_statement
+        WHERE server_id = sserver_id
+          AND sample_id BETWEEN start_id + 1 AND end_id
+        GROUP BY server_id, pid, query_start
+      ) as act_stmt
+      USING (server_id, pid, query_start, stmt_last_ts))
+    USING (server_id, pid, xact_start, query_start)
   WHERE
     server_id = sserver_id
 $$ LANGUAGE sql;
@@ -255,16 +255,24 @@ RETURNS TABLE(
     xact_start        timestamp with time zone,
     state_change      timestamp with time zone,
 
+    backend_start_ut     numeric,
+    xact_start_ut        numeric,
+    state_change_ut      numeric,
+    state_duration_ut    numeric,
+    xact_duration_ut     numeric,
+    backend_duration_ut  numeric,
+
     backend_start_format  timestamp with time zone,
     xact_start_format     timestamp with time zone,
     state_change_format   timestamp with time zone,
 
-    flt_state_code        integer,
-    state_code            integer,
-    state                 text,
-    state_duration_format interval,
-    xact_duration_format  interval,
-    xmin_age              bigint,
+    flt_state_code          integer,
+    state_code              integer,
+    state                   text,
+    state_duration_format   interval,
+    xact_duration_format    interval,
+    backend_duration_format interval,
+    xmin_age                bigint,
 
     query_id              bigint,
     act_query_md5         char(32),
@@ -289,6 +297,13 @@ RETURNS TABLE(
       xact_start AS xact_start,
       state_change AS state_change,
 
+      extract(EPOCH FROM backend_start)::numeric AS backend_start_ut,
+      extract(EPOCH FROM xact_start)::numeric AS xact_start_ut,
+      extract(EPOCH FROM state_change)::numeric AS state_change_ut,
+      extract(EPOCH FROM state_duration)::numeric AS state_duration_ut,
+      extract(EPOCH FROM xact_duration)::numeric AS xact_duration_ut,
+      extract(EPOCH FROM backend_duration)::numeric AS backend_duration_ut,
+
       date_trunc('second',backend_start) AS backend_start_format,
       date_trunc('second',xact_start) AS xact_start_format,
       date_trunc('second',state_change) AS state_change_format,
@@ -302,6 +317,7 @@ RETURNS TABLE(
       state,
       date_trunc('second',state_duration) AS state_duration_format,
       date_trunc('second',xact_duration) AS xact_duration_format,
+      date_trunc('second',backend_duration) AS backend_duration_format,
       backend_xmin_age,
 
       query_id,
@@ -330,8 +346,16 @@ RETURNS TABLE(
     application_name  text,
 
     backend_start     timestamp with time zone,
+    backend_last_ts   timestamp with time zone,
     xact_start        timestamp with time zone,
     state_change      timestamp with time zone,
+
+    backend_start_ut    numeric,
+    xact_start_ut       numeric,
+    state_change_ut     numeric,
+    state_duration_ut   numeric,
+    xact_duration_ut    numeric,
+    backend_duration_ut numeric,
 
     backend_start_format  timestamp with time zone,
     xact_start_format     timestamp with time zone,
@@ -364,8 +388,22 @@ RETURNS TABLE(
       application_name,
 
       backend_start AS backend_start,
+      backend_last_ts AS backend_last_ts,
       xact_start AS xact_start,
       state_change AS state_change,
+
+      extract(EPOCH FROM backend_start)::numeric AS backend_start_ut,
+      extract(EPOCH FROM xact_start)::numeric AS xact_start_ut,
+      extract(EPOCH FROM state_change)::numeric AS state_change_ut,
+      extract(EPOCH FROM
+        max(state_duration) OVER (PARTITION BY pid, state_change)
+      )::numeric AS state_duration_ut,
+      extract(EPOCH FROM
+        max(xact_duration) OVER (PARTITION BY pid, xact_start)
+      )::numeric AS xact_duration_ut,
+      extract(EPOCH FROM
+        max(backend_duration) OVER (PARTITION BY pid, backend_start)
+      )::numeric AS backend_duration_ut,
 
       date_trunc('second',backend_start) AS backend_start_format,
       date_trunc('second',xact_start) AS xact_start_format,
@@ -378,8 +416,12 @@ RETURNS TABLE(
       END AS flt_state_code,
       state_code,
       state,
-      date_trunc('second',state_duration) AS state_duration_format,
-      date_trunc('second',xact_duration) AS xact_duration_format,
+      date_trunc('second',
+        max(state_duration) OVER (PARTITION BY pid, state_change)
+      ) AS state_duration_format,
+      date_trunc('second',
+        max(xact_duration) OVER (PARTITION BY pid, xact_start)
+      ) AS xact_duration_format,
       backend_xmin_age,
 
       query_id,
@@ -405,7 +447,9 @@ RETURNS TABLE (
 SET search_path=@extschema@ AS $$
   SELECT
     act_query_md5,
-    jsonb_build_array(act_query)
+    jsonb_build_array(
+      replace(act_query, '<', '&lt;')
+    )
   FROM
     jsonb_to_recordset(act_queries_list) AS ql (
       act_query_md5    text

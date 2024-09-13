@@ -47,8 +47,8 @@ WITH res AS (
 SELECT
   CASE
     WHEN
-      md5(imported) !=
-      md5(exported)
+      sha224(convert_to(imported, 'UTF8')) !=
+      sha224(convert_to(exported, 'UTF8'))
     THEN
       format(E'<imported_start>\n%s\n<imported_end>\n<exported_start>\n%s\n<exported_end>',
         imported,

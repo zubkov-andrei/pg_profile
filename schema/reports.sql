@@ -24,7 +24,6 @@ CREATE TABLE report_struct (
   tbl_cap         text,
   feature         text,
   function_name   text,
-  href            text,
   content         jsonb DEFAULT NULL,
   sect_struct     jsonb,
   CONSTRAINT pk_report_struct PRIMARY KEY (report_id, sect_id),

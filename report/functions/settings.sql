@@ -75,11 +75,11 @@ SET search_path=@extschema@ AS $$
     ) AS notes,
     default_val,
     NOT default_val,
-    CASE name
-      WHEN 'version' THEN 10
-      WHEN 'pgpro_version' THEN 21
-      WHEN 'pgpro_edition' THEN 22
-      WHEN 'pgpro_build' THEN 23
+    CASE
+      WHEN name = 'version' THEN 10
+      WHEN (name, setting_scope) = ('pgpro_version', 2) THEN 21
+      WHEN (name, setting_scope) = ('pgpro_edition', 2) THEN 22
+      WHEN (name, setting_scope) = ('pgpro_build', 2) THEN 23
       ELSE NULL
     END AS h_ord
   FROM
@@ -124,11 +124,11 @@ SET search_path=@extschema@ AS $$
     ) AS notes,
     default_val,
     NOT default_val,
-    CASE name
-      WHEN 'version' THEN 10
-      WHEN 'pgpro_version' THEN 21
-      WHEN 'pgpro_edition' THEN 22
-      WHEN 'pgpro_build' THEN 23
+    CASE
+      WHEN name = 'version' THEN 10
+      WHEN (name, setting_scope) = ('pgpro_version', 2) THEN 21
+      WHEN (name, setting_scope) = ('pgpro_edition', 2) THEN 22
+      WHEN (name, setting_scope) = ('pgpro_build', 2) THEN 23
       ELSE NULL
     END AS h_ord
   FROM

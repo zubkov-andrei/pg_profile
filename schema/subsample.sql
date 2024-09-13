@@ -38,32 +38,11 @@ CREATE TABLE sample_act_xact (
     pid               integer,
     backend_start     timestamp with time zone,
     xact_start        timestamp with time zone,
-    backend_xid       xid,
+    backend_xid       text,
     xact_last_ts      timestamp with time zone,
     CONSTRAINT pk_sample_xact PRIMARY KEY (server_id, sample_id, pid, xact_start),
     CONSTRAINT fk_xact_act_backend FOREIGN KEY (server_id, sample_id, pid, backend_start)
       REFERENCES sample_act_backend(server_id, sample_id, pid, backend_start)
-      ON DELETE CASCADE
-);
-
-CREATE TABLE sample_act_backend_state (
-    server_id         integer,
-    sample_id         integer,
-    pid               integer,
-    backend_start     timestamp with time zone,
-    application_name  text,
-    state_code        integer, -- 1 idle in xact, 2 idle in xact aborted, 3 active
-    state_change      timestamp with time zone,
-    state_last_ts     timestamp with time zone,
-    xact_start        timestamp with time zone,
-    backend_xmin      xid,
-    backend_xmin_age  bigint,
-    CONSTRAINT pk_sample_bk_state PRIMARY KEY (server_id, sample_id, pid, state_change),
-    CONSTRAINT fk_bk_state_bk FOREIGN KEY (server_id, sample_id, pid, backend_start)
-      REFERENCES sample_act_backend (server_id, sample_id, pid, backend_start)
-      ON DELETE CASCADE,
-    CONSTRAINT fk_bk_state_xact FOREIGN KEY (server_id, sample_id, pid, xact_start)
-      REFERENCES sample_act_xact (server_id, sample_id, pid, xact_start)
       ON DELETE CASCADE
 );
 
@@ -86,19 +65,47 @@ CREATE TABLE sample_act_statement (
     sample_id         integer,
     pid               integer,
     leader_pid        integer,
-    state_change      timestamp with time zone,
     query_start       timestamp with time zone,
     query_id          bigint,
     act_query_md5     char(32),
     stmt_last_ts      timestamp with time zone,
+    xact_start        timestamp with time zone,
     CONSTRAINT pk_sample_act_stmt PRIMARY KEY (server_id, sample_id, pid, query_start),
-    CONSTRAINT fk_act_stmt_bk_state FOREIGN KEY (server_id, sample_id, pid, state_change)
-      REFERENCES sample_act_backend_state (server_id, sample_id, pid, state_change)
-      ON DELETE CASCADE,
     CONSTRAINT fk_act_stmt_query FOREIGN KEY (server_id, act_query_md5)
       REFERENCES act_query(server_id, act_query_md5)
+      ON DELETE CASCADE,
+    CONSTRAINT fk_act_stmt_xact FOREIGN KEY (server_id, sample_id, pid, xact_start)
+      REFERENCES sample_act_xact (server_id, sample_id, pid, xact_start)
       ON DELETE CASCADE
 );
+CREATE INDEX ix_act_stmt_xact ON sample_act_statement(server_id, sample_id, pid, xact_start);
+
+CREATE TABLE sample_act_backend_state (
+    server_id         integer,
+    sample_id         integer,
+    pid               integer,
+    backend_start     timestamp with time zone,
+    application_name  text,
+    state_code        integer, -- 1 idle in xact, 2 idle in xact aborted, 3 active
+    state_change      timestamp with time zone,
+    state_last_ts     timestamp with time zone,
+    xact_start        timestamp with time zone,
+    backend_xmin      text,
+    backend_xmin_age  bigint,
+    query_start       timestamp with time zone,
+    CONSTRAINT pk_sample_bk_state PRIMARY KEY (server_id, sample_id, pid, state_change),
+    CONSTRAINT fk_bk_state_bk FOREIGN KEY (server_id, sample_id, pid, backend_start)
+      REFERENCES sample_act_backend (server_id, sample_id, pid, backend_start)
+      ON DELETE CASCADE,
+    CONSTRAINT fk_bk_state_xact FOREIGN KEY (server_id, sample_id, pid, xact_start)
+      REFERENCES sample_act_xact (server_id, sample_id, pid, xact_start)
+      ON DELETE CASCADE,
+    CONSTRAINT fk_bk_state_statement FOREIGN KEY (server_id, sample_id, pid, query_start)
+      REFERENCES sample_act_statement (server_id, sample_id, pid, query_start)
+      ON DELETE CASCADE
+);
+CREATE INDEX ix_bk_state_statements ON
+  sample_act_backend_state(server_id, sample_id, pid, query_start);
 
 CREATE TABLE last_stat_activity (
     server_id         integer,
@@ -119,8 +126,8 @@ CREATE TABLE last_stat_activity (
     query_start       timestamp with time zone,
     state_change      timestamp with time zone,
     state             text,
-    backend_xid       xid,
-    backend_xmin      xid,
+    backend_xid       text,
+    backend_xmin      text,
     query_id          bigint,
     query             text,
     backend_type      text,

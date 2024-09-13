@@ -1,6 +1,6 @@
 /* ========= Sample functions ========= */
 CREATE FUNCTION init_sample(IN sserver_id integer
-) RETURNS jsonb SET search_path=@extschema@ SET lock_timeout=300000 AS $$
+) RETURNS jsonb SET search_path=@extschema@ AS $$
 DECLARE
     server_properties jsonb = '{"extensions":[],"settings":[],"timings":{},"properties":{}}'; -- version, extensions, etc.
     qres              record;
@@ -10,6 +10,16 @@ DECLARE
     server_query      text;
     server_host       text = NULL;
 BEGIN
+    server_properties := jsonb_set(server_properties, '{properties,in_sample}', to_jsonb(false));
+    -- Conditionally set lock_timeout when it's not set
+    server_properties := jsonb_set(server_properties,'{properties,lock_timeout_init}',
+      to_jsonb(current_setting('lock_timeout')));
+    IF (SELECT current_setting('lock_timeout')::interval = '0s'::interval) THEN
+      SET lock_timeout TO '3s';
+    END IF;
+    server_properties := jsonb_set(server_properties,'{properties,lock_timeout_effective}',
+      to_jsonb(current_setting('lock_timeout')));
+
     -- Get server connstr
     SELECT properties INTO server_properties FROM get_connstr(sserver_id, server_properties);
 
@@ -41,6 +51,20 @@ BEGIN
           );
     END;
 
+    -- Getting statement stats reset setting
+    BEGIN
+        server_properties := jsonb_set(server_properties,
+          '{properties,statements_reset}',
+          to_jsonb(current_setting('{pg_profile}.statements_reset')::boolean)
+        );
+    EXCEPTION
+        WHEN OTHERS THEN
+          server_properties := jsonb_set(server_properties,
+            '{properties,statements_reset}',
+            to_jsonb(true)
+          );
+    END;
+
     -- Adding dblink extension schema to search_path if it does not already there
     IF (SELECT count(*) = 0 FROM pg_catalog.pg_extension WHERE extname = 'dblink') THEN
       RAISE 'dblink extension must be installed';
@@ -66,8 +90,21 @@ BEGIN
     PERFORM dblink('server_connection','BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
     -- Setting application name
     PERFORM dblink('server_connection','SET application_name=''{pg_profile}''');
-    -- Setting lock_timout prevents hanging of take_sample() call due to DDL in long transaction
-    PERFORM dblink('server_connection','SET lock_timeout=3000');
+    -- Conditionally set lock_timeout
+    IF (
+      SELECT lock_timeout_unset
+      FROM dblink('server_connection',
+        $sql$SELECT current_setting('lock_timeout')::interval = '0s'::interval$sql$)
+        AS probe(lock_timeout_unset boolean)
+      )
+    THEN
+      -- Setting lock_timout prevents hanging due to DDL in long transaction
+      PERFORM dblink('server_connection',
+        format('SET lock_timeout TO %L',
+          COALESCE(server_properties #>> '{properties,lock_timeout_effective}','3s')
+        )
+      );
+    END IF;
     -- Reset search_path for security reasons
     PERFORM dblink('server_connection','SET search_path=''''');
 
@@ -304,6 +341,11 @@ BEGIN
     -- Initialize sample
     server_properties := init_sample(sserver_id);
     ASSERT server_properties IS NOT NULL, 'lost properties';
+
+    /* Set the in_sample flag notifying sampling functions that the current
+      processing caused by take_sample(), not by take_subsample()
+    */
+    server_properties := jsonb_set(server_properties, '{properties,in_sample}', to_jsonb(true));
 
     topn := (server_properties #>> '{properties,topn}')::integer;
 
@@ -946,13 +988,17 @@ BEGIN
           'THEN pg_catalog.pg_last_xlog_replay_location() '
           'ELSE pg_catalog.pg_current_xlog_location() '
           'END AS wal_lsn,'
-          'pg_is_in_recovery() AS in_recovery '
+          'pg_is_in_recovery() AS in_recovery,'
+          'NULL AS restartpoints_timed,'
+          'NULL AS restartpoints_req,'
+          'NULL AS restartpoints_done,'
+          'stats_reset as checkpoint_stats_reset '
           'FROM pg_catalog.pg_stat_bgwriter';
       WHEN (
         SELECT count(*) = 1 FROM jsonb_to_recordset(server_properties #> '{settings}')
           AS x(name text, reset_val text)
         WHERE name = 'server_version_num'
-          AND reset_val::integer >= 100000
+          AND reset_val::integer < 170000
       )
       THEN
         server_query := 'SELECT '
@@ -975,8 +1021,47 @@ BEGIN
             'THEN pg_catalog.pg_last_wal_replay_lsn() '
             'ELSE pg_catalog.pg_current_wal_lsn() '
           'END AS wal_lsn,'
-          'pg_catalog.pg_is_in_recovery() as in_recovery '
+          'pg_catalog.pg_is_in_recovery() as in_recovery, '
+          'NULL AS restartpoints_timed,'
+          'NULL AS restartpoints_req,'
+          'NULL AS restartpoints_done,'
+          'stats_reset as checkpoint_stats_reset '
         'FROM pg_catalog.pg_stat_bgwriter';
+      WHEN (
+        SELECT count(*) = 1 FROM jsonb_to_recordset(server_properties #> '{settings}')
+          AS x(name text, reset_val text)
+        WHERE name = 'server_version_num'
+          AND reset_val::integer >= 170000
+      )
+      THEN
+        server_query := 'SELECT '
+          'c.num_timed as checkpoints_timed,'
+          'c.num_requested as checkpoints_req,'
+          'c.write_time as checkpoint_write_time,'
+          'c.sync_time as checkpoint_sync_time,'
+          'c.buffers_written as buffers_checkpoint,'
+          'b.buffers_clean as buffers_clean,'
+          'b.maxwritten_clean as maxwritten_clean,'
+          'NULL as buffers_backend,'
+          'NULL as buffers_backend_fsync,'
+          'b.buffers_alloc,'
+          'b.stats_reset as stats_reset,'
+          'CASE WHEN pg_catalog.pg_is_in_recovery() '
+            'THEN pg_catalog.pg_wal_lsn_diff(pg_catalog.pg_last_wal_replay_lsn(),''0/00000000'') '
+            'ELSE pg_catalog.pg_wal_lsn_diff(pg_catalog.pg_current_wal_lsn(),''0/00000000'') '
+          'END AS wal_size,'
+          'CASE WHEN pg_catalog.pg_is_in_recovery()'
+            'THEN pg_catalog.pg_last_wal_replay_lsn()'
+            'ELSE pg_catalog.pg_current_wal_lsn()'
+          'END AS wal_lsn,'
+          'pg_catalog.pg_is_in_recovery() as in_recovery,'
+          'c.restartpoints_timed,'
+          'c.restartpoints_req,'
+          'c.restartpoints_done,'
+          'c.stats_reset as checkpoint_stats_reset '
+        'FROM '
+          'pg_catalog.pg_stat_checkpointer c CROSS JOIN '
+          'pg_catalog.pg_stat_bgwriter b';
     END CASE;
 
     IF server_query IS NOT NULL THEN
@@ -996,7 +1081,11 @@ BEGIN
         stats_reset,
         wal_size,
         wal_lsn,
-        in_recovery)
+        in_recovery,
+        restartpoints_timed,
+        restartpoints_req,
+        restartpoints_done,
+        checkpoint_stats_reset)
       SELECT
         sserver_id,
         s_id,
@@ -1013,7 +1102,11 @@ BEGIN
         stats_reset,
         wal_size,
         wal_lsn,
-        in_recovery
+        in_recovery,
+        restartpoints_timed,
+        restartpoints_req,
+        restartpoints_done,
+        checkpoint_stats_reset
       FROM dblink('server_connection',server_query) AS rs (
         checkpoints_timed bigint,
         checkpoints_req bigint,
@@ -1028,7 +1121,11 @@ BEGIN
         stats_reset timestamp with time zone,
         wal_size bigint,
         wal_lsn pg_lsn,
-        in_recovery boolean);
+        in_recovery boolean,
+        restartpoints_timed bigint,
+        restartpoints_req bigint,
+        restartpoints_done bigint,
+        checkpoint_stats_reset timestamp with time zone);
     END IF;
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
@@ -1514,33 +1611,45 @@ BEGIN
       stats_reset,
       wal_size,
       wal_lsn,
-      in_recovery
+      in_recovery,
+      restartpoints_timed,
+      restartpoints_req,
+      restartpoints_done,
+      checkpoint_stats_reset
     )
     SELECT
         cur.server_id,
         cur.sample_id,
-        cur.checkpoints_timed - COALESCE(lst.checkpoints_timed,0),
-        cur.checkpoints_req - COALESCE(lst.checkpoints_req,0),
-        cur.checkpoint_write_time - COALESCE(lst.checkpoint_write_time,0),
-        cur.checkpoint_sync_time - COALESCE(lst.checkpoint_sync_time,0),
-        cur.buffers_checkpoint - COALESCE(lst.buffers_checkpoint,0),
-        cur.buffers_clean - COALESCE(lst.buffers_clean,0),
-        cur.maxwritten_clean - COALESCE(lst.maxwritten_clean,0),
-        cur.buffers_backend - COALESCE(lst.buffers_backend,0),
-        cur.buffers_backend_fsync - COALESCE(lst.buffers_backend_fsync,0),
-        cur.buffers_alloc - COALESCE(lst.buffers_alloc,0),
+        cur.checkpoints_timed - COALESCE(lstc.checkpoints_timed,0),
+        cur.checkpoints_req - COALESCE(lstc.checkpoints_req,0),
+        cur.checkpoint_write_time - COALESCE(lstc.checkpoint_write_time,0),
+        cur.checkpoint_sync_time - COALESCE(lstc.checkpoint_sync_time,0),
+        cur.buffers_checkpoint - COALESCE(lstc.buffers_checkpoint,0),
+        cur.buffers_clean - COALESCE(lstb.buffers_clean,0),
+        cur.maxwritten_clean - COALESCE(lstb.maxwritten_clean,0),
+        cur.buffers_backend - COALESCE(lstb.buffers_backend,0),
+        cur.buffers_backend_fsync - COALESCE(lstb.buffers_backend_fsync,0),
+        cur.buffers_alloc - COALESCE(lstb.buffers_alloc,0),
         cur.stats_reset,
-        cur.wal_size - COALESCE(lst.wal_size,0),
-        cur.wal_lsn,
-        cur.in_recovery
+        cur.wal_size - COALESCE(lstb.wal_size,0),
         /* We will overwrite this value in case of stats reset
          * (see below)
          */
+        cur.wal_lsn,
+        cur.in_recovery,
+        cur.restartpoints_timed - COALESCE(lstc.restartpoints_timed,0),
+        cur.restartpoints_timed - COALESCE(lstc.restartpoints_timed,0),
+        cur.restartpoints_timed - COALESCE(lstc.restartpoints_timed,0),
+        cur.checkpoint_stats_reset
     FROM last_stat_cluster cur
-      LEFT OUTER JOIN last_stat_cluster lst ON
-        (lst.server_id, lst.sample_id) =
+      LEFT OUTER JOIN last_stat_cluster lstb ON
+        (lstb.server_id, lstb.sample_id) =
         (sserver_id, s_id - 1)
-        AND cur.stats_reset IS NOT DISTINCT FROM lst.stats_reset
+        AND cur.stats_reset IS NOT DISTINCT FROM lstb.stats_reset
+      LEFT OUTER JOIN last_stat_cluster lstc ON
+        (lstc.server_id, lstc.sample_id) =
+        (sserver_id, s_id - 1)
+        AND cur.checkpoint_stats_reset IS NOT DISTINCT FROM lstc.checkpoint_stats_reset
     WHERE
       (cur.server_id, cur.sample_id) = (sserver_id, s_id);
 
@@ -1845,6 +1954,9 @@ BEGIN
     END IF;
     ASSERT server_properties IS NOT NULL, 'lost properties';
 
+    -- Reset lock_timeout setting to its initial value
+    EXECUTE format('SET lock_timeout TO %L', server_properties #>> '{properties,lock_timeout_init}');
+
     RETURN 0;
 END;
 $$ LANGUAGE plpgsql;
@@ -1909,7 +2021,7 @@ SET search_path=@extschema@ AS $$
 DECLARE
     c_servers CURSOR FOR
       SELECT server_id,server_name FROM (
-        SELECT server_id,server_name, row_number() OVER () AS srv_rn
+        SELECT server_id,server_name, row_number() OVER (ORDER BY server_id) AS srv_rn
         FROM servers WHERE enabled
         ) AS t1
       WHERE srv_rn % sets_cnt = current_set;
@@ -1974,7 +2086,7 @@ CREATE FUNCTION collect_obj_stats(IN properties jsonb, IN sserver_id integer, IN
   IN skip_sizes boolean
 ) RETURNS jsonb SET search_path=@extschema@ AS $$
 DECLARE
-    --Cursor over databases 
+    --Cursor over databases
     c_dblist CURSOR FOR
     SELECT
       datid,
@@ -1990,6 +2102,8 @@ DECLARE
     qres        record;
     db_connstr  text;
     t_query     text;
+    analyze_list  text[] := array[]::text[];
+    analyze_obj   text;
     result      jsonb := collect_obj_stats.properties;
 BEGIN
     -- Adding dblink extension schema to search_path if it does not already there
@@ -2016,8 +2130,21 @@ BEGIN
       PERFORM dblink('server_db_connection','BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
       -- Setting application name
       PERFORM dblink('server_db_connection','SET application_name=''{pg_profile}''');
-      -- Setting lock_timout prevents hanging of take_sample() call due to DDL in long transaction
-      PERFORM dblink('server_db_connection','SET lock_timeout=3000');
+      -- Conditionally set lock_timeout
+      IF (
+        SELECT lock_timeout_unset
+        FROM dblink('server_db_connection',
+          $sql$SELECT current_setting('lock_timeout')::interval = '0s'::interval$sql$)
+          AS probe(lock_timeout_unset boolean)
+        )
+      THEN
+        -- Setting lock_timout prevents hanging of take_sample() call due to DDL in long transaction
+        PERFORM dblink('server_db_connection',
+          format('SET lock_timeout TO %L',
+            COALESCE(properties #>> '{properties,lock_timeout_effective}','3s')
+          )
+        );
+      END IF;
       -- Reset search_path for security reasons
       PERFORM dblink('server_db_connection','SET search_path=''''');
 
@@ -2357,8 +2484,10 @@ BEGIN
           n_tup_newpage_upd     bigint
       );
 
-      EXECUTE format('ANALYZE last_stat_tables_srv%1$s',
-        sserver_id);
+      IF NOT analyze_list @> ARRAY[format('last_stat_tables_srv%1$s', sserver_id)] THEN
+        analyze_list := analyze_list ||
+          format('last_stat_tables_srv%1$s', sserver_id);
+      END IF;
 
       IF (result #>> '{collect_timings}')::boolean THEN
         result := jsonb_set(result,ARRAY['timings',format('db:%s collect tables stats',qres.datname),'end'],to_jsonb(clock_timestamp()));
@@ -2516,8 +2645,10 @@ BEGIN
          relpages_bytes_diff  bigint
       );
 
-      EXECUTE format('ANALYZE last_stat_indexes_srv%1$s',
-        sserver_id);
+      IF NOT analyze_list @> ARRAY[format('last_stat_indexes_srv%1$s', sserver_id)] THEN
+        analyze_list := analyze_list ||
+          format('last_stat_indexes_srv%1$s', sserver_id);
+      END IF;
 
       IF (result #>> '{collect_timings}')::boolean THEN
         result := jsonb_set(result,ARRAY['timings',format('db:%s collect indexes stats',qres.datname),'end'],to_jsonb(clock_timestamp()));
@@ -2574,15 +2705,32 @@ BEGIN
          trg_fn       boolean
       );
 
-      EXECUTE format('ANALYZE last_stat_user_functions_srv%1$s',
-        sserver_id);
+      IF NOT analyze_list @> ARRAY[format('last_stat_user_functions_srv%1$s', sserver_id)] THEN
+        analyze_list := analyze_list ||
+          format('last_stat_user_functions_srv%1$s', sserver_id);
+      END IF;
 
       PERFORM dblink('server_db_connection', 'COMMIT');
       PERFORM dblink_disconnect('server_db_connection');
       IF (result #>> '{collect_timings}')::boolean THEN
         result := jsonb_set(result,ARRAY['timings',format('db:%s collect functions stats',qres.datname),'end'],to_jsonb(clock_timestamp()));
       END IF;
+    END LOOP; -- over databases
+
+    -- Now we should preform ANALYZE on collected data
+    IF (result #>> '{collect_timings}')::boolean THEN
+      result := jsonb_set(result,ARRAY['timings', 'analyzing collected data'],jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
+    FOREACH analyze_obj IN ARRAY analyze_list
+    LOOP
+      EXECUTE format('ANALYZE %1$I', analyze_obj);
     END LOOP;
+
+    IF (result #>> '{collect_timings}')::boolean THEN
+      result := jsonb_set(result,ARRAY['timings', 'analyzing collected data', 'end'],to_jsonb(clock_timestamp()));
+    END IF;
+
    RETURN result;
 END;
 $$ LANGUAGE plpgsql;
@@ -2847,7 +2995,9 @@ BEGIN
     SET in_sample = true
     FROM
       last_stat_indexes ix
-      JOIN last_stat_tables tbl USING (server_id, sample_id, datid, relid)
+      JOIN last_stat_tables tbl ON
+        (tbl.server_id, tbl.sample_id, tbl.datid, tbl.relid) =
+        (sserver_id, s_id, ix.datid, ix.relid)
       LEFT JOIN last_stat_tables mtbl ON
         (mtbl.server_id, mtbl.sample_id, mtbl.datid, mtbl.reltoastrelid) =
         (sserver_id, s_id, tbl.datid, tbl.relid)
@@ -3107,8 +3257,8 @@ BEGIN
         ) calc
       WHERE (usstt.server_id, usstt.sample_id, usstt.datid, usstt.relkind, usstt.tablespaceid) =
         (sserver_id, s_id, calc.datid, calc.relkind, calc.tablespaceid);
-
     END IF;
+
     /*
     Preserve previous relation sizes in if we couldn't collect
     size this time (for example, due to locked relation)*/

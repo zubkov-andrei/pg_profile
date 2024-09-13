@@ -9,10 +9,14 @@ DECLARE
   qlen_limit  integer;
   topn        integer;
 
-  start1_time text;
-  end1_time   text;
-  start2_time text;
-  end2_time   text;
+  start1_time timestamp with time zone;
+  end1_time   timestamp with time zone;
+  start2_time timestamp with time zone;
+  end2_time   timestamp with time zone;
+  start1_time_ut numeric;
+  end1_time_ut   numeric;
+  start2_time_ut numeric;
+  end2_time_ut   numeric;
 BEGIN
     ASSERT num_nulls(start1_id, end1_id) = 0, 'At least first interval bounds is necessary';
 
@@ -41,11 +45,14 @@ BEGIN
     END IF;
 
     -- Get report times
-    SELECT sample_time::text INTO STRICT start1_time FROM samples
+    SELECT sample_time INTO STRICT start1_time FROM samples
     WHERE (server_id,sample_id) = (sserver_id,start1_id);
-    SELECT sample_time::text INTO STRICT end1_time FROM samples
+    SELECT EXTRACT(EPOCH FROM sample_time) INTO STRICT start1_time_ut FROM samples
+    WHERE (server_id,sample_id) = (sserver_id,start1_id);
+    SELECT sample_time INTO STRICT end1_time FROM samples
     WHERE (server_id,sample_id) = (sserver_id,end1_id);
-
+    SELECT EXTRACT(EPOCH FROM sample_time) INTO STRICT end1_time_ut FROM samples
+    WHERE (server_id,sample_id) = (sserver_id,end1_id);
     IF num_nulls(start2_id, end2_id) = 2 THEN
       report_context := jsonb_build_object(
       'report_features',jsonb_build_object(
@@ -111,12 +118,38 @@ BEGIN
             GROUP BY name
           ) gr
         ),
+        'buffers_backend', (
+          SELECT COUNT(buffers_backend) > 0 FROM sample_stat_cluster
+          WHERE server_id = sserver_id AND
+            sample_id BETWEEN start1_id + 1 AND end1_id
+        ),
+        'mean_mm_times', (
+          SELECT COUNT(COALESCE(mean_max_exec_time, mean_min_exec_time,
+              mean_max_plan_time, mean_min_plan_time)
+            ) > 0
+          FROM sample_statements_total
+          WHERE server_id = sserver_id AND
+            sample_id BETWEEN start1_id + 1 AND end1_id
+        ),
+        -- statements_cover should be used to control appearance of the cover field.
+        'statements_coverage', (
+          SELECT count(*) > 0
+          FROM sample_statements
+          WHERE server_id = sserver_id AND stats_since > start1_time AND
+            sample_id BETWEEN start1_id + 1 AND end1_id
+          ),
+        'statements_jit_deform', (
+          SELECT count(*) > 0
+          FROM sample_statements_total
+          WHERE server_id = sserver_id AND jit_deform_count > 0 AND
+            sample_id BETWEEN start1_id + 1 AND end1_id
+          ),
         'checksum_fail_detected', COALESCE((
           SELECT sum(checksum_failures) > 0
           FROM sample_stat_database
           WHERE server_id = sserver_id AND sample_id BETWEEN start1_id + 1 AND end1_id
           ), false)
-        ),
+      ),
       'report_properties',jsonb_build_object(
         'interval_duration_sec',
           (SELECT extract(epoch FROM e.sample_time - s.sample_time)
@@ -127,8 +160,10 @@ BEGIN
         'max_query_length', qlen_limit,
         'start1_id', start1_id,
         'end1_id', end1_id,
-        'report_start1', start1_time,
-        'report_end1', end1_time
+        'report_start1', start1_time::text,
+        'report_end1', end1_time::text,
+        'report_start1_ut', start1_time_ut,
+        'report_end1_ut', end1_time_ut
         )
       );
 
@@ -181,7 +216,7 @@ BEGIN
             to_jsonb(COUNT(*) > 0) FROM (
               SELECT 1
               FROM sample_act_backend_state JOIN sample_act_statement
-                USING (server_id, sample_id, pid, state_change)
+                USING (server_id, sample_id, pid, xact_start)
               WHERE server_id = sserver_id AND
                 state_code = 3 AND (
                   sample_id BETWEEN start1_id + 1 AND end1_id
@@ -193,9 +228,13 @@ BEGIN
       END IF;
     ELSIF num_nulls(start2_id, end2_id) = 0 THEN
       -- Get report times
-      SELECT sample_time::text INTO STRICT start2_time FROM samples
+      SELECT sample_time INTO STRICT start2_time FROM samples
       WHERE (server_id,sample_id) = (sserver_id,start2_id);
-      SELECT sample_time::text INTO STRICT end2_time FROM samples
+      SELECT EXTRACT(EPOCH FROM sample_time) INTO STRICT start2_time_ut FROM samples
+      WHERE (server_id,sample_id) = (sserver_id,start2_id);
+      SELECT sample_time INTO STRICT end2_time FROM samples
+      WHERE (server_id,sample_id) = (sserver_id,end2_id);
+      SELECT EXTRACT(EPOCH FROM sample_time) INTO STRICT end2_time_ut FROM samples
       WHERE (server_id,sample_id) = (sserver_id,end2_id);
       -- Check if all samples of requested interval are available
       IF (
@@ -297,6 +336,38 @@ BEGIN
             GROUP BY name
           ) gr
         ),
+        'buffers_backend', (
+          SELECT COUNT(buffers_backend) > 0 FROM sample_stat_cluster
+          WHERE server_id = sserver_id AND (
+              sample_id BETWEEN start1_id AND end1_id OR
+              sample_id BETWEEN start2_id AND end2_id
+            )
+        ),
+        'mean_mm_times', (
+          SELECT COUNT(COALESCE(mean_max_exec_time, mean_min_exec_time,
+              mean_max_plan_time, mean_min_plan_time)
+            ) > 0
+          FROM sample_statements_total
+          WHERE server_id = sserver_id AND (
+              sample_id BETWEEN start1_id AND end1_id OR
+              sample_id BETWEEN start2_id AND end2_id
+            )
+        ),
+        -- statements_cover should be used to control appearance of the cover field.
+        'statements_coverage', (
+          SELECT count(*) > 0
+          FROM sample_statements
+          WHERE server_id = sserver_id AND
+            ((stats_since > start1_time AND sample_id BETWEEN start1_id + 1 AND end1_id) OR
+            (stats_since > start2_time AND sample_id BETWEEN start2_id + 1 AND end2_id))
+          ),
+        'statements_jit_deform', (
+          SELECT count(*) > 0
+          FROM sample_statements_total
+          WHERE server_id = sserver_id AND jit_deform_count > 0 AND
+            (sample_id BETWEEN start1_id + 1 AND end1_id OR
+            sample_id BETWEEN start2_id + 1 AND end2_id)
+          ),
         'checksum_fail_detected', COALESCE((
           SELECT sum(checksum_failures) > 0
           FROM sample_stat_database
@@ -304,8 +375,8 @@ BEGIN
             (sample_id BETWEEN start1_id + 1 AND end1_id OR
             sample_id BETWEEN start2_id + 1 AND end2_id)
           ), false)
-        ),
-      'report_properties',jsonb_build_object(
+      ),
+      'report_properties', jsonb_build_object(
         'interval1_duration_sec',
           (SELECT extract(epoch FROM e.sample_time - s.sample_time)
           FROM samples s JOIN samples e USING (server_id)
@@ -322,13 +393,17 @@ BEGIN
 
         'start1_id', start1_id,
         'end1_id', end1_id,
-        'report_start1', start1_time,
-        'report_end1', end1_time,
+        'report_start1', start1_time::text,
+        'report_end1', end1_time::text,
+        'report_start1_ut', start1_time_ut,
+        'report_end1_ut', end1_time_ut,
 
         'start2_id', start2_id,
         'end2_id', end2_id,
-        'report_start2', start2_time,
-        'report_end2', end2_time
+        'report_start2', start2_time::text,
+        'report_end2', end2_time::text,
+        'report_start2_ut', start2_time_ut,
+        'report_end2_ut', end2_time_ut
         )
       );
 
@@ -1494,7 +1569,7 @@ DECLARE
     -- Recursive sections query with condition checking
     c_sections CURSOR(init_depth integer) FOR
     WITH RECURSIVE sections_tree(report_id, sect_id, parent_sect_id,
-      toc_cap, tbl_cap, function_name, href, content, sect_struct, depth,
+      toc_cap, tbl_cap, function_name, content, sect_struct, depth,
       path, ordering_path) AS
     (
         SELECT
@@ -1504,7 +1579,6 @@ DECLARE
           rs.toc_cap,
           rs.tbl_cap,
           rs.function_name,
-          rs.href,
           rs.content,
           rs.sect_struct,
           init_depth,
@@ -1525,7 +1599,6 @@ DECLARE
           rs.toc_cap,
           rs.tbl_cap,
           rs.function_name,
-          rs.href,
           rs.content,
           rs.sect_struct,
           st.depth + 1,
@@ -1608,9 +1681,6 @@ BEGIN
       js_report := jsonb_insert(js_report, r_result.path, '{}'::jsonb);
 
       -- Set section attributes
-      IF r_result.href IS NOT NULL THEN
-        js_report := jsonb_set(js_report, array_append(r_result.path, 'href'), to_jsonb(r_result.href));
-      END IF;
       IF r_result.sect_id IS NOT NULL THEN
         js_report := jsonb_set(js_report, array_append(r_result.path, 'sect_id'), to_jsonb(r_result.sect_id));
       END IF;
@@ -1670,11 +1740,6 @@ BEGIN
         END IF;
 
         -- Set report_context
-        IF r_result.href IS NOT NULL THEN
-          report_context := jsonb_set(report_context, '{report_properties,href}',
-            to_jsonb(r_result.href));
-        END IF;
-
         ASSERT report_context IS NOT NULL, 'Lost report context';
         -- Execute function for a report and get a section
         EXECUTE format('SELECT section_structure, section_data FROM %I($1,$2)',

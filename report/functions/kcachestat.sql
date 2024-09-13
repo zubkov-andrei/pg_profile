@@ -159,7 +159,10 @@ SET search_path=@extschema@ AS $$
     queryid,
     to_hex(st.queryid) AS hexqueryid,
     toplevel,
-    left(md5(st.userid::text || st.datid::text || st.queryid::text), 10) AS hashed_ids,
+    left(encode(sha224(convert_to(
+      st.userid::text || st.datid::text || st.queryid::text,
+      'UTF8')
+    ), 'hex'), 10) AS hashed_ids,
     round(CAST(NULLIF(st.exec_user_time, 0.0) AS numeric), 2),
     round(CAST(NULLIF(st.user_time_pct, 0.0) AS numeric), 2),
     round(CAST(NULLIF(st.exec_system_time, 0.0) AS numeric), 2),
@@ -294,11 +297,12 @@ SET search_path=@extschema@ AS $$
     COALESCE(st1.queryid,st2.queryid) AS queryid,
     to_hex(COALESCE(st1.queryid,st2.queryid)) as hexqueryid,
     COALESCE(st1.toplevel,st2.toplevel) as toplevel,
-    left(md5(
-         COALESCE(st1.userid,st2.userid)::text ||
-         COALESCE(st1.datid,st2.datid)::text ||
-         COALESCE(st1.queryid,st2.queryid)::text), 10
-     ) AS hashed_ids,
+    left(encode(sha224(convert_to(
+      COALESCE(st1.userid,st2.userid)::text ||
+      COALESCE(st1.datid,st2.datid)::text ||
+      COALESCE(st1.queryid,st2.queryid)::text,
+      'UTF8')
+    ), 'hex'), 10) AS hashed_ids,
     -- First interval
     round(CAST(NULLIF(st1.exec_user_time, 0.0) AS numeric), 2),
     round(CAST(NULLIF(st1.user_time_pct, 0.0) AS numeric), 2),

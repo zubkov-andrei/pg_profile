@@ -25,13 +25,13 @@ CREATE TABLE sample_statements (
     min_plan_time       double precision,
     max_plan_time       double precision,
     mean_plan_time      double precision,
-    stddev_plan_time    double precision,
+    sum_plan_time_sq    numeric, -- sum of plan times squared for stddev calculation
     calls               bigint,
     total_exec_time     double precision,
     min_exec_time       double precision,
     max_exec_time       double precision,
     mean_exec_time      double precision,
-    stddev_exec_time    double precision,
+    sum_exec_time_sq    numeric, -- sum of exec times squared for stddev calculation
     rows                bigint,
     shared_blks_hit     bigint,
     shared_blks_read    bigint,
@@ -43,8 +43,8 @@ CREATE TABLE sample_statements (
     local_blks_written  bigint,
     temp_blks_read      bigint,
     temp_blks_written   bigint,
-    blk_read_time       double precision,
-    blk_write_time      double precision,
+    shared_blk_read_time  double precision,
+    shared_blk_write_time double precision,
     wal_records         bigint,
     wal_fpi             bigint,
     wal_bytes           numeric,
@@ -59,6 +59,12 @@ CREATE TABLE sample_statements (
     jit_emission_time   double precision,
     temp_blk_read_time  double precision,
     temp_blk_write_time double precision,
+    local_blk_read_time double precision,
+    local_blk_write_time  double precision,
+    jit_deform_count    bigint,
+    jit_deform_time     double precision,
+    stats_since         timestamp with time zone,
+    minmax_stats_since  timestamp with time zone,
     CONSTRAINT pk_sample_statements_n PRIMARY KEY (server_id, sample_id, datid, userid, queryid, toplevel),
     CONSTRAINT fk_stmt_list FOREIGN KEY (server_id,queryid_md5)
       REFERENCES stmt_list (server_id,queryid_md5)
@@ -107,8 +113,8 @@ CREATE TABLE last_stat_statements (
     local_blks_written  bigint,
     temp_blks_read      bigint,
     temp_blks_written   bigint,
-    blk_read_time       double precision,
-    blk_write_time      double precision,
+    shared_blk_read_time  double precision,
+    shared_blk_write_time double precision,
     wal_records         bigint,
     wal_fpi             bigint,
     wal_bytes           numeric,
@@ -123,7 +129,13 @@ CREATE TABLE last_stat_statements (
     jit_emission_count  bigint,
     jit_emission_time   double precision,
     temp_blk_read_time  double precision,
-    temp_blk_write_time double precision
+    temp_blk_write_time double precision,
+    local_blk_read_time double precision,
+    local_blk_write_time  double precision,
+    jit_deform_count    bigint,
+    jit_deform_time     double precision,
+    stats_since         timestamp with time zone,
+    minmax_stats_since  timestamp with time zone
 )
 PARTITION BY LIST (server_id);
 
@@ -146,8 +158,8 @@ CREATE TABLE sample_statements_total (
     local_blks_written  bigint,
     temp_blks_read      bigint,
     temp_blks_written   bigint,
-    blk_read_time       double precision,
-    blk_write_time      double precision,
+    shared_blk_read_time  double precision,
+    shared_blk_write_time double precision,
     wal_records         bigint,
     wal_fpi             bigint,
     wal_bytes           numeric,
@@ -162,6 +174,14 @@ CREATE TABLE sample_statements_total (
     jit_emission_time   double precision,
     temp_blk_read_time  double precision,
     temp_blk_write_time double precision,
+    mean_max_plan_time  double precision,
+    mean_max_exec_time  double precision,
+    mean_min_plan_time  double precision,
+    mean_min_exec_time  double precision,
+    local_blk_read_time double precision,
+    local_blk_write_time  double precision,
+    jit_deform_count    bigint,
+    jit_deform_time     double precision,
     CONSTRAINT pk_sample_statements_total PRIMARY KEY (server_id, sample_id, datid),
     CONSTRAINT fk_statments_t_dat FOREIGN KEY (server_id, sample_id, datid)
       REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE CASCADE

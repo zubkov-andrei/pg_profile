@@ -1,4 +1,4 @@
-PGPROFILE_VERSION = 4.6
+PGPROFILE_VERSION = 4.7
 EXTENSION = pg_profile
 
 TAR_pkg = $(EXTENSION)--$(PGPROFILE_VERSION).tar.gz $(EXTENSION)--$(PGPROFILE_VERSION)_manual.tar.gz
@@ -22,6 +22,7 @@ REGRESS = \
 	drop_extension
 
 # pg_stat_kcache tests
+ifdef USE_KCACHE
 REGRESS += \
 	kcache_create_extension \
 	server_management \
@@ -31,6 +32,7 @@ REGRESS += \
 	export_import \
 	retention_and_baselines \
 	kcache_drop_extension
+endif
 
 PG_CONFIG ?= pg_config
 

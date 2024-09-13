@@ -1,5 +1,14 @@
 # pg_profile changelog
 
+## 4.7
+- support of PostgreSQL 17 cluster statistics
+- support of *pg_stat_statements* 1.11
+- *pg_stat_statements_reset()* call can be skipped now
+- visualisation of session states timeline (@Djoongaar)
+- *take_sample()* function inherits *lock_timeout* setting
+- *md5()* hash replaced by *sha224()* to avoid errors in FIPS mode
+- other bugfixes #100, #105
+
 ## 4.6
 - Query text preview available in all query statistic sections
 - Hidable report contents on the left edge

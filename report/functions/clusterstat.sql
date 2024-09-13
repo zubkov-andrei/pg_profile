@@ -17,7 +17,10 @@ RETURNS TABLE(
     archived_count        bigint,
     failed_count          bigint,
     start_lsn             pg_lsn,
-    end_lsn               pg_lsn
+    end_lsn               pg_lsn,
+    restartpoints_timed   bigint,
+    restartpoints_req     bigint,
+    restartpoints_done    bigint
 )
 SET search_path=@extschema@ AS $$
     SELECT
@@ -36,7 +39,10 @@ SET search_path=@extschema@ AS $$
         archived_count,
         failed_count,
         start_lsn,
-        end_lsn
+        end_lsn,
+        restartpoints_timed,
+        restartpoints_req,
+        restartpoints_done
     FROM (
       SELECT
           st.server_id as server_id,
@@ -52,7 +58,10 @@ SET search_path=@extschema@ AS $$
           sum(buffers_alloc)::bigint as buffers_alloc,
           sum(wal_size)::bigint as wal_size,
           sum(archived_count)::bigint as archived_count,
-          sum(failed_count)::bigint as failed_count
+          sum(failed_count)::bigint as failed_count,
+          sum(restartpoints_timed)::bigint as restartpoints_timed,
+          sum(restartpoints_req)::bigint as restartpoints_req,
+          sum(restartpoints_done)::bigint as restartpoints_done
       FROM sample_stat_cluster st
           LEFT OUTER JOIN sample_stat_archiver sa USING (server_id, sample_id)
       WHERE st.server_id = sserver_id AND st.sample_id BETWEEN start_id + 1 AND end_id
@@ -87,7 +96,10 @@ RETURNS TABLE(
   archived_count        numeric,
   failed_count          numeric,
   start_lsn             text,
-  end_lsn               text
+  end_lsn               text,
+  restartpoints_timed   numeric,
+  restartpoints_req     numeric,
+  restartpoints_done    numeric
 ) SET search_path=@extschema@ AS $$
   SELECT
     NULLIF(checkpoints_timed, 0)::numeric,
@@ -105,7 +117,10 @@ RETURNS TABLE(
     NULLIF(archived_count, 0)::numeric,
     NULLIF(failed_count, 0)::numeric,
     start_lsn::text AS start_lsn,
-    end_lsn::text AS end_lsn
+    end_lsn::text AS end_lsn,
+    NULLIF(restartpoints_timed, 0)::numeric,
+    NULLIF(restartpoints_req, 0)::numeric,
+    NULLIF(restartpoints_done, 0)::numeric
   FROM cluster_stats(sserver_id, start_id, end_id)
 $$ LANGUAGE sql;
 
@@ -129,6 +144,9 @@ RETURNS TABLE(
   failed_count1          numeric,
   start_lsn1             text,
   end_lsn1               text,
+  restartpoints_timed1   numeric,
+  restartpoints_req1     numeric,
+  restartpoints_done1    numeric,
   checkpoints_timed2     numeric,
   checkpoints_req2       numeric,
   checkpoint_write_time2 numeric,
@@ -144,7 +162,10 @@ RETURNS TABLE(
   archived_count2        numeric,
   failed_count2          numeric,
   start_lsn2             text,
-  end_lsn2               text
+  end_lsn2               text,
+  restartpoints_timed2   numeric,
+  restartpoints_req2     numeric,
+  restartpoints_done2    numeric
 ) SET search_path=@extschema@ AS $$
   SELECT
     NULLIF(st1.checkpoints_timed, 0)::numeric AS checkpoints_timed1,
@@ -163,6 +184,9 @@ RETURNS TABLE(
     NULLIF(st1.failed_count, 0)::numeric AS failed_count1,
     st1.start_lsn::text AS start_lsn1,
     st1.end_lsn::text AS end_lsn1,
+    NULLIF(st1.restartpoints_timed, 0)::numeric AS restartpoints_timed1,
+    NULLIF(st1.restartpoints_req, 0)::numeric AS restartpoints_req1,
+    NULLIF(st1.restartpoints_done, 0)::numeric AS restartpoints_done1,
     NULLIF(st2.checkpoints_timed, 0)::numeric AS checkpoints_timed2,
     NULLIF(st2.checkpoints_req, 0)::numeric AS checkpoints_req2,
     round(cast(NULLIF(st2.checkpoint_write_time, 0.0)/1000 as numeric),2) as checkpoint_write_time2,
@@ -178,7 +202,10 @@ RETURNS TABLE(
     NULLIF(st2.archived_count, 0)::numeric AS archived_count2,
     NULLIF(st2.failed_count, 0)::numeric AS failed_count2,
     st2.start_lsn::text AS start_lsn2,
-    st2.end_lsn::text AS end_lsn2
+    st2.end_lsn::text AS end_lsn2,
+    NULLIF(st2.restartpoints_timed, 0)::numeric AS restartpoints_timed2,
+    NULLIF(st2.restartpoints_req, 0)::numeric AS restartpoints_req2,
+    NULLIF(st2.restartpoints_done, 0)::numeric AS restartpoints_done2
   FROM cluster_stats(sserver_id, start1_id, end1_id) st1
     FULL OUTER JOIN cluster_stats(sserver_id, start2_id, end2_id) st2 USING (server_id)
 $$ LANGUAGE sql;
@@ -186,23 +213,25 @@ $$ LANGUAGE sql;
 CREATE FUNCTION cluster_stats_reset(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS TABLE(
     sample_id               integer,
-    bgwriter_stats_reset  timestamp with time zone,
-    archiver_stats_reset  timestamp with time zone
+    bgwriter_stats_reset    timestamp with time zone,
+    archiver_stats_reset    timestamp with time zone,
+    checkpoint_stats_reset  timestamp with time zone
 )
 SET search_path=@extschema@ AS $$
   SELECT
-      bgwr1.sample_id as sample_id,
-      nullif(bgwr1.stats_reset,bgwr0.stats_reset),
-      nullif(sta1.stats_reset,sta0.stats_reset)
-  FROM sample_stat_cluster bgwr1
+      clu1.sample_id as sample_id,
+      nullif(clu1.stats_reset, clu0.stats_reset),
+      nullif(sta1.stats_reset, sta0.stats_reset),
+      nullif(clu1.checkpoint_stats_reset, clu0.checkpoint_stats_reset)
+  FROM sample_stat_cluster clu1
       LEFT OUTER JOIN sample_stat_archiver sta1 USING (server_id,sample_id)
-      JOIN sample_stat_cluster bgwr0 ON (bgwr1.server_id = bgwr0.server_id AND bgwr1.sample_id = bgwr0.sample_id + 1)
+      JOIN sample_stat_cluster clu0 ON (clu1.server_id = clu0.server_id AND clu1.sample_id = clu0.sample_id + 1)
       LEFT OUTER JOIN sample_stat_archiver sta0 ON (sta1.server_id = sta0.server_id AND sta1.sample_id = sta0.sample_id + 1)
-  WHERE bgwr1.server_id = sserver_id AND bgwr1.sample_id BETWEEN start_id + 1 AND end_id
+  WHERE clu1.server_id = sserver_id AND clu1.sample_id BETWEEN start_id + 1 AND end_id
     AND
-      (bgwr0.stats_reset, sta0.stats_reset) IS DISTINCT FROM
-      (bgwr1.stats_reset, sta1.stats_reset)
-  ORDER BY bgwr1.sample_id ASC
+      (clu0.stats_reset, clu0.checkpoint_stats_reset, sta0.stats_reset) IS DISTINCT FROM
+      (clu1.stats_reset, clu1.checkpoint_stats_reset, sta1.stats_reset)
+  ORDER BY clu1.sample_id ASC
 $$ LANGUAGE sql;
 
 CREATE FUNCTION profile_checkavail_cluster_stats_reset(IN sserver_id integer, IN start_id integer, IN end_id integer)
@@ -215,14 +244,16 @@ $$ LANGUAGE sql;
 
 CREATE FUNCTION cluster_stats_reset_format(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS TABLE(
-  sample_id             integer,
-  bgwriter_stats_reset  text,
-  archiver_stats_reset  text
+  sample_id               integer,
+  bgwriter_stats_reset    text,
+  archiver_stats_reset    text,
+  checkpoint_stats_reset  text
 ) SET search_path=@extschema@ AS $$
   SELECT
     sample_id,
     bgwriter_stats_reset::text,
-    archiver_stats_reset::text
+    archiver_stats_reset::text,
+    checkpoint_stats_reset::text
   FROM
     cluster_stats_reset(sserver_id, start_id, end_id)
 $$ LANGUAGE sql;
@@ -231,10 +262,11 @@ CREATE FUNCTION cluster_stats_reset_format_diff(IN sserver_id integer,
   IN start1_id integer, IN end1_id integer,
   IN start2_id integer, IN end2_id integer)
 RETURNS TABLE(
-    interval_num integer,
-    sample_id             integer,
-    bgwriter_stats_reset  text,
-    archiver_stats_reset  text
+    interval_num            integer,
+    sample_id               integer,
+    bgwriter_stats_reset    text,
+    archiver_stats_reset    text,
+    checkpoint_stats_reset  text
   )
 SET search_path=@extschema@
 AS
@@ -243,12 +275,23 @@ $$
     interval_num,
     sample_id,
     bgwriter_stats_reset::text,
-    archiver_stats_reset::text
+    archiver_stats_reset::text,
+    checkpoint_stats_reset::text
   FROM
-    (SELECT 1 AS interval_num, sample_id, bgwriter_stats_reset, archiver_stats_reset
-      FROM cluster_stats_reset(sserver_id, start1_id, end1_id)
+    (SELECT
+      1 AS interval_num,
+      sample_id,
+      bgwriter_stats_reset,
+      archiver_stats_reset,
+      checkpoint_stats_reset
+    FROM cluster_stats_reset(sserver_id, start1_id, end1_id)
     UNION
-    SELECT 2 AS interval_num, sample_id, bgwriter_stats_reset, archiver_stats_reset
-      FROM cluster_stats_reset(sserver_id, start2_id, end2_id)) AS samples
+    SELECT
+      2 AS interval_num,
+      sample_id,
+      bgwriter_stats_reset,
+      archiver_stats_reset,
+      checkpoint_stats_reset
+    FROM cluster_stats_reset(sserver_id, start2_id, end2_id)) AS samples
   ORDER BY interval_num, sample_id ASC;
 $$ LANGUAGE sql;

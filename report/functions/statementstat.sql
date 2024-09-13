@@ -35,11 +35,11 @@ RETURNS TABLE(
     min_exec_time           double precision,
     max_exec_time           double precision,
     mean_exec_time          double precision,
-    stddev_exec_time        double precision,
+    stddev_exec_time        numeric,
     min_plan_time           double precision,
     max_plan_time           double precision,
     mean_plan_time          double precision,
-    stddev_plan_time        double precision,
+    stddev_plan_time        numeric,
     rows                    bigint,
     shared_blks_hit         bigint,
     shared_hit_pct          float,
@@ -60,8 +60,10 @@ RETURNS TABLE(
     local_blks_written      bigint,
     temp_blks_read          bigint,
     temp_blks_written       bigint,
-    blk_read_time           double precision,
-    blk_write_time          double precision,
+    shared_blk_read_time    double precision,
+    shared_blk_write_time   double precision,
+    local_blk_read_time     double precision,
+    local_blk_write_time    double precision,
     temp_blk_read_time      double precision,
     temp_blk_write_time     double precision,
     io_time                 double precision,
@@ -86,14 +88,20 @@ RETURNS TABLE(
     jit_optimization_count  bigint,
     jit_optimization_time   double precision,
     jit_emission_count      bigint,
-    jit_emission_time       double precision
+    jit_emission_time       double precision,
+    jit_deform_count        bigint,
+    jit_deform_time         double precision,
+    stmt_alloc              bigint,
+    stmt_cover              double precision
 ) SET search_path=@extschema@ AS $$
     WITH
       tot AS (
         SELECT
             COALESCE(sum(total_plan_time), 0.0) + sum(total_exec_time) AS total_time,
-            sum(blk_read_time) AS blk_read_time,
-            sum(blk_write_time) AS blk_write_time,
+            sum(shared_blk_read_time) AS shared_blk_read_time,
+            sum(shared_blk_write_time) AS shared_blk_write_time,
+            sum(local_blk_read_time) AS local_blk_read_time,
+            sum(local_blk_write_time) AS local_blk_write_time,
             sum(shared_blks_hit) AS shared_blks_hit,
             sum(shared_blks_read) AS shared_blks_read,
             sum(shared_blks_dirtied) AS shared_blks_dirtied,
@@ -110,12 +118,42 @@ RETURNS TABLE(
       ),
       totbgwr AS (
         SELECT
-          sum(buffers_checkpoint) + sum(buffers_clean) + sum(buffers_backend) AS written,
-          sum(buffers_backend) AS buffers_backend,
+          sum(buffers_checkpoint) + sum(buffers_clean) +
+            sum(coalesce(
+              NULLIF(buffers_backend, 0),
+              io_buffers_backend
+              )
+            ) AS written,
+          sum(coalesce(
+              NULLIF(buffers_backend, 0),
+              io_buffers_backend
+              )
+            ) AS buffers_backend,
           sum(wal_size) AS wal_size
-        FROM sample_stat_cluster
+        FROM sample_stat_cluster LEFT JOIN
+          (
+          /*
+            since 17 there is no buffers_backend in pg_stat_bgwriter
+            So we'll get it from pg_stat_io data
+          */
+            SELECT
+              sample_id,
+              sum(writes) FILTER (WHERE
+                backend_type IN ('parallel worker', 'client backend'))::bigint AS io_buffers_backend
+            FROM sample_stat_io
+            WHERE
+              server_id = sserver_id AND sample_id BETWEEN start_id + 1 AND end_id
+            GROUP BY sample_id
+          ) io USING (sample_id)
         WHERE server_id = sserver_id AND sample_id BETWEEN start_id + 1 AND end_id
-      )
+      ),
+    r_samples AS (
+      SELECT e.sample_time - s.sample_time AS duration
+      FROM samples s, samples e
+      WHERE
+        (s.server_id, s.sample_id) = (sserver_id, start_id) AND
+        (e.server_id, e.sample_id) = (sserver_id, end_id)
+    )
     SELECT
         st.server_id as server_id,
         st.datid as datid,
@@ -137,12 +175,30 @@ RETURNS TABLE(
         sum(st.total_exec_time)*100/NULLIF(sum(st.total_exec_time) + COALESCE(sum(st.total_plan_time), 0.0), 0) as exec_time_pct,
         min(st.min_exec_time) as min_exec_time,
         max(st.max_exec_time) as max_exec_time,
-        sum(st.mean_exec_time*st.calls)/NULLIF(sum(st.calls), 0) as mean_exec_time,
-        sqrt(sum((power(st.stddev_exec_time,2)+power(st.mean_exec_time,2))*st.calls)/NULLIF(sum(st.calls),0)-power(sum(st.mean_exec_time*st.calls)/NULLIF(sum(st.calls),0),2)) as stddev_exec_time,
+        sum(st.total_exec_time)/NULLIF(sum(st.calls), 0) as mean_exec_time,
+        CASE
+          WHEN sum(st.calls) = 1 THEN 0
+          WHEN sum(st.sum_exec_time_sq) * sum(st.calls) -
+            pow(sum(st.total_exec_time::numeric), 2) > 0 THEN
+              sqrt(
+                (sum(st.sum_exec_time_sq) * sum(st.calls) - pow(sum(st.total_exec_time::numeric), 2)) /
+                NULLIF(pow(sum(st.calls), 2), 0)
+              )
+          ELSE NULL
+        END as stddev_exec_time,
         min(st.min_plan_time) as min_plan_time,
         max(st.max_plan_time) as max_plan_time,
-        sum(st.mean_plan_time*st.plans)/NULLIF(sum(st.plans),0) as mean_plan_time,
-        sqrt(sum((power(st.stddev_plan_time,2)+power(st.mean_plan_time,2))*st.plans)/NULLIF(sum(st.plans),0)-power(sum(st.mean_plan_time*st.plans)/NULLIF(sum(st.plans),0),2)) as stddev_plan_time,
+        sum(st.total_plan_time)/NULLIF(sum(st.plans), 0) as mean_plan_time,
+        CASE
+          WHEN sum(st.plans) = 1 THEN 0
+          WHEN sum(st.sum_plan_time_sq) * sum(st.plans) -
+            pow(sum(st.total_plan_time::numeric), 2) > 0 THEN
+              sqrt(
+                (sum(st.sum_plan_time_sq) * sum(st.plans) - pow(sum(st.total_plan_time::numeric), 2)) /
+                NULLIF(pow(sum(st.plans), 2), 0)
+              )
+          ELSE NULL
+        END as stddev_plan_time,
         sum(st.rows)::bigint as rows,
         sum(st.shared_blks_hit)::bigint as shared_blks_hit,
         (sum(st.shared_blks_hit) * 100 / NULLIF(sum(st.shared_blks_hit) + sum(st.shared_blks_read), 0))::float as shared_hit_pct,
@@ -163,12 +219,19 @@ RETURNS TABLE(
         sum(st.local_blks_written)::bigint as local_blks_written,
         sum(st.temp_blks_read)::bigint as temp_blks_read,
         sum(st.temp_blks_written)::bigint as temp_blks_written,
-        sum(st.blk_read_time)/1000::double precision as blk_read_time,
-        sum(st.blk_write_time)/1000::double precision as blk_write_time,
+        sum(st.shared_blk_read_time)/1000::double precision as shared_blk_read_time,
+        sum(st.shared_blk_write_time)/1000::double precision as shared_blk_write_time,
+        sum(st.local_blk_read_time)/1000::double precision as local_blk_read_time,
+        sum(st.local_blk_write_time)/1000::double precision as local_blk_write_time,
         sum(st.temp_blk_read_time)/1000::double precision as temp_blk_read_time,
         sum(st.temp_blk_write_time)/1000::double precision as temp_blk_write_time,
-        (sum(st.blk_read_time) + sum(st.blk_write_time))/1000::double precision as io_time,
-        (sum(st.blk_read_time) + sum(st.blk_write_time)) * 100 / NULLIF(min(tot.blk_read_time) + min(tot.blk_write_time),0) as io_time_pct,
+        (sum(st.shared_blk_read_time) + sum(st.shared_blk_write_time) +
+          sum(st.local_blk_read_time) + sum(st.local_blk_write_time)
+          )/1000::double precision as io_time,
+        (sum(st.shared_blk_read_time) + sum(st.shared_blk_write_time) +
+          sum(st.local_blk_read_time) + sum(st.local_blk_write_time)) * 100 /
+          NULLIF(min(tot.shared_blk_read_time) + min(tot.shared_blk_write_time) +
+            min(tot.local_blk_read_time) + min(tot.local_blk_write_time), 0) as io_time_pct,
         (sum(st.temp_blks_read) * 100 / NULLIF(min(tot.temp_blks_read), 0))::float as temp_read_total_pct,
         (sum(st.temp_blks_written) * 100 / NULLIF(min(tot.temp_blks_written), 0))::float as temp_write_total_pct,
         (sum(st.temp_blk_read_time) + sum(st.temp_blk_write_time)) * 100 /
@@ -191,7 +254,15 @@ RETURNS TABLE(
         sum(st.jit_optimization_count)::bigint AS jit_optimization_count,
         sum(st.jit_optimization_time)/1000::double precision AS jit_optimization_time,
         sum(st.jit_emission_count)::bigint AS jit_emission_count,
-        sum(st.jit_emission_time)/1000::double precision AS jit_emission_time
+        sum(st.jit_emission_time)/1000::double precision AS jit_emission_time,
+        sum(st.jit_deform_count)::bigint AS jit_deform_count,
+        sum(st.jit_deform_time)/1000::double precision AS jit_deform_time,
+        count(DISTINCT st.stats_since) AS stmt_alloc,
+        100 - extract(epoch from sum(CASE
+            WHEN st.stats_since <= s_prev.sample_time THEN '0'::interval
+            ELSE st.stats_since - s_prev.sample_time
+          END)) * 100 / -- Possibly lost stats time intervel
+          extract(epoch from min(r_samples.duration)) AS stmt_cover
     FROM sample_statements st
         -- User name
         JOIN roles_list rl USING (server_id, userid)
@@ -202,6 +273,9 @@ RETURNS TABLE(
         LEFT OUTER JOIN sample_kcache kc USING(server_id, sample_id, userid, datid, queryid, toplevel)
         -- Total stats
         CROSS JOIN tot CROSS JOIN totbgwr
+        -- Prev sample is needed to calc stat coverage
+        JOIN samples s_prev ON (s_prev.server_id, s_prev.sample_id) = (sserver_id, st.sample_id - 1)
+        CROSS JOIN r_samples
     WHERE st.server_id = sserver_id AND st.sample_id BETWEEN start_id + 1 AND end_id
     GROUP BY
       st.server_id,
@@ -263,8 +337,10 @@ RETURNS TABLE(
     local_blks_written      bigint,
     temp_blks_read          bigint,
     temp_blks_written       bigint,
-    blk_read_time           numeric,
-    blk_write_time          numeric,
+    shared_blk_read_time    numeric,
+    shared_blk_write_time   numeric,
+    local_blk_read_time    numeric,
+    local_blk_write_time   numeric,
     temp_blk_read_time      numeric,
     temp_blk_write_time     numeric,
     io_time                 numeric,
@@ -292,11 +368,16 @@ RETURNS TABLE(
     jit_optimization_time   numeric,
     jit_emission_count      bigint,
     jit_emission_time       numeric,
+    jit_deform_count        bigint,
+    jit_deform_time         numeric,
+    stmt_alloc              bigint,
+    stmt_cover              numeric,
     sum_tmp_blks            bigint,
     sum_jit_time            numeric,
     ord_total_time          integer,
     ord_plan_time           integer,
     ord_exec_time           integer,
+    ord_mean_exec_time      integer,
     ord_calls               integer,
     ord_io_time             integer,
     ord_temp_io_time        integer,
@@ -317,7 +398,10 @@ SET search_path=@extschema@ AS $$
     st.queryid,
     to_hex(st.queryid) AS hexqueryid,
     st.toplevel,
-    left(md5(st.userid::text || st.datid::text || st.queryid::text), 10) AS hashed_ids,
+    left(encode(sha224(convert_to(
+      st.userid::text || st.datid::text || st.queryid::text,
+      'UTF8')
+    ), 'hex'), 10) AS hashed_ids,
     NULLIF(st.plans, 0),
     round(CAST(NULLIF(st.plans_pct, 0.0) AS numeric), 2),
     NULLIF(st.calls, 0),
@@ -357,8 +441,10 @@ SET search_path=@extschema@ AS $$
     NULLIF(st.local_blks_written, 0),
     NULLIF(st.temp_blks_read, 0),
     NULLIF(st.temp_blks_written, 0),
-    round(CAST(NULLIF(st.blk_read_time, 0.0) AS numeric), 2),
-    round(CAST(NULLIF(st.blk_write_time, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st.shared_blk_read_time, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st.shared_blk_write_time, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st.local_blk_read_time, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st.local_blk_write_time, 0.0) AS numeric), 2),
     round(CAST(NULLIF(st.temp_blk_read_time, 0.0) AS numeric), 2),
     round(CAST(NULLIF(st.temp_blk_write_time, 0.0) AS numeric), 2),
     round(CAST(NULLIF(st.io_time, 0.0) AS numeric), 2),
@@ -378,7 +464,8 @@ SET search_path=@extschema@ AS $$
     NULLIF(st.reads, 0),
     NULLIF(st.writes, 0),
     round(NULLIF(CAST(st.jit_generation_time + st.jit_inlining_time +
-      st.jit_optimization_time + st.jit_emission_time AS numeric), 0), 2) AS jit_total_time,
+      st.jit_optimization_time + st.jit_emission_time +
+      st.jit_deform_time AS numeric), 0), 2) AS jit_total_time,
     NULLIF(st.jit_functions, 0),
     round(CAST(NULLIF(st.jit_generation_time, 0.0) AS numeric), 2),
     NULLIF(st.jit_inlining_count, 0),
@@ -387,6 +474,10 @@ SET search_path=@extschema@ AS $$
     round(CAST(NULLIF(st.jit_optimization_time, 0.0) AS numeric), 2),
     NULLIF(st.jit_emission_count, 0),
     round(CAST(NULLIF(st.jit_emission_time, 0.0) AS numeric), 2),
+    NULLIF(st.jit_deform_count, 0),
+    round(CAST(NULLIF(st.jit_deform_time, 0.0) AS numeric), 2),
+    NULLIF(st.stmt_alloc, 0),
+    round(CAST(NULLIF(st.stmt_cover, 0.0) AS numeric)),
     COALESCE(st.temp_blks_read, 0) +
         COALESCE(st.temp_blks_written, 0) +
         COALESCE(st.local_blks_read, 0) +
@@ -414,6 +505,14 @@ SET search_path=@extschema@ AS $$
         st.queryid,
         st.toplevel)::integer
     ELSE NULL END AS ord_exec_time,
+    CASE WHEN st.mean_exec_time > 0 THEN
+      row_number() OVER (ORDER BY st.mean_exec_time DESC NULLS LAST,
+        st.total_time DESC NULLS LAST,
+        st.datid,
+        st.userid,
+        st.queryid,
+        st.toplevel)::integer
+    ELSE NULL END AS ord_mean_exec_time,
     CASE WHEN st.calls > 0 THEN
       row_number() OVER (ORDER BY st.calls DESC NULLS LAST,
         st.total_time DESC NULLS LAST,
@@ -554,8 +653,10 @@ RETURNS TABLE(
     local_blks_written1      bigint,
     temp_blks_read1          bigint,
     temp_blks_written1       bigint,
-    blk_read_time1           numeric,
-    blk_write_time1          numeric,
+    shared_blk_read_time1    numeric,
+    shared_blk_write_time1   numeric,
+    local_blk_read_time1    numeric,
+    local_blk_write_time1   numeric,
     temp_blk_read_time1      numeric,
     temp_blk_write_time1     numeric,
     io_time1                 numeric,
@@ -583,6 +684,10 @@ RETURNS TABLE(
     jit_optimization_time1   numeric,
     jit_emission_count1      bigint,
     jit_emission_time1       numeric,
+    jit_deform_count1        bigint,
+    jit_deform_time1         numeric,
+    stmt_alloc1              bigint,
+    stmt_cover1              numeric,
     --Second Interval
     plans2                   bigint,
     plans_pct2               numeric,
@@ -623,8 +728,10 @@ RETURNS TABLE(
     local_blks_written2      bigint,
     temp_blks_read2          bigint,
     temp_blks_written2       bigint,
-    blk_read_time2           numeric,
-    blk_write_time2          numeric,
+    shared_blk_read_time2    numeric,
+    shared_blk_write_time2   numeric,
+    local_blk_read_time2     numeric,
+    local_blk_write_time2    numeric,
     temp_blk_read_time2      numeric,
     temp_blk_write_time2     numeric,
     io_time2                 numeric,
@@ -652,12 +759,17 @@ RETURNS TABLE(
     jit_optimization_time2   numeric,
     jit_emission_count2      bigint,
     jit_emission_time2       numeric,
+    jit_deform_count2        bigint,
+    jit_deform_time2         numeric,
+    stmt_alloc2              bigint,
+    stmt_cover2              numeric,
     -- Filter and ordering fields
     sum_tmp_blks             bigint,
     sum_jit_time             numeric,
     ord_total_time           integer,
     ord_plan_time            integer,
     ord_exec_time            integer,
+    ord_mean_exec_time       integer,
     ord_calls                integer,
     ord_io_time              integer,
     ord_temp_io_time         integer,
@@ -678,11 +790,12 @@ SET search_path=@extschema@ AS $$
     COALESCE(st1.queryid,st2.queryid) AS queryid,
     to_hex(COALESCE(st1.queryid,st2.queryid)) as hexqueryid,
     COALESCE(st1.toplevel,st2.toplevel) as toplevel,
-    left(md5(
-         COALESCE(st1.userid,st2.userid)::text ||
-         COALESCE(st1.datid,st2.datid)::text ||
-         COALESCE(st1.queryid,st2.queryid)::text), 10
-     ) AS hashed_ids,
+    left(encode(sha224(convert_to(
+      COALESCE(st1.userid,st2.userid)::text ||
+      COALESCE(st1.datid,st2.datid)::text ||
+      COALESCE(st1.queryid,st2.queryid)::text,
+      'UTF8')
+    ), 'hex'), 10) AS hashed_ids,
     -- First Interval
     NULLIF(st1.plans, 0),
     round(CAST(NULLIF(st1.plans_pct, 0.0) AS numeric), 2),
@@ -723,8 +836,10 @@ SET search_path=@extschema@ AS $$
     NULLIF(st1.local_blks_written, 0),
     NULLIF(st1.temp_blks_read, 0),
     NULLIF(st1.temp_blks_written, 0),
-    round(CAST(NULLIF(st1.blk_read_time, 0.0) AS numeric), 2),
-    round(CAST(NULLIF(st1.blk_write_time, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st1.shared_blk_read_time, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st1.shared_blk_write_time, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st1.local_blk_read_time, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st1.local_blk_write_time, 0.0) AS numeric), 2),
     round(CAST(NULLIF(st1.temp_blk_read_time, 0.0) AS numeric), 2),
     round(CAST(NULLIF(st1.temp_blk_write_time, 0.0) AS numeric), 2),
     round(CAST(NULLIF(st1.io_time, 0.0) AS numeric), 2),
@@ -744,7 +859,8 @@ SET search_path=@extschema@ AS $$
     NULLIF(st1.reads, 0),
     NULLIF(st1.writes, 0),
     round(NULLIF(CAST(st1.jit_generation_time + st1.jit_inlining_time +
-      st1.jit_optimization_time + st1.jit_emission_time AS numeric), 0), 2),
+      st1.jit_optimization_time + st1.jit_emission_time +
+      st1.jit_deform_time AS numeric), 0), 2),
     NULLIF(st1.jit_functions, 0),
     round(CAST(NULLIF(st1.jit_generation_time, 0.0) AS numeric), 2),
     NULLIF(st1.jit_inlining_count, 0),
@@ -753,6 +869,10 @@ SET search_path=@extschema@ AS $$
     round(CAST(NULLIF(st1.jit_optimization_time, 0.0) AS numeric), 2),
     NULLIF(st1.jit_emission_count, 0),
     round(CAST(NULLIF(st1.jit_emission_time, 0.0) AS numeric), 2),
+    NULLIF(st1.jit_deform_count, 0),
+    round(CAST(NULLIF(st1.jit_deform_time, 0.0) AS numeric), 2),
+    NULLIF(st1.stmt_alloc, 0),
+    round(CAST(NULLIF(st1.stmt_cover, 0.0) AS numeric)),
     -- Second Interval
     NULLIF(st2.plans, 0),
     round(CAST(NULLIF(st2.plans_pct, 0.0) AS numeric), 2),
@@ -793,8 +913,10 @@ SET search_path=@extschema@ AS $$
     NULLIF(st2.local_blks_written, 0),
     NULLIF(st2.temp_blks_read, 0),
     NULLIF(st2.temp_blks_written, 0),
-    round(CAST(NULLIF(st2.blk_read_time, 0.0) AS numeric), 2),
-    round(CAST(NULLIF(st2.blk_write_time, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st2.shared_blk_read_time, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st2.shared_blk_write_time, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st2.local_blk_read_time, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st2.local_blk_write_time, 0.0) AS numeric), 2),
     round(CAST(NULLIF(st2.temp_blk_read_time, 0.0) AS numeric), 2),
     round(CAST(NULLIF(st2.temp_blk_write_time, 0.0) AS numeric), 2),
     round(CAST(NULLIF(st2.io_time, 0.0) AS numeric), 2),
@@ -814,7 +936,8 @@ SET search_path=@extschema@ AS $$
     NULLIF(st2.reads, 0),
     NULLIF(st2.writes, 0),
     round(NULLIF(CAST(st2.jit_generation_time + st2.jit_inlining_time +
-      st2.jit_optimization_time + st2.jit_emission_time AS numeric), 0), 2),
+      st2.jit_optimization_time + st2.jit_emission_time +
+      st2.jit_deform_time AS numeric), 0), 2),
     NULLIF(st2.jit_functions, 0),
     round(CAST(NULLIF(st2.jit_generation_time, 0.0) AS numeric), 2),
     NULLIF(st2.jit_inlining_count, 0),
@@ -823,6 +946,10 @@ SET search_path=@extschema@ AS $$
     round(CAST(NULLIF(st2.jit_optimization_time, 0.0) AS numeric), 2),
     NULLIF(st2.jit_emission_count, 0),
     round(CAST(NULLIF(st2.jit_emission_time, 0.0) AS numeric), 2),
+    NULLIF(st2.jit_deform_count, 0),
+    round(CAST(NULLIF(st2.jit_deform_time, 0.0) AS numeric), 2),
+    NULLIF(st2.stmt_alloc, 0),
+    round(CAST(NULLIF(st2.stmt_cover, 0.0) AS numeric)),
     -- Filter and ordering fields
     COALESCE(st1.temp_blks_read, 0) +
         COALESCE(st1.temp_blks_written, 0) +
@@ -866,6 +993,18 @@ SET search_path=@extschema@ AS $$
        COALESCE(st1.queryid,st2.queryid),
        COALESCE(st1.toplevel,st2.toplevel))::integer
     ELSE NULL END AS ord_exec_time,
+
+    CASE WHEN COALESCE(st1.mean_exec_time, 0.0) +
+        COALESCE(st2.mean_exec_time, 0.0) > 0 THEN
+    row_number() OVER (ORDER BY COALESCE(st1.mean_exec_time, 0.0) +
+       COALESCE(st2.mean_exec_time, 0.0) DESC NULLS LAST,
+       COALESCE(st1.total_time, 0.0) +
+       COALESCE(st2.total_time, 0.0) DESC NULLS LAST,
+       COALESCE(st1.datid,st2.datid),
+       COALESCE(st1.userid,st2.userid),
+       COALESCE(st1.queryid,st2.queryid),
+       COALESCE(st1.toplevel,st2.toplevel))::integer
+    ELSE NULL END AS ord_mean_exec_time,
 
     CASE WHEN COALESCE(st1.calls, 0) +
         COALESCE(st2.calls, 0) > 0 THEN
@@ -1008,7 +1147,7 @@ DECLARE
       queryid,
       ord,
       rowspan,
-      query
+      replace(query, '<', '&lt;') AS query
     FROM (
       SELECT
       queryid,

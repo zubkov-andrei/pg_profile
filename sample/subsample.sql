@@ -33,6 +33,10 @@ BEGIN
 
   -- Skip subsampling if it is disabled
   IF (NOT (properties #>> '{properties,subsample_enabled}')::boolean) THEN
+    IF NOT (properties #>> '{properties,in_sample}')::boolean THEN
+      -- Reset lock_timeout setting to its initial value
+      EXECUTE format('SET lock_timeout TO %L', properties #>> '{properties,lock_timeout_init}');
+    END IF;
     RETURN properties;
   END IF;
 
@@ -89,24 +93,24 @@ BEGIN
               'backend_type,'
               'age(backend_xmin) as backend_xmin_age,'
               'CASE '
-                'WHEN xact_start <= now() - %1$s::interval THEN '
+                'WHEN xact_start <= now() - %1$L::interval THEN '
                   'row_number() OVER (ORDER BY xact_start ASC) '
                 'ELSE NULL '
               'END as xact_ord, '
               'CASE '
-                'WHEN query_start <= now() - %3$s::interval '
+                'WHEN query_start <= now() - %3$L::interval '
                   'AND state IN (''active'',''fastpath function call'') THEN '
                   'row_number() OVER (PARTITION BY state IN (''active'',''fastpath function call'') ORDER BY query_start ASC) '
                 'ELSE NULL '
               'END as query_ord, '
               'CASE '
-                'WHEN state_change <= now() - %4$s::interval '
+                'WHEN state_change <= now() - %4$L::interval '
                 'AND state IN (''idle in transaction'',''idle in transaction (aborted)'') THEN '
                   'row_number() OVER (PARTITION BY state IN (''idle in transaction'',''idle in transaction (aborted)'') ORDER BY state_change ASC) '
                 'ELSE NULL '
               'END as state_ord, '
               'CASE '
-                'WHEN age(backend_xmin) >= %2$s THEN '
+                'WHEN age(backend_xmin) >= %2$L THEN '
                   'row_number() OVER (ORDER BY age(backend_xmin) DESC) '
                 'ELSE NULL '
               'END  as age_ord '
@@ -151,24 +155,24 @@ BEGIN
               'backend_type,'
               'age(backend_xmin) as backend_xmin_age,'
               'CASE '
-                'WHEN xact_start <= now() - %1$s::interval THEN '
+                'WHEN xact_start <= now() - %1$L::interval THEN '
                   'row_number() OVER (ORDER BY xact_start ASC) '
                 'ELSE NULL '
               'END as xact_ord, '
               'CASE '
-                'WHEN query_start <= now() - %3$s::interval '
+                'WHEN query_start <= now() - %3$L::interval '
                   'AND state IN (''active'',''fastpath function call'') THEN '
                   'row_number() OVER (PARTITION BY state IN (''active'',''fastpath function call'') ORDER BY query_start ASC) '
                 'ELSE NULL '
               'END as query_ord, '
               'CASE '
-                'WHEN state_change <= now() - %4$s::interval '
+                'WHEN state_change <= now() - %4$L::interval '
                 'AND state IN (''idle in transaction'',''idle in transaction (aborted)'') THEN '
                   'row_number() OVER (PARTITION BY state IN (''idle in transaction'',''idle in transaction (aborted)'') ORDER BY state_change ASC) '
                 'ELSE NULL '
               'END as state_ord, '
               'CASE '
-                'WHEN age(backend_xmin) >= %2$s THEN '
+                'WHEN age(backend_xmin) >= %2$L THEN '
                   'row_number() OVER (ORDER BY age(backend_xmin) DESC) '
                 'ELSE NULL '
               'END  as age_ord '
@@ -213,24 +217,24 @@ BEGIN
               'backend_type,'
               'age(backend_xmin) as backend_xmin_age,'
               'CASE '
-                'WHEN xact_start <= now() - %1$s::interval THEN '
+                'WHEN xact_start <= now() - %1$L::interval THEN '
                   'row_number() OVER (ORDER BY xact_start ASC) '
                 'ELSE NULL '
               'END as xact_ord, '
               'CASE '
-                'WHEN query_start <= now() - %3$s::interval '
+                'WHEN query_start <= now() - %3$L::interval '
                   'AND state IN (''active'',''fastpath function call'') THEN '
                   'row_number() OVER (PARTITION BY state IN (''active'',''fastpath function call'') ORDER BY query_start ASC) '
                 'ELSE NULL '
               'END as query_ord, '
               'CASE '
-                'WHEN state_change <= now() - %4$s::interval '
+                'WHEN state_change <= now() - %4$L::interval '
                 'AND state IN (''idle in transaction'',''idle in transaction (aborted)'') THEN '
                   'row_number() OVER (PARTITION BY state IN (''idle in transaction'',''idle in transaction (aborted)'') ORDER BY state_change ASC) '
                 'ELSE NULL '
               'END as state_ord, '
               'CASE '
-                'WHEN age(backend_xmin) >= %2$s THEN '
+                'WHEN age(backend_xmin) >= %2$L THEN '
                   'row_number() OVER (ORDER BY age(backend_xmin) DESC) '
                 'ELSE NULL '
               'END  as age_ord '
@@ -247,12 +251,19 @@ BEGIN
       RAISE 'Unsupported postgres version';
   END CASE;
 
+  /*
+   format() function will substitute defined values for us quoting
+   them as it requested by the %L type. NULLs will be placed literally
+   unquoted making threshold inactive. However we need the NULLIF()
+   functions here to avoid errors in EDB instances having NULL strings
+   to appear as the empty ones.
+  */
   server_query := format(
       server_query,
-      COALESCE(''''||(properties #>> '{properties,min_xact_dur}')||'''', 'NULL'),
-      COALESCE(''''||(properties #>> '{properties,min_xact_age}')||'''', 'NULL'),
-      COALESCE(''''||(properties #>> '{properties,min_query_dur}')||'''', 'NULL'),
-      COALESCE(''''||(properties #>> '{properties,min_idle_xact_dur}')||'''', 'NULL'),
+      NULLIF(properties #>> '{properties,min_xact_dur}', ''),
+      NULLIF(properties #>> '{properties,min_xact_age}', ''),
+      NULLIF(properties #>> '{properties,min_query_dur}', ''),
+      NULLIF(properties #>> '{properties,min_idle_xact_dur}', ''),
       properties #>> '{properties,topn}'
   );
 
@@ -301,8 +312,8 @@ BEGIN
           query_start       timestamp with time zone,
           state_change      timestamp with time zone,
           state             text,
-          backend_xid       xid,
-          backend_xmin      xid,
+          backend_xid       text,
+          backend_xmin      text,
           query_id          bigint,
           query             text,
           backend_type      text,
@@ -312,7 +323,6 @@ BEGIN
 
   IF session_rows > 0 THEN
     /*
-      We should also old states
       We have four thresholds probably defined for subsamples, so
       we'll delete the previous captured state when we don't need it
       anymore for all of them.
@@ -379,9 +389,12 @@ BEGIN
     ;
   END IF;
 
-  GET DIAGNOSTICS session_rows = ROW_COUNT;
-  EXECUTE format('ANALYZE last_stat_activity_srv%1$s',
-    sserver_id);
+  /* It seems we should avoid analyze here, hoping autoanalyze will do
+  the trick */
+  /*
+  GET DIAGNOSTICS session_rows = ROW_COUNT; EXECUTE
+  format('ANALYZE last_stat_activity_srv%1$s', sserver_id);
+  */
 
   -- Collect sessions count by states and waits
   server_query :=
@@ -469,6 +482,13 @@ BEGIN
           io                integer
       );
 
+  IF NOT (properties #>> '{properties,in_sample}')::boolean THEN
+    -- Reset lock_timeout setting to its initial value
+    PERFORM dblink('server_connection', 'COMMIT');
+    PERFORM dblink_disconnect('server_connection');
+    EXECUTE format('SET lock_timeout TO %L', properties #>> '{properties,lock_timeout_init}');
+  END IF;
+
   RETURN properties;
 END
 $$ LANGUAGE plpgsql;
@@ -503,7 +523,7 @@ SET search_path=@extschema@ AS $$
 DECLARE
     c_servers CURSOR FOR
       SELECT server_id,server_name FROM (
-        SELECT server_id,server_name, row_number() OVER () AS srv_rn
+        SELECT server_id,server_name, row_number() OVER (ORDER BY server_id) AS srv_rn
         FROM servers
         WHERE enabled
         ) AS t1
@@ -574,7 +594,7 @@ DECLARE
     SELECT
       pid,
       leader_pid,
-      state_change,
+      xact_start,
       query_start,
       query_id,
       query,
@@ -658,6 +678,79 @@ BEGIN
     WHERE (server_id, sample_id) = (sserver_id, s_id - 1)
     ;
 
+    /*
+    Hash function md5() is not working when the FIPS mode is
+    enabled. This can cause sampling falure in PG14+. SHA functions
+    however are unavailable before PostgreSQL 11. We'll use md5()
+    before PG11, and sha224 after PG11
+    */
+    IF current_setting('server_version_num')::integer < 110000 THEN
+      FOR qres IN c_statements
+      LOOP
+        INSERT INTO act_query (server_id, act_query_md5, act_query, last_sample_id)
+        VALUES (sserver_id, md5(qres.query), qres.query, NULL)
+        ON CONFLICT ON CONSTRAINT pk_act_query
+        DO UPDATE SET last_sample_id = NULL;
+
+        INSERT INTO sample_act_statement(
+          server_id,
+          sample_id,
+          pid,
+          leader_pid,
+          xact_start,
+          query_start,
+          query_id,
+          act_query_md5,
+          stmt_last_ts
+        ) VALUES (
+          sserver_id,
+          s_id,
+          qres.pid,
+          qres.leader_pid,
+          qres.xact_start,
+          qres.query_start,
+          qres.query_id,
+          md5(qres.query),
+          qres.subsample_ts
+        );
+      END LOOP;
+    ELSE
+      FOR qres IN c_statements
+      LOOP
+        INSERT INTO act_query (server_id, act_query_md5, act_query, last_sample_id)
+        VALUES (
+          sserver_id,
+          left(encode(sha224(convert_to(qres.query,'UTF8')), 'base64'), 32),
+          qres.query,
+          NULL
+        )
+        ON CONFLICT ON CONSTRAINT pk_act_query
+        DO UPDATE SET last_sample_id = NULL;
+
+        INSERT INTO sample_act_statement(
+          server_id,
+          sample_id,
+          pid,
+          leader_pid,
+          xact_start,
+          query_start,
+          query_id,
+          act_query_md5,
+          stmt_last_ts
+        ) VALUES (
+          sserver_id,
+          s_id,
+          qres.pid,
+          qres.leader_pid,
+          qres.xact_start,
+          qres.query_start,
+          qres.query_id,
+          left(encode(sha224(convert_to(qres.query,'UTF8')), 'base64'), 32),
+          qres.subsample_ts
+        );
+      END LOOP;
+    END IF;
+
     INSERT INTO sample_act_backend_state (
       server_id,
       sample_id,
@@ -669,7 +762,8 @@ BEGIN
       state_last_ts,
       xact_start,
       backend_xmin,
-      backend_xmin_age
+      backend_xmin_age,
+      query_start
     )
     WITH last_backend_state AS (
       SELECT server_id, sample_id, pid, state_change, max(subsample_ts) as subsample_ts
@@ -694,43 +788,14 @@ BEGIN
       subsample_ts AS state_last_ts,
       xact_start,
       backend_xmin,
-      backend_xmin_age
+      backend_xmin_age,
+      query_start
     FROM
       last_stat_activity
       JOIN last_backend_state
         USING (server_id, sample_id, pid, state_change, subsample_ts)
     WHERE (server_id, sample_id) = (sserver_id, s_id - 1)
     ;
-
-    FOR qres IN c_statements
-    LOOP
-      INSERT INTO act_query (server_id, act_query_md5, act_query, last_sample_id)
-      VALUES (sserver_id, md5(qres.query), qres.query, NULL)
-      ON CONFLICT ON CONSTRAINT pk_act_query
-      DO UPDATE SET last_sample_id = NULL;
-
-      INSERT INTO sample_act_statement(
-        server_id,
-        sample_id,
-        pid,
-        leader_pid,
-        state_change,
-        query_start,
-        query_id,
-        act_query_md5,
-        stmt_last_ts
-      ) VALUES (
-        sserver_id,
-        s_id,
-        qres.pid,
-        qres.leader_pid,
-        qres.state_change,
-        qres.query_start,
-        qres.query_id,
-        md5(qres.query),
-        qres.subsample_ts
-      );
-    END LOOP;
 
     -- Save session counters
     -- Insert new values of session attributes

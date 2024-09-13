@@ -1,7 +1,7 @@
 /* ========= Internal functions ========= */
 
 CREATE FUNCTION get_connstr(IN sserver_id integer, INOUT properties jsonb)
-SET search_path=@extschema@ SET lock_timeout=300000 AS $$
+SET search_path=@extschema@ AS $$
 DECLARE
     server_connstr    text = NULL;
     server_host       text = NULL;
