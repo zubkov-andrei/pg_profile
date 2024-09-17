@@ -36,8 +36,8 @@ function main() {
     /** Add copy feature */
     Copier.init();
 
-    /** Add navigator feature */
-    ReportNavigator.init();
+    /** Add menu feature */
+    Menu.init();
 }
 
 main();

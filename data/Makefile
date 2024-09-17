@@ -8,7 +8,7 @@ includes = \
 	static/js/chart.js \
 	static/js/generate.js \
 	static/js/highlight.js \
-	static/js/navigator.js \
+	static/js/menu.js \
 	static/js/preview.js \
 	static/js/copier.js \
 	static/js/main.js \
@@ -20,7 +20,7 @@ report_templates.sql: $(data_files) $(includes)
 	static/js/chart.js \
 	static/js/generate.js \
 	static/js/highlight.js \
-	static/js/navigator.js \
+	static/js/menu.js \
 	static/js/preview.js \
 	static/js/copier.js \
 	static/js/main.js \

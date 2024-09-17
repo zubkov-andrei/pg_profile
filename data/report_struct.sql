@@ -1,10 +1,10 @@
 /* === report_struct table data === */
 -- Regular report
 INSERT INTO report_struct (
-  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name, href,
+  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name,
   content, sect_struct)
 VALUES
-(1, 'rep_details', NULL, 10, 'Report details', 'Report details', NULL, NULL, 'rep_details', NULL,
+(1, 'rep_details', NULL, 10, 'Report details', 'Report details', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "properties",'
@@ -21,7 +21,7 @@ VALUES
         ']}'
     ']}'
   ']'::jsonb),
-(1, 'rep_settings', NULL, 11, NULL, NULL, NULL, NULL, 'rep_settings', NULL,
+(1, 'rep_settings', NULL, 11, NULL, NULL, NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "settings",'
@@ -32,7 +32,7 @@ VALUES
       '{"caption": "Value", "id": "reset_val", "class": "table_obj_value"}'
     ']'
   '}]'::jsonb),
-(1, 'stmt_cmt1', NULL, 100, NULL, NULL, 'stmt_cnt_range', NULL, NULL,
+(1, 'stmt_cmt1', NULL, 100, NULL, NULL, 'stmt_cnt_range', NULL,
   '{"class": "warning", "text": "This interval contains sample(s) with captured statements count more than 90% of pg_stat_statements.max parameter. '
   'Consider increasing pg_stat_statements.max parameter"}',
   '[{'
@@ -45,15 +45,15 @@ VALUES
       '{"id": "stmt_cnt", "class": "table_obj_value", "caption": "Stmts Captured"}, '
       '{"id": "max_cnt", "class": "table_obj_value", "caption": "pg_stat_statements.max"}'
   ']}]'::jsonb),
-(1, 'srvstat', NULL, 200, 'Server statistics', 'Server statistics', NULL, NULL, 'cl_stat', NULL, NULL),
-(1, 'actsesshdr', NULL, 250, 'Session states', 'Session states observed by subsamples', 'act_backend', NULL, 'stat_act',
+(1, 'srvstat', NULL, 200, 'Server statistics', 'Server statistics', NULL, NULL, NULL, NULL),
+(1, 'actsesshdr', NULL, 250, 'Session states', 'Session states observed by subsamples', 'act_backend', NULL,
   '{"class": "notice", "text": "Statistics about session states exceeding capturing thresholds."}', NULL),
-(1, 'sqlsthdr', NULL, 300, 'SQL query statistics', 'SQL query statistics', 'statstatements', NULL, 'sql_stat', NULL, NULL),
-(1, 'objects', NULL, 400, 'Schema object statistics', 'Schema object statistics', NULL, NULL, 'schema_stat', NULL, NULL),
-(1, 'funchdr', NULL, 500, 'User function statistics', 'User function statistics', 'function_stats', NULL, 'func_stat', NULL, NULL),
-(1, 'vachdr', NULL, 600, 'Vacuum-related statistics', 'Vacuum-related statistics', NULL, NULL, 'vacuum_stats', NULL, NULL),
-(1, 'settings', NULL, 700, 'Cluster settings during the report interval', 'Cluster settings during the report interval', NULL, NULL, 'pg_settings', NULL, NULL),
-(1, 'stmt_warn', NULL, 800, NULL, 'Warning!', 'stmt_cnt_all', NULL, 'stmt_warn', NULL,
+(1, 'sqlsthdr', NULL, 300, 'SQL query statistics', 'SQL query statistics', 'statstatements', NULL, NULL, NULL),
+(1, 'objects', NULL, 400, 'Schema object statistics', 'Schema object statistics', NULL, NULL, NULL, NULL),
+(1, 'funchdr', NULL, 500, 'User function statistics', 'User function statistics', 'function_stats', NULL, NULL, NULL),
+(1, 'vachdr', NULL, 600, 'Vacuum-related statistics', 'Vacuum-related statistics', NULL, NULL, NULL, NULL),
+(1, 'settings', NULL, 700, 'Cluster settings during the report interval', 'Cluster settings during the report interval', NULL, NULL, NULL, NULL),
+(1, 'stmt_warn', NULL, 800, NULL, 'Warning!', 'stmt_cnt_all', NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "stmt_cnt_all",'
@@ -68,11 +68,11 @@ VALUES
 
 -- Server section of regular report
 INSERT INTO report_struct (
-  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name, href,
+  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name,
   content, sect_struct)
 VALUES
-(1, 'dbstat', 'srvstat', 100, 'Database statistics', 'Database statistics', NULL, NULL, 'db_stat', NULL, NULL),
-(1, 'dbstatreset', 'dbstat', 200, NULL, NULL, 'dbstats_reset', NULL, NULL,
+(1, 'dbstat', 'srvstat', 100, 'Database statistics', 'Database statistics', NULL, NULL, NULL, NULL),
+(1, 'dbstatreset', 'dbstat', 200, NULL, NULL, 'dbstats_reset', NULL,
   '{"class": "warning", "text": "Database statistics reset detected during report interval! Statistics for listed databases and contained objects might be affected"}',
   '[{'
     '"type": "row_table",'
@@ -84,7 +84,7 @@ VALUES
       '{"caption": "Reset time", "id": "stats_reset", "class": "table_obj_value"}'
     ']'
   '}]'::jsonb),
-(1, 'dbstatmain', 'dbstat', 300, NULL, NULL, NULL, NULL, NULL, NULL,
+(1, 'dbstatmain', 'dbstat', 300, NULL, NULL, NULL, NULL, NULL,
 '[{'
     '"type": "row_table",'
     '"source": "dbstat",'
@@ -146,8 +146,8 @@ VALUES
        '"title": "Database size increment during report interval"}'
     ']'
   '}]'::jsonb),
-(1, 'iostat', 'srvstat', 328, 'Cluster I/O statistics', 'Cluster I/O statistics', 'stat_io', NULL, 'stat_io', NULL, NULL),
-(1, 'iostatrst', 'srvstat', 329, NULL, NULL, 'stat_io_reset', NULL, 'stat_io_reset',
+(1, 'iostat', 'srvstat', 328, 'Cluster I/O statistics', 'Cluster I/O statistics', 'stat_io', NULL, NULL, NULL),
+(1, 'iostatrst', 'srvstat', 329, NULL, NULL, 'stat_io_reset', NULL,
   '{"class": "warning", "text": "IO stats reset was detected during report interval. Statistic values may be affected"}',
   '[{'
     '"type": "row_table",'
@@ -165,7 +165,7 @@ VALUES
         '"title": "Date and time of the last reset performed in sample"}'
     ']'
     '}]'::jsonb),
-(1, 'iostatmain', 'srvstat', 330, NULL, NULL, 'stat_io', NULL, 'stat_io', NULL,
+(1, 'iostatmain', 'srvstat', 330, NULL, NULL, 'stat_io', NULL, NULL,
 '[{'
     '"type": "row_table",'
     '"source": "stat_io",'
@@ -227,8 +227,8 @@ VALUES
      ']}'
     ']'
     '}]'::jsonb),
-(1, 'slrustat', 'srvstat', 358, 'Cluster SLRU statistics', 'Cluster SLRU statistics', 'stat_slru', NULL, 'stat_slru', NULL, NULL),
-(1, 'slrustatrst', 'slrustat', 359, NULL, NULL, 'stat_slru_reset', NULL, 'stat_slru_reset',
+(1, 'slrustat', 'srvstat', 358, 'Cluster SLRU statistics', 'Cluster SLRU statistics', 'stat_slru', NULL, NULL, NULL),
+(1, 'slrustatrst', 'slrustat', 359, NULL, NULL, 'stat_slru_reset', NULL,
     '{"class": "warning", "text": "SLRU stats reset was detected during report interval. Statistic values may be affected"}',
     '[{'
     '"type": "row_table",'
@@ -242,7 +242,7 @@ VALUES
         '"title": "Date and time of the last reset performed in sample"}'
     ']'
     '}]'::jsonb),
-(1, 'slrustatmain', 'slrustat', 360, NULL, NULL, 'stat_slru', NULL, 'stat_slru', NULL,
+(1, 'slrustatmain', 'slrustat', 360, NULL, NULL, 'stat_slru', NULL, NULL,
 '[{'
     '"type": "row_table",'
     '"source": "stat_slru",'
@@ -269,7 +269,7 @@ VALUES
         '"title": "Number of truncates for this SLRU"}'
     ']'
     '}]'::jsonb),
-(1, 'sesstat', 'srvstat', 400, 'Session statistics by database', 'Session statistics by database', 'sess_stats', NULL, 'db_stat_sessions', NULL,
+(1, 'sesstat', 'srvstat', 400, 'Session statistics by database', 'Session statistics by database', 'sess_stats', NULL, NULL,
 '[{'
     '"type": "row_table",'
     '"source": "dbstat",'
@@ -299,7 +299,7 @@ VALUES
      ']}'
     ']'
     '}]'::jsonb),
-(1, 'stmtstat', 'srvstat', 500, 'Statement statistics by database', 'Statement statistics by database', 'statstatements', NULL, 'st_stat', NULL,
+(1, 'stmtstat', 'srvstat', 500, 'Statement statistics by database', 'Statement statistics by database', 'statstatements', NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "statements_dbstats",'
@@ -313,8 +313,8 @@ VALUES
         '{"caption": "Time (s)", "columns": ['
             '{"id": "total_plan_time", "class": "table_obj_value", "title": "Time spent planning queries", "caption": "Plan", "condition": "planning_times"}, '
             '{"id": "total_exec_time", "class": "table_obj_value", "title": "Time spent executing queries", "caption": "Exec"}, '
-            '{"id": "blk_read_time", "class": "table_obj_value", "title": "Time spent reading blocks", "caption": "Read"}, '
-            '{"id": "blk_write_time", "class": "table_obj_value", "title": "Time spent writing blocks", "caption": "Write"}, '
+            '{"id": "shared_blk_read_time", "class": "table_obj_value", "title": "Time spent reading blocks", "caption": "Read"}, '
+            '{"id": "shared_blk_write_time", "class": "table_obj_value", "title": "Time spent writing blocks", "caption": "Write"}, '
             '{"id": "trg_fn_total_time", "class": "table_obj_value", "title": "Time spent in trigger functions", "caption": "Trg"}'
             ']}, '
         '{"caption": "Temp I/O Time", "condition": "statements_temp_io_times", "columns": ['
@@ -340,7 +340,29 @@ VALUES
         '{"id": "statements", "class": "table_obj_value", "caption": "Statements"}, '
         '{"id": "wal_bytes_fmt", "class": "table_obj_value", "caption": "WAL size", "condition": "statement_wal_bytes"}'
     ']}]'::jsonb),
-(1, 'dbjitstat', 'srvstat', 550, 'JIT statistics by database', 'JIT statistics by database', 'statements_jit_stats', NULL, 'dbagg_jit_stat', NULL,
+(1, 'stmtminmax', 'srvstat', 520, 'Statement average min/max timings', 'Statement average min/max timings', 'mean_mm_times', NULL, NULL,
+  '[{'
+    '"type": "row_table", '
+    '"source": "statements_dbstats",'
+    '"ordering": "ord_db",'
+    '"highlight": ['
+      '{"id": "dbname", "index": 0}'
+    '],'
+    '"columns": ['
+      '{"id": "dbname", "class": "table_obj_name", "caption": "Database"}, '
+      '{"caption": "Average planning times (ms)", "condition": "planning_times", "columns": ['
+          '{"id": "mean_min_plan_time", "class": "table_obj_value", "title": "The average value of min_plan_time for all statements", "caption": "Min (ms.)"}, '
+          '{"id": "mean_max_plan_time", "class": "table_obj_value", "title": "The average value of max_plan_time for all statements", "caption": "Max (ms.)"}, '
+          '{"id": "min_max_plan_delta", "class": "table_obj_value", "title": "Mean max planning time to mean min planning time delta as a percentage of mean min planning time", "caption": "Delta%"} '
+      ']}, '
+      '{"caption": "Average execution times (ms)", "columns": ['
+          '{"id": "mean_min_exec_time", "class": "table_obj_value", "title": "The average value of min_exec_time for all statements", "caption": "Min (ms.)"}, '
+          '{"id": "mean_max_exec_time", "class": "table_obj_value", "title": "The average value of max_exec_time for all statements", "caption": "Max (ms.)"}, '
+          '{"id": "min_max_exec_delta", "class": "table_obj_value", "title": "Mean max exec time to mean min exec time delta as a percentage of mean min exec time", "caption": "Delta%"} '
+      ']}, '
+      '{"id": "statements", "class": "table_obj_value", "caption": "Statements"} '
+    ']}]'::jsonb),
+(1, 'dbjitstat', 'srvstat', 550, 'JIT statistics by database', 'JIT statistics by database', 'statements_jit_stats', NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "statements_dbstats",'
@@ -356,27 +378,29 @@ VALUES
           '{"id": "total_exec_time", "class": "table_obj_value", "title": "Time spent executing queries", "caption": "Exec"}'
           ']}, '
       '{"caption": "Generation", "columns": ['
-          '{"id": "jit_functions", "class": "table_obj_value", "caption": "Count"}, '
-          '{"id": "jit_generation_time", "class": "table_obj_value", "caption": "Gen. time"}'
+          '{"id": "jit_functions", "class": "table_obj_value", "title": "Total number of functions JIT-compiled by the statements", "caption": "Count"}, '
+          '{"id": "jit_generation_time", "class": "table_obj_value", "title": "Time spent by the statements on generating JIT code", "caption": "Time"}'
           ']}, '
       '{"caption": "Inlining", "columns": ['
-          '{"id": "jit_inlining_count", "class": "table_obj_value", "caption": "Count"}, '
-          '{"id": "jit_inlining_time", "class": "table_obj_value", "caption": "Time"}'
+          '{"id": "jit_inlining_count", "class": "table_obj_value", "title": "Number of times functions have been inlined", "caption": "Count"}, '
+          '{"id": "jit_inlining_time", "class": "table_obj_value", "title": "Time spent by statements on inlining functions", "caption": "Time"}'
           ']}, '
       '{"caption": "Optimization", "columns": ['
-          '{"id": "jit_optimization_count", "class": "table_obj_value", "caption": "Count"}, '
-          '{"id": "jit_optimization_time", "class": "table_obj_value", "caption": "Time"}'
+          '{"id": "jit_optimization_count", "class": "table_obj_value", "title": "Number of times statements hasbeen optimized", "caption": "Count"}, '
+          '{"id": "jit_optimization_time", "class": "table_obj_value", "title": "Time spent by statements on optimizing", "caption": "Time"}'
           ']}, '
       '{"caption": "Emission", "columns": ['
-          '{"id": "jit_emission_count", "class": "table_obj_value", "caption": "Count"}, '
-          '{"id": "jit_emission_time", "class": "table_obj_value", "caption": "Time"}'
+          '{"id": "jit_emission_count", "class": "table_obj_value", "title": "Number of times code has been emitted", "caption": "Count"}, '
+          '{"id": "jit_emission_time", "class": "table_obj_value", "title": "Time spent by the statement on emitting code", "caption": "Time"}'
+          ']}, '
+      '{"caption": "Deform", "condition": "statements_jit_deform", "columns": ['
+          '{"id": "jit_deform_count", "class": "table_obj_value", "caption": "Count", "title": "Number of tuple deform functions JIT-compiled by the statement of the database."}, '
+          '{"id": "jit_deform_time", "class": "table_obj_value", "caption": "Time", "title": "Total time spent by the statements of the databse on JIT-compiling tuple deform functions, in seconds."}'
           ']}'
       ']'
     '}]'::jsonb),
-(1, 'commonstat', 'srvstat', 600, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-(1, 'clusterstat', 'commonstat', 650, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-(1, 'clusthdr', 'clusterstat', 700, 'Cluster statistics', 'Cluster statistics', NULL, NULL, 'clu_stat', NULL, NULL),
-(1, 'clustrst', 'clusterstat', 800, NULL, NULL, 'cluster_stats_reset', NULL, NULL,
+(1, 'clusthdr', 'srvstat', 700, 'Cluster statistics', 'Cluster statistics', NULL, NULL, NULL, NULL),
+(1, 'clustrst', 'srvstat', 800, NULL, NULL, 'cluster_stats_reset', NULL,
   '{"class": "warning", "text": "Cluster statistics reset detected during report interval! Cluster statistics might be affected"}',
   '[{'
     '"type": "row_table",'
@@ -384,10 +408,11 @@ VALUES
     '"columns": ['
         '{"id": "sample_id", "class": "table_obj_value", "caption": "Sample"}, '
         '{"id": "bgwriter_stats_reset", "class": "table_obj_value", "caption": "BGWriter reset time"}, '
+        '{"id": "checkpoint_stats_reset", "class": "table_obj_value", "caption": "Checkpointer reset time"}, '
         '{"id": "archiver_stats_reset", "class": "table_obj_value", "caption": "Archiver reset time"}'
         ']'
     '}]'::jsonb),
-(1, 'clust', 'clusterstat', 900, NULL, NULL, NULL, NULL, NULL, NULL,
+(1, 'clust', 'srvstat', 900, NULL, NULL, NULL, NULL, NULL,
   '[{'
     '"type": "column_table", '
     '"source": "cluster_stats",'
@@ -414,10 +439,10 @@ VALUES
         '{"caption": "Background buffers written", "cells": ['
             '{"id": "buffers_clean", "class": "table_obj_value"}'
         ']}, '
-        '{"caption": "Backend buffers written", "cells": ['
+        '{"caption": "Backend buffers written", "condition": "buffers_backend", "cells": ['
             '{"id": "buffers_backend", "class": "table_obj_value"}'
         ']}, '
-        '{"caption": "Backend fsync count", "cells": ['
+        '{"caption": "Backend fsync count", "condition": "buffers_backend", "cells": ['
             '{"id": "buffers_backend_fsync", "class": "table_obj_value"}'
         ']}, '
         '{"caption": "Bgwriter interrupts (too many buffers)", "cells": ['
@@ -443,9 +468,8 @@ VALUES
         ']}'
     ']'
   '}]'::jsonb),
-(1, 'walstat', 'commonstat', 950, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-(1, 'walsthdr', 'walstat', 1000, 'WAL statistics', 'WAL statistics', 'wal_stats', NULL, 'wal_stat', NULL, NULL),
-(1, 'walstrst', 'walstat', 1100, NULL, NULL, 'wal_stats_reset', NULL, NULL,
+(1, 'walsthdr', 'srvstat', 1000, 'WAL statistics', 'WAL statistics', 'wal_stats', NULL, NULL, NULL),
+(1, 'walstrst', 'srvstat', 1100, NULL, NULL, 'wal_stats_reset', NULL,
   '{"class": "warning", "text": "WAL statistics reset detected during report interval! WAL statistics might be affected"}',
   '[{'
     '"type": "row_table",'
@@ -454,7 +478,7 @@ VALUES
         '{"id": "sample_id", "class": "table_obj_value", "caption": "Sample"},'
         '{"id": "wal_stats_reset", "class": "table_obj_value", "caption": "WAL stats reset time"}'
     ']}]'::jsonb),
-(1, 'walst', 'walstat', 1200, NULL, NULL, 'wal_stats', NULL, NULL, NULL,
+(1, 'walst', 'srvstat', 1200, NULL, NULL, 'wal_stats', NULL, NULL,
   '[{'
     '"type": "column_table",'
     '"source": "wal_stats",'
@@ -504,7 +528,7 @@ VALUES
         ']}'
     ']'
   '}]'::jsonb),
-(1, 'tbspst', 'srvstat', 1400, 'Tablespace statistics', 'Tablespace statistics', NULL, NULL, 'tablespace_stat', NULL,
+(1, 'tbspst', 'srvstat', 1400, 'Tablespace statistics', 'Tablespace statistics', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "tablespace_stats",'
@@ -518,8 +542,8 @@ VALUES
       '"title": "Tablespace size increment during report interval"}'
     ']'
   '}]'::jsonb),
-(1, 'wait_sampling_srvstats', 'srvstat', 1500, 'Wait sampling', 'Wait sampling', 'wait_sampling_tot', NULL, 'wait_sampling', NULL, NULL),
-(1, 'wait_sampling_total', 'wait_sampling_srvstats', 100, 'Wait events types', 'Wait events types', 'wait_sampling_tot', NULL, 'wait_sampling_total', NULL,
+(1, 'wait_sampling_srvstats', 'srvstat', 1500, 'Wait sampling', 'Wait sampling', 'wait_sampling_tot', NULL, NULL, NULL),
+(1, 'wait_sampling_total', 'wait_sampling_srvstats', 100, 'Wait events types', 'Wait events types', 'wait_sampling_tot', NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "wait_sampling_total_stats",'
@@ -531,7 +555,7 @@ VALUES
       '{"id": "tot_waited", "class": "table_obj_value", "title": "Time, waited in events of wait event type by all backends (including background activity) in seconds", "caption": "All Waited (s)"}, '
       '{"id": "tot_waited_pct", "class": "table_obj_value", "title": "Time, waited in events of wait event type as a percentage of total time waited in a cluster by all backends (including background activity)", "caption": "%Total"}'
     ']}]'::jsonb),
-(1, 'wait_sampling_statements', 'wait_sampling_srvstats', 200, 'Top wait events (statements)', 'Top wait events (statements)', 'wait_sampling_tot', NULL, 'wt_smp_stmt',
+(1, 'wait_sampling_statements', 'wait_sampling_srvstats', 200, 'Top wait events (statements)', 'Top wait events (statements)', 'wait_sampling_tot', NULL,
  '{"class": "notice", "text": "Top wait events detected in statements execution"}',
   '[{'
     '"type": "row_table", '
@@ -545,7 +569,7 @@ VALUES
       '{"id": "stmt_waited", "class": "table_obj_value", "title": "Time, waited in event executing statements in seconds", "caption": "Waited (s)"}, '
       '{"id": "stmt_waited_pct", "class": "table_obj_value", "title": "Time, waited in event as a percentage of total time waited in a cluster executing statements", "caption": "%Total"}'
   ']}]'::jsonb),
-(1, 'wait_sampling_all', 'wait_sampling_srvstats', 300, 'Top wait events (All)', 'Top wait events (All)', 'wait_sampling_tot', NULL, 'wt_smp_all',
+(1, 'wait_sampling_all', 'wait_sampling_srvstats', 300, 'Top wait events (All)', 'Top wait events (All)', 'wait_sampling_tot', NULL,
  '{"class": "notice", "text": "Top wait events detected in all backends"}',
   '[{'
     '"type": "row_table", '
@@ -563,10 +587,17 @@ VALUES
 
 -- Subsamples-based section of regular reports
 INSERT INTO report_struct (
-  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name, href,
+  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name,
   content, sect_struct)
 VALUES
-(1, 'db_activity_agg', 'actsesshdr', 100, 'Session state statistics by database', 'Session state statistics by database', 'act_backend', NULL, 'db_activity_agg',
+(1, 'act_chart', 'actsesshdr', 50, 'Chart with session state', 'Chart with session state', 'act_backend', NULL,
+  NULL,
+'[{'
+    '"type": "chart",'
+    '"source": "act_top_states",'
+    '"class": "act_chart"'
+    '}]'::jsonb),
+(1, 'db_activity_agg', 'actsesshdr', 100, 'Session state statistics by database', 'Session state statistics by database', 'act_backend', NULL,
   NULL,
 '[{'
     '"type": "row_table",'
@@ -597,7 +628,7 @@ VALUES
      ']}'
     ']'
     '}]'::jsonb),
-(1, 'act_ix', 'actsesshdr', 200, 'Top ''idle in transaction'' states', 'Top ''idle in transaction'' session states by duration', 'act_ix', NULL, 'act_ix',
+(1, 'act_ix', 'actsesshdr', 200, 'Top ''idle in transaction'' states', 'Top ''idle in transaction'' session states by duration', 'act_ix', NULL,
   NULL,
 '[{'
     '"type": "row_table",'
@@ -610,6 +641,9 @@ VALUES
     '],'
     '"preview": ['
       '{"id": "act_query_md5", "dataset": "act_queries"}'
+    '],'
+    '"scroll": ['
+      '"pid", "xact_start_ut", "state_change_ut"'
     '],'
     '"filter": {"type": "equal", "field": "flt_state_code", "value": 1},'
     '"columns": ['
@@ -624,7 +658,7 @@ VALUES
       '{"caption": "State change", "id": "state_change_format", "class": "table_obj_value"},'
       '{"caption": "State duration", "id": "state_duration_format", "class": "table_obj_value"}'
     ']}]'::jsonb),
-(1, 'act_ixa', 'actsesshdr', 300, 'Top ''idle in transaction (aborted)'' states', 'Top ''idle in transaction (aborted)'' session states by duration', 'act_ixa', NULL, 'act_ixa',
+(1, 'act_ixa', 'actsesshdr', 300, 'Top ''idle in transaction (aborted)'' states', 'Top ''idle in transaction (aborted)'' session states by duration', 'act_ixa', NULL,
   NULL,
 '[{'
     '"type": "row_table",'
@@ -637,6 +671,9 @@ VALUES
     '],'
     '"preview": ['
       '{"id": "act_query_md5", "dataset": "act_queries"}'
+    '],'
+    '"scroll": ['
+      '"pid", "xact_start_ut", "state_change_ut"'
     '],'
     '"filter": {"type": "equal", "field": "flt_state_code", "value": 2},'
     '"columns": ['
@@ -650,7 +687,7 @@ VALUES
       '{"caption": "State change", "id": "state_change_format", "class": "table_obj_value"},'
       '{"caption": "State duration", "id": "state_duration_format", "class": "table_obj_value"}'
     ']}]'::jsonb),
-(1, 'act_active', 'actsesshdr', 400, 'Top ''active'' states', 'Top ''active'' session states by duration', 'act_active', NULL, 'act_active',
+(1, 'act_active', 'actsesshdr', 400, 'Top ''active'' states', 'Top ''active'' session states by duration', 'act_active', NULL,
   NULL,
 '[{'
     '"type": "row_table",'
@@ -663,6 +700,9 @@ VALUES
     '],'
     '"preview": ['
       '{"id": "act_query_md5", "dataset": "act_queries"}'
+    '],'
+    '"scroll": ['
+      '"pid", "xact_start_ut", "state_change_ut"'
     '],'
     '"filter": {"type": "equal", "field": "flt_state_code", "value": 3},'
     '"columns": ['
@@ -677,7 +717,7 @@ VALUES
       '{"caption": "State change", "id": "state_change_format", "class": "table_obj_value"},'
       '{"caption": "State duration", "id": "state_duration_format", "class": "table_obj_value"}'
     ']}]'::jsonb),
-(1, 'act_age', 'actsesshdr', 500, 'Top states by transaction age', 'Top states by transaction age', 'act_backend', NULL, 'act_age',
+(1, 'act_age', 'actsesshdr', 500, 'Top states by transaction age', 'Top states by transaction age', 'act_backend', NULL,
   NULL,
 '[{'
     '"type": "row_table",'
@@ -690,6 +730,9 @@ VALUES
     '],'
     '"preview": ['
       '{"id": "act_query_md5", "dataset": "act_queries"}'
+    '],'
+    '"scroll": ['
+      '"pid", "xact_start_ut", "state_change_ut"'
     '],'
     '"filter": {"type": "equal", "field": "flt_age", "value": true},'
     '"columns": ['
@@ -708,7 +751,7 @@ VALUES
       '{"caption": "State change", "id": "state_change_format", "class": "table_obj_value"},'
       '{"caption": "State duration", "id": "state_duration_format", "class": "table_obj_value"}'
     ']}]'::jsonb),
-(1, 'act_xact_dur', 'actsesshdr', 600, 'Top states by transaction duration', 'Top states by transaction duration', 'act_backend', NULL, 'act_age_dur',
+(1, 'act_xact_dur', 'actsesshdr', 600, 'Top states by transaction duration', 'Top states by transaction duration', 'act_backend', NULL,
   NULL,
 '[{'
     '"type": "row_table",'
@@ -721,6 +764,9 @@ VALUES
     '],'
     '"preview": ['
       '{"id": "act_query_md5", "dataset": "act_queries"}'
+    '],'
+    '"scroll": ['
+      '"pid", "xact_start_ut", "state_change_ut"'
     '],'
     '"filter": {"type": "equal", "field": "flt_age", "value": true},'
     '"columns": ['
@@ -743,10 +789,10 @@ VALUES
 
 -- Query section of regular report
 INSERT INTO report_struct (
-  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name, href,
+  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name,
   content, sect_struct)
 VALUES
-(1, 'sqlela_t', 'sqlsthdr', 100, 'Top SQL by elapsed time', 'Top SQL by elapsed time', 'planning_times', NULL, 'top_ela', NULL,
+(1, 'sqlela_t', 'sqlsthdr', 100, 'Top SQL by elapsed time', 'Top SQL by elapsed time', 'planning_times', NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -774,18 +820,19 @@ VALUES
         ']}, '
       '{"id": "jit_total_time", "class": "jitTimeCell", "caption": "JIT, time (s)", "condition": "statements_jit_stats"}, '
       '{"class": "table_obj_name", "caption": "I/O time (s)", "condition": "io_times", "columns": ['
-        '{"id": "blk_read_time", "class": "table_obj_value", "title": "Time spent reading blocks by statement", "caption": "Read"}, '
-        '{"id": "blk_write_time", "class": "table_obj_value", "title": "Time spent writing blocks by statement", "caption": "Write"}'
+        '{"id": "shared_blk_read_time", "class": "table_obj_value", "title": "Time spent reading blocks by statement", "caption": "Read"}, '
+        '{"id": "shared_blk_write_time", "class": "table_obj_value", "title": "Time spent writing blocks by statement", "caption": "Write"}'
         ']}, '
       '{"class": "table_obj_name", "caption": "CPU time (s)", "condition": "kcachestatements", "columns": ['
         '{"id": "user_time", "class": "table_obj_value", "caption": "Usr"}, '
         '{"id": "system_time", "class": "table_obj_value", "caption": "Sys"}'
         ']}, '
       '{"id": "plans", "class": "table_obj_value", "caption": "Plans", "title": "Number of times the statement was planned"}, '
-      '{"id": "calls", "class": "table_obj_value", "caption": "Executions", "title": "Number of times the statement was executed"} '
+      '{"id": "calls", "class": "table_obj_value", "caption": "Executions", "title": "Number of times the statement was executed"}, '
+      '{"id": "stmt_cover", "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']'
   '}]'::jsonb),
-(1, 'sqlplan_t', 'sqlsthdr', 200, 'Top SQL by planning time', 'Top SQL by planning time', 'planning_times', NULL, 'top_plan', NULL,
+(1, 'sqlplan_t', 'sqlsthdr', 200, 'Top SQL by planning time', 'Top SQL by planning time', 'planning_times', NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -814,10 +861,11 @@ VALUES
         '{"id": "stddev_plan_time", "class": "table_obj_value", "caption": "StdErr"}'
       ']}, '
       '{"id": "plans", "class": "table_obj_value", "title": "Number of times the statement was planned", "caption": "Plans"}, '
-      '{"id": "calls", "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}'
+      '{"id": "calls", "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}, '
+      '{"id": "stmt_cover", "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
       ']'
     '}]'::jsonb),
-(1, 'sqlexec_t', 'sqlsthdr', 300, 'Top SQL by execution time', 'Top SQL by execution time', NULL, NULL, 'top_exec', NULL,
+(1, 'sqlexec_t', 'sqlsthdr', 300, 'Top SQL by execution time', 'Top SQL by execution time', NULL, NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -842,8 +890,8 @@ VALUES
       '{"id": "total_exec_time_pct", "class": "table_obj_value", "title": "Exec time as a percentage of total cluster elapsed time", "caption": "%Total"}, '
       '{"id": "jit_total_time", "class": "jitTimeCell", "title": "Exec time as a percentage of statement elapsed time", "caption": "JIT time (s)", "condition": "statements_jit_stats"}, '
       '{"caption": "I/O time (s)", "condition": "io_times", "columns": ['
-        '{"id": "blk_read_time", "class": "table_obj_value", "caption": "Read"}, '
-        '{"id": "blk_write_time", "class": "table_obj_value", "caption": "Write"}'
+        '{"id": "shared_blk_read_time", "class": "table_obj_value", "caption": "Read"}, '
+        '{"id": "shared_blk_write_time", "class": "table_obj_value", "caption": "Write"}'
       ']}, '
       '{"caption": "CPU time (s)", "condition": "kcachestatements", "columns": ['
         '{"id": "user_time", "class": "table_obj_value", "caption": "Usr"}, '
@@ -856,10 +904,54 @@ VALUES
         '{"id": "max_exec_time", "class": "table_obj_value", "caption": "Max"}, '
         '{"id": "stddev_exec_time", "class": "table_obj_value", "caption": "StdErr"}'
       ']}, '
-      '{"id": "calls", "title": "Number of times the statement was executed", "caption": "Executions", "class": "table_obj_value"}'
+      '{"id": "calls", "title": "Number of times the statement was executed", "caption": "Executions", "class": "table_obj_value"}, '
+      '{"id": "stmt_cover", "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']'
   '}]'::jsonb),
-(1, 'sqlcalls', 'sqlsthdr', 400, 'Top SQL by executions', 'Top SQL by executions', NULL, NULL, 'top_calls', NULL,
+(1, 'sqlmeanexec_t', 'sqlsthdr', 350, 'Top SQL by mean time', 'Top SQL by mean execution time', NULL, NULL, NULL,
+  '[{'
+    '"type": "row_table", '
+    '"source": "top_statements",'
+    '"ordering": "ord_mean_exec_time",'
+    '"highlight": ['
+      '{"id": "hexqueryid", "index": 0},'
+      '{"id": "queryid", "index": 1},'
+      '{"id": "dbname", "index": 1},'
+      '{"id": "username", "index": 1}'
+    '],'
+    '"preview": ['
+      '{"id": "hexqueryid", "dataset": "queries"}'
+    '],'
+    '"filter": {"type": "exists", "field": "mean_exec_time"},'
+    '"limit": "topn",'
+    '"columns": ['
+      '{"id": "hexqueryid", "caption": "Query ID", "class": "mono queryId"}, '
+      '{"id": "dbname", "class": "table_obj_name", "caption": "Database"}, '
+      '{"id": "username", "class": "table_obj_name", "caption": "User"}, '
+      '{"title": "Execution time statistics", "caption": "Execution times (ms)", "columns": ['
+        '{"id": "mean_exec_time", "class": "table_obj_value", "caption": "Mean"}, '
+        '{"id": "min_exec_time", "class": "table_obj_value", "caption": "Min"}, '
+        '{"id": "max_exec_time", "class": "table_obj_value", "caption": "Max"}, '
+        '{"id": "stddev_exec_time", "class": "table_obj_value", "caption": "StdErr"}'
+      ']}, '
+      '{"id": "total_exec_time", "class": "table_obj_value", "title": "Time spent executing statement", "caption": "Exec (s)"}, '
+      '{"id": "exec_time_pct", "class": "table_obj_value", "title": "Exec time as a percentage of statement elapsed time", "caption": "%Elapsed", "condition": "planning_times"}, '
+      '{"id": "total_exec_time_pct", "class": "table_obj_value", "title": "Exec time as a percentage of total cluster elapsed time", "caption": "%Total"}, '
+      '{"id": "jit_total_time", "class": "jitTimeCell", "title": "Exec time as a percentage of statement elapsed time", "caption": "JIT time (s)", "condition": "statements_jit_stats"}, '
+      '{"caption": "I/O time (s)", "condition": "io_times", "columns": ['
+        '{"id": "shared_blk_read_time", "class": "table_obj_value", "caption": "Read"}, '
+        '{"id": "shared_blk_write_time", "class": "table_obj_value", "caption": "Write"}'
+      ']}, '
+      '{"caption": "CPU time (s)", "condition": "kcachestatements", "columns": ['
+        '{"id": "user_time", "class": "table_obj_value", "caption": "Usr"}, '
+        '{"id": "system_time", "class": "table_obj_value", "caption": "Sys"}'
+      ']}, '
+      '{"id": "rows", "class": "table_obj_value", "caption": "Rows"}, '
+      '{"id": "calls", "title": "Number of times the statement was executed", "caption": "Executions", "class": "table_obj_value"}, '
+      '{"id": "stmt_cover", "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
+    ']'
+  '}]'::jsonb),
+(1, 'sqlcalls', 'sqlsthdr', 400, 'Top SQL by executions', 'Top SQL by executions', NULL, NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -885,10 +977,11 @@ VALUES
       '{"id": "min_exec_time", "class": "table_obj_value", "caption": "Min(ms)"}, '
       '{"id": "max_exec_time", "class": "table_obj_value", "caption": "Max(ms)"}, '
       '{"id": "stddev_exec_time", "class": "table_obj_value", "caption": "StdErr(ms)"}, '
-      '{"id": "total_exec_time", "class": "table_obj_value", "title": "Time spent by the statement", "caption": "Elapsed(s)"}'
+      '{"id": "total_exec_time", "class": "table_obj_value", "title": "Time spent by the statement", "caption": "Elapsed(s)"},'
+      '{"id": "stmt_cover", "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']'
   '}]'::jsonb),
-(1, 'sqlio_t', 'sqlsthdr', 500, 'Top SQL by I/O wait time', 'Top SQL by I/O wait time', 'io_times', NULL, 'top_iowait', NULL,
+(1, 'sqlio_t', 'sqlsthdr', 500, 'Top SQL by I/O wait time', 'Top SQL by I/O wait time', 'io_times', NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -909,8 +1002,8 @@ VALUES
       '{"id": "dbname", "class": "table_obj_name", "caption": "Database"}, '
       '{"id": "username", "class": "table_obj_name", "caption": "User"}, '
       '{"id": "io_time", "class": "table_obj_value", "title": "Time spent by the statement reading and writing blocks", "caption": "IO(s)"}, '
-      '{"id": "blk_read_time", "class": "table_obj_value", "title": "Time spent by the statement reading blocks", "caption": "R(s)"}, '
-      '{"id": "blk_write_time", "class": "table_obj_value", "title": "Time spent by the statement writing blocks", "caption": "W(s)"}, '
+      '{"id": "shared_blk_read_time", "class": "table_obj_value", "title": "Time spent by the statement reading blocks", "caption": "R(s)"}, '
+      '{"id": "shared_blk_write_time", "class": "table_obj_value", "title": "Time spent by the statement writing blocks", "caption": "W(s)"}, '
       '{"id": "io_time_pct", "class": "table_obj_value", "title": "I/O time of this statement as a percentage of total I/O time for all statements in a cluster", "caption": "%Total"}, '
       '{"title": "Number of blocks read by the statement", "caption": "Reads", "columns": ['
         '{"id": "shared_blks_read", "title": "Number of shared blocks read by the statement", "caption": "Shr", "class": "table_obj_value"}, '
@@ -923,9 +1016,10 @@ VALUES
         '{"id": "temp_blks_written", "title": "Number of temp blocks written by the statement (usually used for operations like sorts and joins)", "caption": "Tmp", "class": "table_obj_value"}'
       ']}, '
       '{"id": "total_time", "class": "table_obj_value", "title": "Time spent by the statement", "caption": "Elapsed(s)"}, '
-      '{"id": "calls", "class": "table_obj_value", "title": "Number of blocks written by the statement", "caption": "Executions"}'
+      '{"id": "calls", "class": "table_obj_value", "title": "Number of blocks written by the statement", "caption": "Executions"}, '
+      '{"id": "stmt_cover", "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']}]'::jsonb),
-(1, 'sqlfetch', 'sqlsthdr', 600, 'Top SQL by shared blocks fetched', 'Top SQL by shared blocks fetched', NULL, NULL, 'top_pgs_fetched', NULL,
+(1, 'sqlfetch', 'sqlsthdr', 600, 'Top SQL by shared blocks fetched', 'Top SQL by shared blocks fetched', NULL, NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -950,9 +1044,10 @@ VALUES
       '{"id": "shared_hit_pct", "class": "table_obj_value", "title": "Shared blocks hits as a percentage of shared blocks fetched (read + hit)", "caption": "Hits(%)"}, '
       '{"id": "total_time", "class": "table_obj_value", "title": "Time spent by the statement", "caption": "Elapsed(s)"}, '
       '{"id": "rows", "class": "table_obj_value", "title": "Total number of rows retrieved or affected by the statement", "caption": "Rows"}, '
-      '{"id": "calls", "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}'
+      '{"id": "calls", "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}, '
+      '{"id": "stmt_cover", "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']}]'::jsonb),
-(1, 'sqlshrd', 'sqlsthdr', 700, 'Top SQL by shared blocks read', 'Top SQL by shared blocks read', NULL, NULL, 'top_shared_reads', NULL,
+(1, 'sqlshrd', 'sqlsthdr', 700, 'Top SQL by shared blocks read', 'Top SQL by shared blocks read', NULL, NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -977,9 +1072,10 @@ VALUES
       '{"id": "shared_hit_pct", "class": "table_obj_value", "title": "Shared blocks hits as a percentage of shared blocks fetched (read + hit)", "caption": "Hits(%)"}, '
       '{"id": "total_time", "class": "table_obj_value", "title": "Time spent by the statement", "caption": "Elapsed(s)"}, '
       '{"id": "rows", "class": "table_obj_value", "title": "Total number of rows retrieved or affected by the statement", "caption": "Rows"}, '
-      '{"id": "calls", "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}'
+      '{"id": "calls", "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}, '
+      '{"id": "stmt_cover", "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']}]'::jsonb),
-(1, 'sqlshdir', 'sqlsthdr', 800, 'Top SQL by shared blocks dirtied', 'Top SQL by shared blocks dirtied', NULL, NULL, 'top_shared_dirtied', NULL,
+(1, 'sqlshdir', 'sqlsthdr', 800, 'Top SQL by shared blocks dirtied', 'Top SQL by shared blocks dirtied', NULL, NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -1007,10 +1103,11 @@ VALUES
       '{"id": "wal_bytes_pct", "class": "table_obj_value", "title": "WAL bytes of this statement as a percentage of total WAL bytes generated by a cluster", "caption": "%Total", "condition": "statement_wal_bytes"}, '
       '{"id": "total_time", "class": "table_obj_value", "title": "Time spent by the statement", "caption": "Elapsed(s)"}, '
       '{"id": "rows", "class": "table_obj_value", "title": "Total number of rows retrieved or affected by the statement", "caption": "Rows"}, '
-      '{"id": "calls", "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}'
+      '{"id": "calls", "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}, '
+      '{"id": "stmt_cover", "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']'
   '}]'::jsonb),
-(1, 'sqlshwr', 'sqlsthdr', 900, 'Top SQL by shared blocks written', 'Top SQL by shared blocks written', NULL, NULL, 'top_shared_written', NULL,
+(1, 'sqlshwr', 'sqlsthdr', 900, 'Top SQL by shared blocks written', 'Top SQL by shared blocks written', NULL, NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -1036,10 +1133,11 @@ VALUES
       '{"id": "shared_hit_pct", "class": "table_obj_value", "title": "Shared blocks hits as a percentage of shared blocks fetched (read + hit)", "caption": "Hits(%)"}, '
       '{"id": "total_time", "class": "table_obj_value", "title": "Time spent by the statement", "caption": "Elapsed(s)"}, '
       '{"id": "rows", "class": "table_obj_value", "title": "Total number of rows retrieved or affected by the statement", "caption": "Rows"}, '
-      '{"id": "calls", "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}'
+      '{"id": "calls", "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}, '
+      '{"id": "stmt_cover", "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']'
   '}]'::jsonb),
-(1, 'sqlwalsz', 'sqlsthdr', 1000, 'Top SQL by WAL size', 'Top SQL by WAL size', 'statement_wal_bytes', NULL, 'top_wal_bytes', NULL,
+(1, 'sqlwalsz', 'sqlsthdr', 1000, 'Top SQL by WAL size', 'Top SQL by WAL size', 'statement_wal_bytes', NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -1063,10 +1161,11 @@ VALUES
       '{"id": "wal_bytes_pct", "class": "table_obj_value", "title": "WAL bytes of this statement as a percentage of total WAL bytes generated by a cluster", "caption": "%Total"}, '
       '{"id": "shared_blks_dirtied", "class": "table_obj_value", "title": "Total number of shared blocks dirtied by the statement", "caption": "Dirtied"}, '
       '{"id": "wal_fpi", "class": "table_obj_value", "title": "Total number of WAL full page images generated by the statement", "caption": "WAL FPI"}, '
-      '{"id": "wal_records", "class": "table_obj_value", "title": "Total number of WAL records generated by the statement", "caption": "WAL records"}'
+      '{"id": "wal_records", "class": "table_obj_value", "title": "Total number of WAL records generated by the statement", "caption": "WAL records"}, '
+      '{"id": "stmt_cover", "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']'
   '}]'::jsonb),
-(1, 'sqltmp', 'sqlsthdr', 1100, 'Top SQL by temp usage', 'Top SQL by temp usage', 'statements_top_temp', NULL, 'top_temp', NULL,
+(1, 'sqltmp', 'sqlsthdr', 1100, 'Top SQL by temp usage', 'Top SQL by temp usage', 'statements_top_temp', NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -1102,10 +1201,11 @@ VALUES
       ']}, '
       '{"id": "total_time", "class": "table_obj_value", "title": "Time spent by the statement", "caption": "Elapsed(s)"}, '
       '{"id": "rows", "class": "table_obj_value", "title": "Total number of rows retrieved or affected by the statement", "caption": "Rows"}, '
-      '{"id": "calls", "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}'
+      '{"id": "calls", "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}, '
+      '{"id": "stmt_cover", "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']'
   '}]'::jsonb),
-(1, 'sqltmpiotime', 'sqlsthdr', 1125, 'Top SQL by temp I/O time', 'Top SQL by temp I/O time', 'statements_temp_io_times', NULL, 'top_temp_io_time', NULL,
+(1, 'sqltmpiotime', 'sqlsthdr', 1125, 'Top SQL by temp I/O time', 'Top SQL by temp I/O time', 'statements_temp_io_times', NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -1138,10 +1238,11 @@ VALUES
       ']}, '
       '{"id": "total_time", "class": "table_obj_value", "title": "Time spent by the statement", "caption": "Elapsed(s)"}, '
       '{"id": "rows", "class": "table_obj_value", "title": "Total number of rows retrieved or affected by the statement", "caption": "Rows"}, '
-      '{"id": "calls", "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}'
+      '{"id": "calls", "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}, '
+      '{"id": "stmt_cover", "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']'
   '}]'::jsonb),
-(1, 'sqljit', 'sqlsthdr', 1150, 'Top SQL by JIT elapsed time', 'Top SQL by JIT elapsed time', 'statements_jit_stats', NULL, 'top_jit', NULL,
+(1, 'sqljit', 'sqlsthdr', 1150, 'Top SQL by JIT elapsed time', 'Top SQL by JIT elapsed time', 'statements_jit_stats', NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -1178,17 +1279,22 @@ VALUES
           '{"id": "jit_emission_count", "class": "table_obj_value", "title": "Number of times code has been emitted.", "caption": "Count"}, '
           '{"id": "jit_emission_time", "class": "table_obj_value", "title": "Total time spent by the statement on emitting code, in seconds.", "caption": "Time (s)"}'
         ']}, '
+        '{"class": "table_obj_name", "caption": "Deform", "condition": "statements_jit_deform", "columns": ['
+          '{"id": "jit_deform_count", "class": "table_obj_value", "title": "Number of tuple deform functions JIT-compiled by the statement.", "caption": "Count"}, '
+          '{"id": "jit_deform_time", "class": "table_obj_value", "title": "Total time spent by the statement on JIT-compiling tuple deform functions, in seconds.", "caption": "Time (s)"}'
+        ']}, '
         '{"class": "table_obj_name", "caption": "Time (s)", "columns": ['
           '{"id": "total_plan_time", "class": "table_obj_value", "title": "Time spent planning statement", "condition": "planning_times", "caption": "Plan"}, '
           '{"id": "total_exec_time", "class": "table_obj_value", "title": "Time spent executing statement", "caption": "Exec"}'
         ']}, '
         '{"class": "table_obj_name", "caption": "I/O time (s)", "condition": "io_times", "columns": ['
-          '{"id": "blk_read_time", "class": "table_obj_value", "title": "Time spent reading blocks by statement", "caption": "Read"}, '
-          '{"id": "blk_write_time", "class": "table_obj_value", "title": "Time spent writing blocks by statement", "caption": "Write"}'
+          '{"id": "shared_blk_read_time", "class": "table_obj_value", "title": "Time spent reading blocks by statement", "caption": "Read"}, '
+          '{"id": "shared_blk_write_time", "class": "table_obj_value", "title": "Time spent writing blocks by statement", "caption": "Write"}, '
+      '{"id": "stmt_cover", "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
         ']}'
     ']}]'::jsonb),
-(1, 'sqlkcachehdr', 'sqlsthdr', 1200, 'rusage statistics', 'rusage statistics', 'kcachestatements', NULL, 'kcache_stat', NULL, NULL),
-(1, 'sqlrusgcpu_t', 'sqlkcachehdr', 100, 'Top SQL by system and user time', 'Top SQL by system and user time', NULL, NULL, 'kcache_time', NULL,
+(1, 'sqlkcachehdr', 'sqlsthdr', 1200, 'Rusage statistics', 'Rusage statistics', 'kcachestatements', NULL, NULL, NULL),
+(1, 'sqlrusgcpu_t', 'sqlkcachehdr', 100, 'Top SQL by system and user time', 'Top SQL by system and user time', NULL, NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_rusage_statements",'
@@ -1220,7 +1326,7 @@ VALUES
         ']}'
       ']'
     '}]'::jsonb),
-(1, 'sqlrusgio', 'sqlkcachehdr', 200, 'Top SQL by reads/writes done by filesystem layer', 'Top SQL by reads/writes done by filesystem layer', NULL, NULL, 'kcache_reads_writes', NULL,
+(1, 'sqlrusgio', 'sqlkcachehdr', 200, 'Top SQL by reads/writes done by filesystem layer', 'Top SQL by reads/writes done by filesystem layer', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_rusage_statements",'
@@ -1252,7 +1358,7 @@ VALUES
       ']}'
     ']'
   '}]'::jsonb),
-(1, 'sqllist', 'sqlsthdr', 1300, 'Complete list of SQL texts', 'Complete list of SQL texts', NULL, NULL, 'sql_list', NULL,
+(1, 'sqllist', 'sqlsthdr', 1300, 'Complete list of SQL texts', 'Complete list of SQL texts', NULL, NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "queries",'
@@ -1268,10 +1374,10 @@ VALUES
 
 -- Schema objects section of a regular report
 INSERT INTO report_struct (
-  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name, href,
+  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name,
   content, sect_struct)
 VALUES
-(1, 'tblscan', 'objects', 100, 'Top tables by estimated sequentially scanned volume', 'Top tables by estimated sequentially scanned volume', NULL, NULL, 'scanned_tbl', NULL,
+(1, 'tblscan', 'objects', 100, 'Top tables by estimated sequentially scanned volume', 'Top tables by estimated sequentially scanned volume', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_tables",'
@@ -1315,7 +1421,7 @@ VALUES
        '"title": "Number of rows HOT updated (i.e., with no separate index update required)"}'
     ']'
   '}]'::jsonb),
-(1, 'tblfetch', 'objects', 200, 'Top tables by blocks fetched', 'Top tables by blocks fetched', NULL, NULL, 'fetch_tbl', NULL,
+(1, 'tblfetch', 'objects', 200, 'Top tables by blocks fetched', 'Top tables by blocks fetched', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_io_tables",'
@@ -1351,7 +1457,7 @@ VALUES
     ']}'
    ']'
   '}]'::jsonb),
-(1, 'tblrd', 'objects', 300, 'Top tables by blocks read', 'Top tables by blocks read', NULL, NULL, 'read_tbl', NULL,
+(1, 'tblrd', 'objects', 300, 'Top tables by blocks read', 'Top tables by blocks read', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_io_tables",'
@@ -1388,7 +1494,7 @@ VALUES
      '{"caption": "Hit(%)", "id": "hit_pct", "class": "table_obj_value", "title": "Number of heap, indexes, toast and toast index blocks fetched from shared buffers as a percentage of all their blocks fetched from shared buffers and file system"}'
     ']'
   '}]'::jsonb),
-(1, 'tbldml', 'objects', 400, 'Top DML tables', 'Top DML tables', NULL, NULL, 'dml_tbl', NULL,
+(1, 'tbldml', 'objects', 400, 'Top DML tables', 'Top DML tables', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_tables",'
@@ -1417,7 +1523,7 @@ VALUES
      '{"caption": "IxFet", "id": ["idx_tup_fetch", "toastidx_tup_fetch"], "title": "Number of live rows fetched by index scans", "class": "table_obj_value"}'
     ']'
   '}]'::jsonb),
-(1, 'tblud', 'objects', 500, 'Top tables by updated/deleted tuples', 'Top tables by updated/deleted tuples', NULL, NULL, 'upd_del_tbl', NULL,
+(1, 'tblud', 'objects', 500, 'Top tables by updated/deleted tuples', 'Top tables by updated/deleted tuples', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_tables",'
@@ -1445,7 +1551,7 @@ VALUES
      '{"caption": "AutoAnalyze", "id": ["autoanalyze_count", "toastautoanalyze_count"], "title": "Number of times this table has been analyzed by the autovacuum daemon", "class": "table_obj_value"}'
     ']'
   '}]'::jsonb),
-(1, 'tblupd_np', 'objects', 550, 'Top tables by new-page updated tuples', 'Top tables by new-page updated tuples', 'table_new_page_updates', NULL, 'upd_np_tbl',
+(1, 'tblupd_np', 'objects', 550, 'Top tables by new-page updated tuples', 'Top tables by new-page updated tuples', 'table_new_page_updates', NULL,
   '{"class": "notice", "text": "Top tables by number of rows updated where the successor version goes onto a new heap page, '
   'leaving behind an original version with a t_ctid field that points to a different heap page. '
   'These are always non-HOT updates"}',
@@ -1473,7 +1579,7 @@ VALUES
      '{"caption": "Upd(HOT)", "id": ["n_tup_hot_upd", "toastn_tup_hot_upd"], "title": "Number of rows HOT updated (i.e., with no separate index update required)", "class": "table_obj_value"}'
     ']'
   '}]'::jsonb),
-(1, 'tblgrw', 'objects', 600, 'Top growing tables', 'Top growing tables', NULL, NULL, 'growth_tbl',
+(1, 'tblgrw', 'objects', 600, 'Top growing tables', 'Top growing tables', NULL, NULL,
   '{"class": "notice", "text": "Sizes in square brackets are based on pg_class.relpages data instead of pg_relation_size() function"}',
   '[{'
     '"type": "row_table",'
@@ -1501,7 +1607,7 @@ VALUES
      '{"caption": "Upd(HOT)", "id": ["n_tup_hot_upd", "toastn_tup_hot_upd"], "title": "Number of rows HOT updated (i.e., with no separate index update required)", "class": "table_obj_value"}'
     ']'
   '}]'::jsonb),
-(1, 'ixfetch', 'objects', 700, 'Top indexes by blocks fetched', 'Top indexes by blocks fetched', NULL, NULL, 'fetch_idx', NULL,
+(1, 'ixfetch', 'objects', 700, 'Top indexes by blocks fetched', 'Top indexes by blocks fetched', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_io_indexes",'
@@ -1526,7 +1632,7 @@ VALUES
      '{"caption": "%Total", "id": "idx_blks_fetch_pct", "title": "Blocks fetched from this index as a percentage of all blocks fetched in a cluster", "class": "table_obj_value"}'
     ']'
   '}]'::jsonb),
-(1, 'ixrd', 'objects', 800, 'Top indexes by blocks read', 'Top indexes by blocks read', NULL, NULL, 'read_idx', NULL,
+(1, 'ixrd', 'objects', 800, 'Top indexes by blocks read', 'Top indexes by blocks read', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_io_indexes",'
@@ -1552,7 +1658,7 @@ VALUES
      '{"caption": "Hits(%)", "id": "idx_blks_hit_pct", "title": "Index blocks buffer cache hit percentage", "class": "table_obj_value"}'
     ']'
   '}]'::jsonb),
-(1, 'ixgrw', 'objects', 900, 'Top growing indexes', 'Top growing indexes', NULL, NULL, 'growth_idx',
+(1, 'ixgrw', 'objects', 900, 'Top growing indexes', 'Top growing indexes', NULL, NULL,
   '{"class": "notice", "text": "Sizes in square brackets are based on pg_class.relpages data instead of pg_relation_size() function"}',
   '[{'
     '"type": "row_table",'
@@ -1584,7 +1690,7 @@ VALUES
      ']}'
     ']'
   '}]'::jsonb),
-(1, 'ixunused', 'objects', 1000, 'Unused indexes', 'Unused indexes', NULL, NULL, 'ix_unused',
+(1, 'ixunused', 'objects', 1000, 'Unused indexes', 'Unused indexes', NULL, NULL,
   '{"class": "notice", "text": "This table contains non-scanned indexes (during report interval), ordered by number of DML '
   'operations on underlying tables. Constraint indexes are excluded"}',
   '[{'
@@ -1621,10 +1727,10 @@ VALUES
 
 -- Functions section of a regular report
 INSERT INTO report_struct (
-  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name, href,
+  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name,
   content, sect_struct)
 VALUES
-(1, 'func_t', 'funchdr', 100, 'Top functions by total time', 'Top functions by total time', NULL, NULL, 'funcs_time_stat', NULL,
+(1, 'func_t', 'funchdr', 100, 'Top functions by total time', 'Top functions by total time', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_functions",'
@@ -1649,7 +1755,7 @@ VALUES
      ']}'
     ']'
   '}]'::jsonb),
-(1, 'func_c', 'funchdr', 200, 'Top functions by executions', 'Top functions by executions', NULL, NULL, 'funcs_calls_stat', NULL,
+(1, 'func_c', 'funchdr', 200, 'Top functions by executions', 'Top functions by executions', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_functions",'
@@ -1674,7 +1780,7 @@ VALUES
      ']}'
     ']'
   '}]'::jsonb),
-(1, 'func_trg', 'funchdr', 300, 'Top trigger functions by total time', 'Top trigger functions by total time', 'trigger_function_stats', NULL, 'trg_funcs_time_stat', NULL,
+(1, 'func_trg', 'funchdr', 300, 'Top trigger functions by total time', 'Top trigger functions by total time', 'trigger_function_stats', NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_functions",'
@@ -1703,10 +1809,10 @@ VALUES
 
 -- Vacuum section of a regular report
 INSERT INTO report_struct (
-  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name, href,
+  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name,
   content, sect_struct)
 VALUES
-(1, 'vacops', 'vachdr', 100, 'Top tables by vacuum operations', 'Top tables by vacuum operations', NULL, NULL, 'top_vacuum_cnt_tbl', NULL,
+(1, 'vacops', 'vachdr', 100, 'Top tables by vacuum operations', 'Top tables by vacuum operations', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_tables",'
@@ -1732,7 +1838,7 @@ VALUES
      '{"caption": "Upd(HOT)", "id": "n_tup_hot_upd", "class": "table_obj_value", "title": "Number of rows HOT updated (i.e., with no separate index update required)"}'
     ']'
   '}]'::jsonb),
-(1, 'anops', 'vachdr', 200, 'Top tables by analyze operations', 'Top tables by analyze operations', NULL, NULL, 'top_analyze_cnt_tbl', NULL,
+(1, 'anops', 'vachdr', 200, 'Top tables by analyze operations', 'Top tables by analyze operations', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_tables",'
@@ -1757,7 +1863,7 @@ VALUES
      '{"caption": "Del", "id": "n_tup_del", "class": "table_obj_value", "title": "Number of rows deleted"},'
      '{"caption": "Upd(HOT)", "id": "n_tup_hot_upd", "class": "table_obj_value", "title": "Number of rows HOT updated (i.e., with no separate index update required)"}'
     ']}]'::jsonb),
-(1, 'ixvacest', 'vachdr', 300, 'Top indexes by estimated vacuum load', 'Top indexes by estimated vacuum load', NULL, NULL, 'top_ix_vacuum_bytes_cnt_tbl', NULL,
+(1, 'ixvacest', 'vachdr', 300, 'Top indexes by estimated vacuum load', 'Top indexes by estimated vacuum load', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_indexes",'
@@ -1784,7 +1890,7 @@ VALUES
      '{"id": "avg_relsize_pretty", "caption": "Relsize", "class": "table_obj_value", "title": "Average relation size during report interval"}'
     ']'
   '}]'::jsonb),
-(1, 'tblbydead', 'vachdr', 400, 'Top tables by dead tuples ratio', 'Top tables by dead tuples ratio', 'top_tables_dead', NULL, 'dead_tbl',
+(1, 'tblbydead', 'vachdr', 400, 'Top tables by dead tuples ratio', 'Top tables by dead tuples ratio', 'top_tables_dead', NULL,
   '{"class": "notice", "text": "Data in this section is not differential. This data is valid for last report sample only"}',
   '[{'
     '"type": "row_table",'
@@ -1810,7 +1916,7 @@ VALUES
      '{"caption": "Size", "id": "relsize_pretty", "class": "table_obj_value", "title": "Table size without indexes and TOAST"}'
     ']'
   '}]'::jsonb),
-(1, 'tblbymod', 'vachdr', 500, 'Top tables by modified tuples ratio', 'Top tables by modified tuples ratio', 'top_tables_mods', NULL, 'mod_tbl',
+(1, 'tblbymod', 'vachdr', 500, 'Top tables by modified tuples ratio', 'Top tables by modified tuples ratio', 'top_tables_mods', NULL,
   '{"class": "notice", "text": "Data in this section is not differential. This data is valid for last report sample only"}',
   '[{'
     '"type": "row_table",'
@@ -1841,10 +1947,10 @@ VALUES
 
 -- Settings sections
 INSERT INTO report_struct(
-    report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name, href,
+    report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name,
     content, sect_struct)
 VALUES
-(1, 'definedset', 'settings', 800, NULL, NULL, NULL, NULL, NULL, NULL,
+(1, 'definedset', 'settings', 800, NULL, NULL, NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "settings",'
@@ -1877,10 +1983,10 @@ VALUES
 
 -- Schema objects section of a differential report
 INSERT INTO report_struct (
-  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name, href,
+  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name,
   content, sect_struct)
 VALUES
-(2, 'rep_details', NULL, 10, 'Report details', 'Report details', NULL, NULL, 'rep_details', NULL,
+(2, 'rep_details', NULL, 10, 'Report details', 'Report details', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "properties",'
@@ -1897,7 +2003,7 @@ VALUES
           '{"id": ["report_end1", "report_end2"], "class": "table_obj_value", "caption": "end"}'
         ']}'
     ']}]'::jsonb),
-(2, 'rep_settings', NULL, 11, NULL, NULL, NULL, NULL, 'rep_settings', NULL,
+(2, 'rep_settings', NULL, 11, NULL, NULL, NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "settings",'
@@ -1908,7 +2014,7 @@ VALUES
       '{"caption": "Value", "id": "reset_val", "class": "table_obj_value"}'
     ']'
   '}]'::jsonb),
-(2, 'stmt_cmt1', NULL, 100, NULL, NULL, 'stmt_cnt_range', NULL, NULL,
+(2, 'stmt_cmt1', NULL, 100, NULL, NULL, 'stmt_cnt_range', NULL,
   '{"class": "warning", "text": "Report interval contains sample(s) with captured statements count more than 90% of pg_stat_statements.max. '
   'Consider increasing pg_stat_statements.max parameter."}',
   '[{'
@@ -1921,15 +2027,15 @@ VALUES
         '{"id": "stmt_cnt", "class": "table_obj_value", "caption": "Stmts Captured"}, '
         '{"id": "max_cnt", "class": "table_obj_value", "caption": "pg_stat_statements.max"}'
     ']}]'::jsonb),
-(2, 'srvstat', NULL, 300, 'Server statistics', 'Server statistics', NULL, NULL, 'cl_stat', NULL, NULL),
-(2, 'actsesshdr', NULL, 350, 'Session states', 'Session states observed by subsamples', 'act_backend', NULL, 'stat_act',
+(2, 'srvstat', NULL, 300, 'Server statistics', 'Server statistics', NULL, NULL, NULL, NULL),
+(2, 'actsesshdr', NULL, 350, 'Session states', 'Session states observed by subsamples', 'act_backend', NULL,
   '{"class": "notice", "text": "Statistics about session states exceeding capturing thresholds."}', NULL),
-(2, 'sqlsthdr', NULL, 400, 'SQL query statistics', 'SQL query statistics', 'statstatements', NULL, 'sql_stat', NULL, NULL),
-(2, 'objects', NULL, 500, 'Schema object statistics', 'Schema object statistics', NULL, NULL, 'schema_stat', NULL, NULL),
-(2, 'funchdr', NULL, 600, 'User function statistics', 'User function statistics', 'function_stats', NULL, 'func_stat', NULL, NULL),
-(2, 'vachdr', NULL, 700, 'Vacuum-related statistics', 'Vacuum-related statistics', NULL, NULL, 'vacuum_stats', NULL, NULL),
-(2, 'settings', NULL, 800, 'Cluster settings during the report interval', 'Cluster settings during the report interval', NULL, NULL, 'pg_settings', NULL, NULL),
-(2, 'stmt_warn', NULL, 900, NULL, 'Warning!', 'stmt_cnt_all', NULL, 'stmt_warn', NULL,
+(2, 'sqlsthdr', NULL, 400, 'SQL query statistics', 'SQL query statistics', 'statstatements', NULL, NULL, NULL),
+(2, 'objects', NULL, 500, 'Schema object statistics', 'Schema object statistics', NULL, NULL, NULL, NULL),
+(2, 'funchdr', NULL, 600, 'User function statistics', 'User function statistics', 'function_stats', NULL, NULL, NULL),
+(2, 'vachdr', NULL, 700, 'Vacuum-related statistics', 'Vacuum-related statistics', NULL, NULL, NULL, NULL),
+(2, 'settings', NULL, 800, 'Cluster settings during the report interval', 'Cluster settings during the report interval', NULL, NULL, NULL, NULL),
+(2, 'stmt_warn', NULL, 900, NULL, 'Warning!', 'stmt_cnt_all', NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "stmt_cnt_all",'
@@ -1945,11 +2051,11 @@ VALUES
 
 -- Server section of differential report
 INSERT INTO report_struct (
-  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name, href, content,
+  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name, content,
   sect_struct)
 VALUES
-(2, 'dbstat', 'srvstat', 100, 'Database statistics', 'Database statistics', NULL, NULL, 'db_stat', NULL, NULL),
-(2, 'dbstatreset', 'dbstat', 200, NULL, NULL, 'dbstats_reset', NULL, NULL,
+(2, 'dbstat', 'srvstat', 100, 'Database statistics', 'Database statistics', NULL, NULL, NULL, NULL),
+(2, 'dbstatreset', 'dbstat', 200, NULL, NULL, 'dbstats_reset', NULL,
   '{"class": "warning", "text": "Database statistics reset detected during report interval! '
   'Statistics for listed databases and contained objects might be affected."}',
   '[{'
@@ -1963,7 +2069,7 @@ VALUES
         '{"id": "stats_reset", "class": "table_obj_value", "caption": "Reset time"}'
     ']'
   '}]'::jsonb),
-(2, 'dbstatmain', 'dbstat', 300, NULL, NULL, NULL, NULL, NULL, NULL,
+(2, 'dbstatmain', 'dbstat', 300, NULL, NULL, NULL, NULL, NULL,
 '[{'
     '"type": "row_table", '
     '"source": "dbstat", '
@@ -2006,8 +2112,8 @@ VALUES
         '{"id": ["datsize1", "datsize2"], "class": "table_obj_value", "title": "Database size as is was at the moment of last sample in report interval", "caption": "Size"}, '
         '{"id": ["datsize_delta1", "datsize_delta2"], "class": "table_obj_value", "title": "Database size increment during report interval", "caption": "Growth"} '
 ']}]'::jsonb),
-(2, 'iostat', 'srvstat', 328, 'Cluster I/O statistics', 'Cluster I/O statistics', 'stat_io', NULL, 'stat_io', NULL, NULL),
-(2, 'iostatrst', 'srvstat', 329, NULL, NULL, 'stat_io_reset', NULL, 'stat_io_reset',
+(2, 'iostat', 'srvstat', 328, 'Cluster I/O statistics', 'Cluster I/O statistics', 'stat_io', NULL, NULL, NULL),
+(2, 'iostatrst', 'srvstat', 329, NULL, NULL, 'stat_io_reset', NULL,
 '{"class": "warning", "text": "IO stats reset was detected during report interval. Statistic values may be affected"}',
 '[{'
     '"type": "row_table",'
@@ -2025,7 +2131,7 @@ VALUES
         '"title": "Date and time of the last reset performed in sample"}'
     ']'
     '}]'::jsonb),
-(2, 'iostatmain', 'srvstat', 330, NULL, NULL, 'stat_io', NULL, 'stat_io', NULL,
+(2, 'iostatmain', 'srvstat', 330, NULL, NULL, 'stat_io', NULL, NULL,
 '[{'
     '"type": "row_table",'
     '"source": "stat_io",'
@@ -2088,8 +2194,8 @@ VALUES
      ']}'
     ']'
     '}]'::jsonb),
-(2, 'slrustat', 'srvstat', 358, 'Cluster SLRU statistics', 'Cluster SLRU statistics', 'stat_slru', NULL, 'stat_slru', NULL, NULL),
-(2, 'slrustatrst', 'slrustat', 359, NULL, NULL, 'stat_slru_reset', NULL, 'stat_slru_reset',
+(2, 'slrustat', 'srvstat', 358, 'Cluster SLRU statistics', 'Cluster SLRU statistics', 'stat_slru', NULL, NULL, NULL),
+(2, 'slrustatrst', 'slrustat', 359, NULL, NULL, 'stat_slru_reset', NULL,
 '{"class": "warning", "text": "SLRU stats reset was detected during report interval. Statistic values may be affected"}',
 '[{'
     '"type": "row_table",'
@@ -2103,7 +2209,7 @@ VALUES
         '"title": "Date and time of the last reset performed in sample"}'
     ']'
     '}]'::jsonb),
-(2, 'slrustatmain', 'slrustat', 360, NULL, NULL, 'stat_slru', NULL, 'stat_slru', NULL,
+(2, 'slrustatmain', 'slrustat', 360, NULL, NULL, 'stat_slru', NULL, NULL,
 '[{'
     '"type": "row_table",'
     '"source": "stat_slru",'
@@ -2131,7 +2237,7 @@ VALUES
         '"title": "Number of truncates for this SLRU"}'
     ']'
     '}]'::jsonb),
-(2, 'sesstat', 'srvstat', 400, 'Session statistics by database', 'Session statistics by database', 'sess_stats', NULL, 'db_stat_sessions', NULL,
+(2, 'sesstat', 'srvstat', 400, 'Session statistics by database', 'Session statistics by database', 'sess_stats', NULL, NULL,
 '[{'
     '"type": "row_table",'
     '"source": "dbstat", '
@@ -2154,7 +2260,7 @@ VALUES
           '{"id": ["sessions_killed1", "sessions_killed2"], "class": "table_obj_value", "title": "Number of database sessions to this database that were terminated by operator intervention", "caption": "Killed"}'
         ']}'
     ']}]'::jsonb),
-(2, 'stmtstat', 'srvstat', 500, 'Statement statistics by database', 'Statement statistics by database', 'statstatements', NULL, 'st_stat', NULL,
+(2, 'stmtstat', 'srvstat', 500, 'Statement statistics by database', 'Statement statistics by database', 'statstatements', NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "statements_dbstats",'
@@ -2168,9 +2274,9 @@ VALUES
       '{"id": ["calls1", "calls2"], "class": "table_obj_value", "title": "Number of query executions", "caption": "Calls"}, '
       '{"caption": "Time (s)", "columns": ['
         '{"id": ["total_plan_time1", "total_plan_time2"], "class": "table_obj_value", "title": "Time spent planning queries", "caption": "Plan", "condition": "planning_times"}, '
-        '{"id": ["total_exec_time1", "total_exec_time2"], "class": "table_obj_value", "title": "TTime spent executing queries", "caption": "Exec"}, '
-        '{"id": ["blk_read_time1", "blk_read_time2"], "class": "table_obj_value", "title": "Time spent reading blocks", "caption": "Read"}, '
-        '{"id": ["blk_write_time1", "blk_write_time2"], "class": "table_obj_value", "title": "Time spent writing blocks", "caption": "Write"}, '
+        '{"id": ["total_exec_time1", "total_exec_time2"], "class": "table_obj_value", "title": "Time spent executing queries", "caption": "Exec"}, '
+        '{"id": ["shared_blk_read_time1", "shared_blk_read_time2"], "class": "table_obj_value", "title": "Time spent reading blocks", "caption": "Read"}, '
+        '{"id": ["shared_blk_write_time1", "shared_blk_write_time2"], "class": "table_obj_value", "title": "Time spent writing blocks", "caption": "Write"}, '
         '{"id": ["trg_fn_total_time1", "trg_fn_total_time2"], "class": "table_obj_value", "title": "Time spent in trigger functions", "caption": "Trg"}'
         ']}, '
       '{"caption": "Temp I/O Time", "condition": "statements_temp_io_times", "columns": ['
@@ -2196,7 +2302,30 @@ VALUES
       '{"id": ["statements1", "statements2"], "class": "table_obj_value", "caption": "Statements"}, '
       '{"id": ["wal_bytes1", "wal_bytes2"], "class": "table_obj_value", "caption": "WAL size", "condition": "statement_wal_bytes"}'
     ']}]'::jsonb),
-(2, 'dbjitstat', 'srvstat', 550, 'JIT statistics by database', 'JIT statistics by database', 'statements_jit_stats', NULL, 'dbagg_jit_stat', NULL,
+(2, 'stmtminmax', 'srvstat', 520, 'Statement average min/max timings', 'Statement average min/max timings', 'mean_mm_times', NULL, NULL,
+  '[{'
+    '"type": "row_table", '
+    '"source": "statements_dbstats",'
+    '"ordering": "ord_db",'
+    '"highlight": ['
+      '{"id": "dbname", "index": 0}'
+    '],'
+    '"columns": ['
+      '{"id": "dbname", "class": "hdr", "caption": "Database", "rowspan": "true"}, '
+      '{"id": ["1", "2"], "title":["properties.timePeriod1", "properties.timePeriod2"], "class": "interval", "caption": "I"},'
+      '{"caption": "Average planning times (ms)", "condition": "planning_times", "columns": ['
+          '{"id": ["mean_min_plan_time1", "mean_min_plan_time2"], "class": "table_obj_value", "title": "The average value of min_plan_time for all statements", "caption": "Min (ms.)"}, '
+          '{"id": ["mean_max_plan_time1", "mean_max_plan_time2"], "class": "table_obj_value", "title": "The average value of max_plan_time for all statements", "caption": "Max (ms.)"}, '
+          '{"id": ["min_max_plan_delta1", "min_max_plan_delta2"], "class": "table_obj_value", "title": "Mean max planning time to mean min planning time delta as a percentage of mean min planning time", "caption": "Delta%"} '
+      ']}, '
+      '{"caption": "Average execution times (ms)", "columns": ['
+          '{"id": ["mean_min_exec_time1", "mean_min_exec_time2"], "class": "table_obj_value", "title": "The average value of min_exec_time for all statements", "caption": "Min (ms.)"}, '
+          '{"id": ["mean_max_exec_time1", "mean_max_exec_time2"], "class": "table_obj_value", "title": "The average value of max_exec_time for all statements", "caption": "Max (ms.)"}, '
+          '{"id": ["min_max_exec_delta1", "min_max_exec_delta2"], "class": "table_obj_value", "title": "Mean max exec time to mean min exec time delta as a percentage of mean min exec time", "caption": "Delta%"} '
+      ']}, '
+      '{"id": ["statements1", "statements2"], "class": "table_obj_value", "caption": "Statements"} '
+    ']}]'::jsonb),
+(2, 'dbjitstat', 'srvstat', 550, 'JIT statistics by database', 'JIT statistics by database', 'statements_jit_stats', NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "statements_dbstats",'
@@ -2214,7 +2343,7 @@ VALUES
           ']},'
       '{"caption": "Generation", "columns": ['
           '{"id": ["jit_functions1", "jit_functions2"], "class": "table_obj_value", "title": "Total number of functions JIT-compiled by the statements", "caption": "Count"},'
-          '{"id": ["jit_generation_time1", "jit_generation_time2"], "class": "table_obj_value", "title": "Time spent by the statements on generating JIT code", "caption": "Gen. time"}'
+          '{"id": ["jit_generation_time1", "jit_generation_time2"], "class": "table_obj_value", "title": "Time spent by the statements on generating JIT code", "caption": "Time"}'
           ']},'
       '{"caption": "Inlining", "columns": ['
           '{"id": ["jit_inlining_count1", "jit_inlining_count2"], "class": "table_obj_value", "title": "Number of times functions have been inlined", "caption": "Count"},'
@@ -2226,13 +2355,15 @@ VALUES
           ']},'
       '{"caption": "Emission", "columns": ['
           '{"id": ["jit_emission_count1", "jit_emission_count2"], "class": "table_obj_value", "title": "Number of times code has been emitted", "caption": "Count"},'
-          '{"id": ["jit_emission_time1", "jit_emission_time2"], "class": "table_obj_value", "title": "Time spent executing queries", "caption": "Exec"}'
+          '{"id": ["jit_emission_time1", "jit_emission_time2"], "class": "table_obj_value", "title": "Time spent by the statement on emitting code", "caption": "Exec"} '
+          ']},'
+      '{"caption": "Deform", "condition": "statements_jit_deform", "columns": ['
+          '{"id": ["jit_deform_count1", "jit_deform_count2"], "class": "table_obj_value", "caption": "Count", "title": "Number of tuple deform functions JIT-compiled by the statement of the database."}, '
+          '{"id": ["jit_deform_time1", "jit_deform_time2"], "class": "table_obj_value", "caption": "Time", "title": "Total time spent by the statements of the databse on JIT-compiling tuple deform functions, in seconds."}'
           ']}'
       ']}]'::jsonb),
-(2, 'commonstat', 'srvstat', 600, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-(2, 'clusterstat', 'commonstat', 600, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-(2, 'clusthdr', 'clusterstat', 700, 'Cluster statistics', 'Cluster statistics', NULL, NULL, 'clu_stat', NULL, NULL),
-(2, 'clustrst', 'clusterstat', 800, NULL, NULL, 'cluster_stats_reset', NULL, NULL,
+(2, 'clusthdr', 'srvstat', 700, 'Cluster statistics', 'Cluster statistics', NULL, NULL, NULL, NULL),
+(2, 'clustrst', 'srvstat', 800, NULL, NULL, 'cluster_stats_reset', NULL,
   '{"class": "warning", "text": "Cluster statistics reset detected during report interval! Cluster statistics might be affected"}',
   '[{'
     '"type": "row_table",'
@@ -2241,9 +2372,10 @@ VALUES
       '{"id": "interval_num", "class": "table_obj_value", "caption": "I"},'
       '{"id": "sample_id", "class": "table_obj_value", "caption": "Sample"},'
       '{"id": "bgwriter_stats_reset", "class": "table_obj_value", "caption": "BGWriter reset time"},'
+      '{"id": "checkpoint_stats_reset", "class": "table_obj_value", "caption": "Checkpointer reset time"},'
       '{"id": "archiver_stats_reset", "class": "table_obj_value", "caption": "Archiver reset time"}'
     ']}]'::jsonb),
-(2, 'clust', 'clusterstat', 900, NULL, NULL, NULL, NULL, NULL, NULL,
+(2, 'clust', 'srvstat', 900, NULL, NULL, NULL, NULL, NULL,
   '[{'
     '"type": "column_table", '
     '"source": "cluster_stats",'
@@ -2277,11 +2409,11 @@ VALUES
             '{"id": "buffers_clean1", "class": "table_obj_value int1"},'
             '{"id": "buffers_clean2", "class": "table_obj_value int2"}'
         ']}, '
-        '{"caption": "Backend buffers written", "cells": ['
+        '{"caption": "Backend buffers written", "condition": "buffers_backend", "cells": ['
             '{"id": "buffers_backend1", "class": "table_obj_value int1"},'
             '{"id": "buffers_backend2", "class": "table_obj_value int2"}'
         ']}, '
-        '{"caption": "Backend fsync count", "cells": ['
+        '{"caption": "Backend fsync count", "condition": "buffers_backend", "cells": ['
             '{"id": "buffers_backend_fsync1", "class": "table_obj_value int1"},'
             '{"id": "buffers_backend_fsync2", "class": "table_obj_value int2"}'
         ']}, '
@@ -2315,9 +2447,8 @@ VALUES
         ']}'
     ']'
     '}]'::jsonb),
-(2, 'walstat', 'commonstat', 950, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-(2, 'walsthdr', 'walstat', 1000, 'WAL statistics', 'WAL statistics', 'wal_stats', NULL, 'wal_stat', NULL, NULL),
-(2, 'walstrst', 'walstat', 1100, NULL, NULL, 'wal_stats_reset', NULL, NULL,
+(2, 'walsthdr', 'srvstat', 1000, 'WAL statistics', 'WAL statistics', 'wal_stats', NULL, NULL, NULL),
+(2, 'walstrst', 'srvstat', 1100, NULL, NULL, 'wal_stats_reset', NULL,
   '{"class": "warning", "text": "WAL statistics reset detected during report interval! WAL statistics might be affected"}',
   '[{'
     '"type": "row_table",'
@@ -2327,7 +2458,7 @@ VALUES
       '{"id": "sample_id", "class": "table_obj_value", "caption": "Sample"},'
       '{"id": "wal_stats_reset", "class": "table_obj_value", "caption": "WAL stats reset time"}'
     ']}]'::jsonb),
-(2, 'walst', 'walstat', 1200, NULL, NULL, 'wal_stats', NULL, NULL, NULL,
+(2, 'walst', 'srvstat', 1200, NULL, NULL, 'wal_stats', NULL, NULL,
   '[{'
     '"type": "column_table",'
     '"source": "wal_stats",'
@@ -2391,7 +2522,7 @@ VALUES
       ']}'
     ']'
   '}]'::jsonb),
-(2, 'tbspst', 'srvstat', 1400, 'Tablespace statistics', 'Tablespace statistics', NULL, NULL, 'tablespace_stat', NULL,
+(2, 'tbspst', 'srvstat', 1400, 'Tablespace statistics', 'Tablespace statistics', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "tablespace_stats",'
@@ -2406,8 +2537,8 @@ VALUES
       '"title": "Tablespace size increment during report interval"}'
     ']'
   '}]'::jsonb),
-(2, 'wait_sampling_srvstats', 'srvstat', 1500, 'Wait sampling', 'Wait sampling', 'wait_sampling_tot', NULL, 'wait_sampling', NULL, NULL),
-(2, 'wait_sampling_total', 'wait_sampling_srvstats', 100, 'Wait events types', 'Wait events types', 'wait_sampling_tot', NULL, 'wait_sampling_total', NULL,
+(2, 'wait_sampling_srvstats', 'srvstat', 1500, 'Wait sampling', 'Wait sampling', 'wait_sampling_tot', NULL, NULL, NULL),
+(2, 'wait_sampling_total', 'wait_sampling_srvstats', 100, 'Wait events types', 'Wait events types', 'wait_sampling_tot', NULL, NULL,
   '[{'
       '"type": "row_table", '
       '"source": "wait_sampling_total_stats",'
@@ -2420,7 +2551,7 @@ VALUES
           '{"id": ["tot_waited1", "tot_waited2"], "class": "table_obj_value", "title": "Time, waited in events of wait event type by all backends (including background activity) in seconds", "caption": "All Waited (s)"}, '
           '{"id": ["tot_waited_pct1", "tot_waited_pct2"], "class": "table_obj_value", "title": "Time, waited in events of wait event type as a percentage of total time waited in a cluster by all backends (including background activity)", "caption": "%Total"}'
       ']}]'::jsonb),
-(2, 'wait_sampling_statements', 'wait_sampling_srvstats', 200, 'Top wait events (statements)', 'Top wait events (statements)', 'wait_sampling_tot', NULL, 'wt_smp_stmt', '{"class": "notice", "text": "Top wait events detected in statements execution"}',
+(2, 'wait_sampling_statements', 'wait_sampling_srvstats', 200, 'Top wait events (statements)', 'Top wait events (statements)', 'wait_sampling_tot', NULL, '{"class": "notice", "text": "Top wait events detected in statements execution"}',
   '[{'
     '"type": "row_table", '
     '"source": "wait_sampling_events",'
@@ -2434,7 +2565,7 @@ VALUES
         '{"id": ["stmt_waited1", "stmt_waited2"], "class": "table_obj_value", "title": "Time, waited in event executing statements in seconds", "caption": "Waited (s)"}, '
         '{"id": ["stmt_waited_pct1", "stmt_waited_pct2"], "class": "table_obj_value", "title": "Time, waited in event as a percentage of total time waited in a cluster executing statements", "caption": "%Total"}'
     ']}]'::jsonb),
-(2, 'wait_sampling_all', 'wait_sampling_srvstats', 300, 'Top wait events (All)', 'Top wait events (All)', 'wait_sampling_tot', NULL, 'wt_smp_all', '{"class": "notice", "text": "Top wait events detected in all backends"}',
+(2, 'wait_sampling_all', 'wait_sampling_srvstats', 300, 'Top wait events (All)', 'Top wait events (All)', 'wait_sampling_tot', NULL, '{"class": "notice", "text": "Top wait events detected in all backends"}',
   '[{'
     '"type": "row_table", '
     '"source": "wait_sampling_events",'
@@ -2452,10 +2583,17 @@ VALUES
 
 -- Subsamples-based section of regular reports
 INSERT INTO report_struct (
-  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name, href,
+  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name,
   content, sect_struct)
 VALUES
-(2, 'db_activity_agg', 'actsesshdr', 100, 'Session state statistics by database', 'Session state statistics by database', 'act_backend', NULL, 'db_activity_agg',
+(2, 'act_chart', 'actsesshdr', 50, 'Chart with session state', 'Chart with session state', 'act_backend', NULL,
+  NULL,
+'[{'
+    '"type": "chart",'
+    '"source": "act_top_states",'
+    '"class": "act_chart"'
+    '}]'::jsonb),
+(2, 'db_activity_agg', 'actsesshdr', 100, 'Session state statistics by database', 'Session state statistics by database', 'act_backend', NULL,
   NULL,
 '[{'
     '"type": "row_table",'
@@ -2487,7 +2625,7 @@ VALUES
      ']}'
     ']'
     '}]'::jsonb),
-(2, 'act_ix', 'actsesshdr', 200, 'Top ''idle in transaction'' states', 'Top ''idle in transaction'' session states by duration', 'act_ix', NULL, 'act_ix',
+(2, 'act_ix', 'actsesshdr', 200, 'Top ''idle in transaction'' states', 'Top ''idle in transaction'' session states by duration', 'act_ix', NULL,
   NULL,
 '[{'
     '"type": "row_table",'
@@ -2500,6 +2638,9 @@ VALUES
     '],'
     '"preview": ['
       '{"id": "act_query_md5", "dataset": "act_queries"}'
+    '],'
+    '"scroll": ['
+      '"pid", "xact_start_ut", "state_change_ut"'
     '],'
     '"filter": {"type": "equal", "field": "flt_state_code", "value": 1},'
     '"columns": ['
@@ -2514,7 +2655,7 @@ VALUES
       '{"caption": "State change", "id": "state_change_format", "class": "table_obj_value"},'
       '{"caption": "State duration", "id": "state_duration_format", "class": "table_obj_value"}'
     ']}]'::jsonb),
-(2, 'act_ixa', 'actsesshdr', 300, 'Top ''idle in transaction (aborted)'' states', 'Top ''idle in transaction (aborted)'' session states by duration', 'act_ixa', NULL, 'act_ixa',
+(2, 'act_ixa', 'actsesshdr', 300, 'Top ''idle in transaction (aborted)'' states', 'Top ''idle in transaction (aborted)'' session states by duration', 'act_ixa', NULL,
   NULL,
 '[{'
     '"type": "row_table",'
@@ -2527,6 +2668,9 @@ VALUES
     '],'
     '"preview": ['
       '{"id": "act_query_md5", "dataset": "act_queries"}'
+    '],'
+    '"scroll": ['
+      '"pid", "xact_start_ut", "state_change_ut"'
     '],'
     '"filter": {"type": "equal", "field": "flt_state_code", "value": 2},'
     '"columns": ['
@@ -2540,7 +2684,7 @@ VALUES
       '{"caption": "State change", "id": "state_change_format", "class": "table_obj_value"},'
       '{"caption": "State duration", "id": "state_duration_format", "class": "table_obj_value"}'
     ']}]'::jsonb),
-(2, 'act_active', 'actsesshdr', 400, 'Top ''active'' states', 'Top ''active'' session states by duration', 'act_active', NULL, 'act_active',
+(2, 'act_active', 'actsesshdr', 400, 'Top ''active'' states', 'Top ''active'' session states by duration', 'act_active', NULL,
   NULL,
 '[{'
     '"type": "row_table",'
@@ -2553,6 +2697,9 @@ VALUES
     '],'
     '"preview": ['
       '{"id": "act_query_md5", "dataset": "act_queries"}'
+    '],'
+    '"scroll": ['
+      '"pid", "xact_start_ut", "state_change_ut"'
     '],'
     '"filter": {"type": "equal", "field": "flt_state_code", "value": 3},'
     '"columns": ['
@@ -2567,7 +2714,7 @@ VALUES
       '{"caption": "State change", "id": "state_change_format", "class": "table_obj_value"},'
       '{"caption": "State duration", "id": "state_duration_format", "class": "table_obj_value"}'
     ']}]'::jsonb),
-(2, 'act_age', 'actsesshdr', 500, 'Top states by transaction age', 'Top states by transaction age', 'act_backend', NULL, 'act_age',
+(2, 'act_age', 'actsesshdr', 500, 'Top states by transaction age', 'Top states by transaction age', 'act_backend', NULL,
   NULL,
 '[{'
     '"type": "row_table",'
@@ -2580,6 +2727,9 @@ VALUES
     '],'
     '"preview": ['
       '{"id": "act_query_md5", "dataset": "act_queries"}'
+    '],'
+    '"scroll": ['
+      '"pid", "xact_start_ut", "state_change_ut"'
     '],'
     '"filter": {"type": "equal", "field": "flt_age", "value": true},'
     '"columns": ['
@@ -2598,7 +2748,7 @@ VALUES
       '{"caption": "State change", "id": "state_change_format", "class": "table_obj_value"},'
       '{"caption": "State duration", "id": "state_duration_format", "class": "table_obj_value"}'
     ']}]'::jsonb),
-(2, 'act_xact_dur', 'actsesshdr', 600, 'Top states by transaction duration', 'Top states by transaction duration', 'act_backend', NULL, 'act_age_dur',
+(2, 'act_xact_dur', 'actsesshdr', 600, 'Top states by transaction duration', 'Top states by transaction duration', 'act_backend', NULL,
   NULL,
 '[{'
     '"type": "row_table",'
@@ -2611,6 +2761,9 @@ VALUES
     '],'
     '"preview": ['
       '{"id": "act_query_md5", "dataset": "act_queries"}'
+    '],'
+    '"scroll": ['
+      '"pid", "xact_start_ut", "state_change_ut"'
     '],'
     '"filter": {"type": "equal", "field": "flt_age", "value": true},'
     '"columns": ['
@@ -2633,10 +2786,10 @@ VALUES
 
 -- Query section of differential report
 INSERT INTO report_struct (
-  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name, href,
+  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name,
   content, sect_struct)
 VALUES
-(2, 'sqlela_t', 'sqlsthdr', 100, 'Top SQL by elapsed time', 'Top SQL by elapsed time', 'planning_times', NULL, 'top_ela', NULL,
+(2, 'sqlela_t', 'sqlsthdr', 100, 'Top SQL by elapsed time', 'Top SQL by elapsed time', 'planning_times', NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -2665,18 +2818,19 @@ VALUES
             ']}, '
         '{"id": ["jit_total_time1", "jit_total_time2"], "class": "jitTimeCell", "caption": "JIT, time (s)", "condition": "statements_jit_stats"}, '
         '{"class": "table_obj_name", "caption": "I/O time (s)", "condition": "io_times", "columns": ['
-            '{"id": ["blk_read_time1", "blk_read_time2"], "class": "table_obj_value", "title": "Time spent reading blocks by statement", "caption": "Read"}, '
-            '{"id": ["blk_write_time1", "blk_write_time2"], "class": "table_obj_value", "title": "Time spent writing blocks by statement", "caption": "Write"}'
+            '{"id": ["shared_blk_read_time1", "shared_blk_read_time2"], "class": "table_obj_value", "title": "Time spent reading blocks by statement", "caption": "Read"}, '
+            '{"id": ["shared_blk_write_time1", "shared_blk_write_time2"], "class": "table_obj_value", "title": "Time spent writing blocks by statement", "caption": "Write"}'
             ']}, '
         '{"class": "table_obj_name", "caption": "CPU time (s)", "condition": "kcachestatements", "columns": ['
             '{"id": ["user_time1", "user_time2"], "class": "table_obj_value", "caption": "Usr"}, '
             '{"id": ["system_time1", "system_time2"], "class": "table_obj_value", "caption": "Sys"}'
             ']}, '
         '{"id": ["plans1", "plans2"], "class": "table_obj_value", "caption": "Plans", "title": "Number of times the statement was planned"}, '
-        '{"id": ["calls1", "calls2"], "class": "table_obj_value", "caption": "Executions", "title": "Number of times the statement was executed"} '
+        '{"id": ["calls1", "calls2"], "class": "table_obj_value", "caption": "Executions", "title": "Number of times the statement was executed"}, '
+        '{"id": ["stmt_cover1", "stmt_cover2"], "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']'
   '}]'::jsonb),
-(2, 'sqlplan_t', 'sqlsthdr', 200, 'Top SQL by planning time', 'Top SQL by planning time', 'planning_times', NULL, 'top_plan', NULL,
+(2, 'sqlplan_t', 'sqlsthdr', 200, 'Top SQL by planning time', 'Top SQL by planning time', 'planning_times', NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -2706,10 +2860,11 @@ VALUES
             '{"id": ["stddev_plan_time1", "stddev_plan_time2"], "class": "table_obj_value", "caption": "StdErr"}'
         ']}, '
         '{"id": ["plans1", "plans2"], "class": "table_obj_value", "title": "Number of times the statement was planned", "caption": "Plans"}, '
-        '{"id": ["calls1", "calls2"], "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}'
+        '{"id": ["calls1", "calls2"], "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}, '
+        '{"id": ["stmt_cover1", "stmt_cover2"], "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']'
   '}]'::jsonb),
-(2, 'sqlexec_t', 'sqlsthdr', 300, 'Top SQL by execution time', 'Top SQL by execution time', NULL, NULL, 'top_exec', NULL,
+(2, 'sqlexec_t', 'sqlsthdr', 300, 'Top SQL by execution time', 'Top SQL by execution time', NULL, NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -2735,8 +2890,8 @@ VALUES
       '{"id": ["total_exec_time_pct1", "total_exec_time_pct2"], "class": "table_obj_value", "title": "Exec time as a percentage of total cluster elapsed time", "caption": "%Total"}, '
       '{"id": ["jit_total_time1", "jit_total_time2"], "class": "jitTimeCell", "title": "Exec time as a percentage of statement elapsed time", "caption": "JIT time (s)", "condition": "statements_jit_stats"}, '
       '{"caption": "I/O time (s)", "condition": "io_times", "columns": ['
-          '{"id": ["blk_read_time1", "blk_read_time2"], "class": "table_obj_value", "caption": "Read"}, '
-          '{"id": ["blk_write_time1", "blk_write_time2"], "class": "table_obj_value", "caption": "Write"}'
+          '{"id": ["shared_blk_read_time1", "shared_blk_read_time2"], "class": "table_obj_value", "caption": "Read"}, '
+          '{"id": ["shared_blk_write_time1", "shared_blk_write_time2"], "class": "table_obj_value", "caption": "Write"}'
       ']}, '
       '{"caption": "CPU time (s)", "condition": "kcachestatements", "columns": ['
           '{"id": ["user_time1", "user_time2"], "class": "table_obj_value", "caption": "Usr"}, '
@@ -2749,10 +2904,55 @@ VALUES
           '{"id": ["max_exec_time1", "max_exec_time2"], "class": "table_obj_value", "caption": "Max"}, '
           '{"id": ["stddev_exec_time1", "stddev_exec_time2"], "class": "table_obj_value", "caption": "StdErr"}'
       ']}, '
-      '{"id": ["calls1", "calls2"], "title": "Number of times the statement was executed", "caption": "Executions", "class": "table_obj_value"}'
+      '{"id": ["calls1", "calls2"], "title": "Number of times the statement was executed", "caption": "Executions", "class": "table_obj_value"}, '
+      '{"id": ["stmt_cover1", "stmt_cover2"], "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']'
   '}]'::jsonb),
-(2, 'sqlcalls', 'sqlsthdr', 400, 'Top SQL by executions', 'Top SQL by executions', NULL, NULL, 'top_calls', NULL,
+(2, 'sqlmeanexec_t', 'sqlsthdr', 350, 'Top SQL by mean time', 'Top SQL by mean execution time', NULL, NULL, NULL,
+  '[{'
+    '"type": "row_table", '
+    '"source": "top_statements",'
+    '"ordering": "ord_mean_exec_time",'
+    '"highlight": ['
+      '{"id": "hexqueryid", "index": 0},'
+      '{"id": "queryid", "index": 1},'
+      '{"id": "dbname", "index": 1},'
+      '{"id": "username", "index": 1}'
+    '],'
+    '"preview": ['
+      '{"id": "hexqueryid", "dataset": "queries"}'
+    '],'
+    '"filter": {"type": "exists", "field": "ord_exec_time"},'
+    '"limit": "topn",'
+    '"columns": ['
+      '{"id": "hexqueryid", "caption": "Query ID", "class": "hdr mono queryId", "rowspan": true}, '
+      '{"id": "dbname", "class": "hdr", "caption": "Database", "rowspan": true}, '
+      '{"id": "username", "class": "hdr", "caption": "User", "rowspan": true}, '
+      '{"id": ["1", "2"], "title":["properties.timePeriod1", "properties.timePeriod2"], "class": "interval", "caption": "I"}, '
+      '{"title": "Execution time statistics", "caption": "Execution times (ms)", "columns": ['
+          '{"id": ["mean_exec_time1", "mean_exec_time2"], "class": "table_obj_value", "caption": "Mean"}, '
+          '{"id": ["min_exec_time1", "min_exec_time2"], "class": "table_obj_value", "caption": "Min"}, '
+          '{"id": ["max_exec_time1", "max_exec_time2"], "class": "table_obj_value", "caption": "Max"}, '
+          '{"id": ["stddev_exec_time1", "stddev_exec_time2"], "class": "table_obj_value", "caption": "StdErr"}'
+      ']}, '
+      '{"id": ["total_exec_time1", "total_exec_time2"], "class": "table_obj_value", "title": "Time spent executing statement", "caption": "Exec (s)"}, '
+      '{"id": ["exec_time_pct1", "exec_time_pct2"], "class": "table_obj_value", "title": "Exec time as a percentage of statement elapsed time", "caption": "%Elapsed", "condition": "planning_times"}, '
+      '{"id": ["total_exec_time_pct1", "total_exec_time_pct2"], "class": "table_obj_value", "title": "Exec time as a percentage of total cluster elapsed time", "caption": "%Total"}, '
+      '{"id": ["jit_total_time1", "jit_total_time2"], "class": "jitTimeCell", "title": "Exec time as a percentage of statement elapsed time", "caption": "JIT time (s)", "condition": "statements_jit_stats"}, '
+      '{"caption": "I/O time (s)", "condition": "io_times", "columns": ['
+          '{"id": ["shared_blk_read_time1", "shared_blk_read_time2"], "class": "table_obj_value", "caption": "Read"}, '
+          '{"id": ["shared_blk_write_time1", "shared_blk_write_time2"], "class": "table_obj_value", "caption": "Write"}'
+      ']}, '
+      '{"caption": "CPU time (s)", "condition": "kcachestatements", "columns": ['
+          '{"id": ["user_time1", "user_time2"], "class": "table_obj_value", "caption": "Usr"}, '
+          '{"id": ["system_time1", "system_time2"], "class": "table_obj_value", "caption": "Sys"}'
+      ']}, '
+      '{"id": ["rows1", "rows2"], "class": "table_obj_value", "caption": "Rows"}, '
+      '{"id": ["calls1", "calls2"], "title": "Number of times the statement was executed", "caption": "Executions", "class": "table_obj_value"}, '
+      '{"id": ["stmt_cover1", "stmt_cover2"], "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
+    ']'
+  '}]'::jsonb),
+(2, 'sqlcalls', 'sqlsthdr', 400, 'Top SQL by executions', 'Top SQL by executions', NULL, NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -2779,10 +2979,11 @@ VALUES
       '{"id": ["min_exec_time1", "min_exec_time2"], "class": "table_obj_value", "caption": "Min(ms)"}, '
       '{"id": ["max_exec_time1", "max_exec_time2"], "class": "table_obj_value", "caption": "Max(ms)"}, '
       '{"id": ["stddev_exec_time1", "stddev_exec_time2"], "class": "table_obj_value", "caption": "StdErr(ms)"}, '
-      '{"id": ["total_exec_time1", "total_exec_time2"], "class": "table_obj_value", "title": "Time spent by the statement", "caption": "Elapsed(s)"}'
+      '{"id": ["total_exec_time1", "total_exec_time2"], "class": "table_obj_value", "title": "Time spent by the statement", "caption": "Elapsed(s)"}, '
+      '{"id": ["stmt_cover1", "stmt_cover2"], "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']'
   '}]'::jsonb),
-(2, 'sqlio_t', 'sqlsthdr', 500, 'Top SQL by I/O wait time', 'Top SQL by I/O wait time', 'io_times', NULL, 'top_iowait', NULL,
+(2, 'sqlio_t', 'sqlsthdr', 500, 'Top SQL by I/O wait time', 'Top SQL by I/O wait time', 'io_times', NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -2804,8 +3005,8 @@ VALUES
       '{"id": "username", "class": "hdr", "caption": "User", "rowspan": true}, '
       '{"id": ["1", "2"], "title":["properties.timePeriod1", "properties.timePeriod2"], "class": "interval", "caption": "I"}, '
       '{"id": ["io_time1", "io_time2"], "class": "table_obj_value", "title": "Time spent by the statement reading and writing blocks", "caption": "IO(s)"}, '
-      '{"id": ["blk_read_time1", "blk_read_time2"], "class": "table_obj_value", "title": "Time spent by the statement reading blocks", "caption": "R(s)"}, '
-      '{"id": ["blk_write_time1", "blk_write_time2"], "class": "table_obj_value", "title": "Time spent by the statement writing blocks", "caption": "W(s)"}, '
+      '{"id": ["shared_blk_read_time1", "shared_blk_read_time2"], "class": "table_obj_value", "title": "Time spent by the statement reading blocks", "caption": "R(s)"}, '
+      '{"id": ["shared_blk_write_time1", "shared_blk_write_time2"], "class": "table_obj_value", "title": "Time spent by the statement writing blocks", "caption": "W(s)"}, '
       '{"id": ["io_time_pct1", "io_time_pct2"], "class": "table_obj_value", "title": "I/O time of this statement as a percentage of total I/O time for all statements in a cluster", "caption": "%Total"}, '
       '{"title": "Number of blocks read by the statement", "caption": "Reads", "columns": ['
           '{"id": ["shared_blks_read1", "shared_blks_read2"], "title": "Number of shared blocks read by the statement", "caption": "Shr", "class": "table_obj_value"}, '
@@ -2818,10 +3019,11 @@ VALUES
           '{"id": ["temp_blks_written1", "temp_blks_written2"], "title": "Number of temp blocks written by the statement (usually used for operations like sorts and joins)", "caption": "Tmp", "class": "table_obj_value"}'
       ']}, '
       '{"id": ["total_time1", "total_time2"], "class": "table_obj_value", "title": "Time spent by the statement", "caption": "Elapsed(s)"}, '
-      '{"id": ["calls1", "calls2"], "class": "table_obj_value", "title": "Number of blocks written by the statement", "caption": "Executions"}'
+      '{"id": ["calls1", "calls2"], "class": "table_obj_value", "title": "Number of blocks written by the statement", "caption": "Executions"}, '
+      '{"id": ["stmt_cover1", "stmt_cover2"], "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']'
   '}]'::jsonb),
-(2, 'sqlfetch', 'sqlsthdr', 600, 'Top SQL by shared blocks fetched', 'Top SQL by shared blocks fetched', NULL, NULL, 'top_pgs_fetched', NULL,
+(2, 'sqlfetch', 'sqlsthdr', 600, 'Top SQL by shared blocks fetched', 'Top SQL by shared blocks fetched', NULL, NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -2847,9 +3049,10 @@ VALUES
       '{"id": ["shared_hit_pct1", "shared_hit_pct2"], "class": "table_obj_value", "title": "Shared blocks hits as a percentage of shared blocks fetched (read + hit)", "caption": "Hits(%)"}, '
       '{"id": ["total_time1", "total_time2"], "class": "table_obj_value", "title": "Time spent by the statement", "caption": "Elapsed(s)"}, '
       '{"id": ["rows1", "rows2"], "class": "table_obj_value", "title": "Total number of rows retrieved or affected by the statement", "caption": "Rows"}, '
-      '{"id": ["calls1", "calls2"], "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}'
+      '{"id": ["calls1", "calls2"], "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}, '
+      '{"id": ["stmt_cover1", "stmt_cover2"], "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']}]'::jsonb),
-(2, 'sqlshrd', 'sqlsthdr', 700, 'Top SQL by shared blocks read', 'Top SQL by shared blocks read', NULL, NULL, 'top_shared_reads', NULL,
+(2, 'sqlshrd', 'sqlsthdr', 700, 'Top SQL by shared blocks read', 'Top SQL by shared blocks read', NULL, NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -2875,10 +3078,11 @@ VALUES
       '{"id": ["shared_hit_pct1", "shared_hit_pct2"], "class": "table_obj_value", "title": "Shared blocks hits as a percentage of shared blocks fetched (read + hit)", "caption": "Hits(%)"}, '
       '{"id": ["total_time1", "total_time2"], "class": "table_obj_value", "title": "Time spent by the statement", "caption": "Elapsed(s)"}, '
       '{"id": ["rows1", "rows2"], "class": "table_obj_value", "title": "Total number of rows retrieved or affected by the statement", "caption": "Rows"}, '
-      '{"id": ["calls1", "calls2"], "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}'
+      '{"id": ["calls1", "calls2"], "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}, '
+      '{"id": ["stmt_cover1", "stmt_cover2"], "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']'
   '}]'::jsonb),
-(2, 'sqlshdir', 'sqlsthdr', 800, 'Top SQL by shared blocks dirtied', 'Top SQL by shared blocks dirtied', NULL, NULL, 'top_shared_dirtied', NULL,
+(2, 'sqlshdir', 'sqlsthdr', 800, 'Top SQL by shared blocks dirtied', 'Top SQL by shared blocks dirtied', NULL, NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -2907,10 +3111,11 @@ VALUES
       '{"id": ["wal_bytes_pct1", "wal_bytes_pct2"], "class": "table_obj_value", "title": "WAL bytes of this statement as a percentage of total WAL bytes generated by a cluster", "caption": "%Total", "condition": "statement_wal_bytes"}, '
       '{"id": ["total_time1", "total_time2"], "class": "table_obj_value", "title": "Time spent by the statement", "caption": "Elapsed(s)"}, '
       '{"id": ["rows1", "rows2"], "class": "table_obj_value", "title": "Total number of rows retrieved or affected by the statement", "caption": "Rows"}, '
-      '{"id": ["calls1", "calls2"], "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}'
+      '{"id": ["calls1", "calls2"], "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}, '
+      '{"id": ["stmt_cover1", "stmt_cover2"], "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']'
   '}]'::jsonb),
-(2, 'sqlshwr', 'sqlsthdr', 900, 'Top SQL by shared blocks written', 'Top SQL by shared blocks written', NULL, NULL, 'top_shared_written', NULL,
+(2, 'sqlshwr', 'sqlsthdr', 900, 'Top SQL by shared blocks written', 'Top SQL by shared blocks written', NULL, NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -2937,10 +3142,11 @@ VALUES
       '{"id": ["shared_hit_pct1", "shared_hit_pct2"], "class": "table_obj_value", "title": "Shared blocks hits as a percentage of shared blocks fetched (read + hit)", "caption": "Hits(%)"}, '
       '{"id": ["total_time1", "total_time2"], "class": "table_obj_value", "title": "Time spent by the statement", "caption": "Elapsed(s)"}, '
       '{"id": ["rows1", "rows2"], "class": "table_obj_value", "title": "Total number of rows retrieved or affected by the statement", "caption": "Rows"}, '
-      '{"id": ["calls1", "calls2"], "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}'
+      '{"id": ["calls1", "calls2"], "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}, '
+      '{"id": ["stmt_cover1", "stmt_cover2"], "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']'
   '}]'::jsonb),
-(2, 'sqlwalsz', 'sqlsthdr', 1000, 'Top SQL by WAL size', 'Top SQL by WAL size', 'statement_wal_bytes', NULL, 'top_wal_bytes', NULL,
+(2, 'sqlwalsz', 'sqlsthdr', 1000, 'Top SQL by WAL size', 'Top SQL by WAL size', 'statement_wal_bytes', NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -2965,10 +3171,11 @@ VALUES
       '{"id": ["wal_bytes_pct1", "wal_bytes_pct2"], "class": "table_obj_value", "title": "WAL bytes of this statement as a percentage of total WAL bytes generated by a cluster", "caption": "%Total"}, '
       '{"id": ["shared_blks_dirtied1", "shared_blks_dirtied2"], "class": "table_obj_value", "title": "Total number of shared blocks dirtied by the statement", "caption": "Dirtied"}, '
       '{"id": ["wal_fpi1", "wal_fpi2"], "class": "table_obj_value", "title": "Total number of WAL full page images generated by the statement", "caption": "WAL FPI"}, '
-      '{"id": ["wal_records1", "wal_records2"], "class": "table_obj_value", "title": "Total number of WAL records generated by the statement", "caption": "WAL records"}'
+      '{"id": ["wal_records1", "wal_records2"], "class": "table_obj_value", "title": "Total number of WAL records generated by the statement", "caption": "WAL records"}, '
+      '{"id": ["stmt_cover1", "stmt_cover2"], "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']'
   '}]'::jsonb),
-(2, 'sqltmp', 'sqlsthdr', 1100, 'Top SQL by temp usage', 'Top SQL by temp usage', 'statements_top_temp', NULL, 'top_temp', NULL,
+(2, 'sqltmp', 'sqlsthdr', 1100, 'Top SQL by temp usage', 'Top SQL by temp usage', 'statements_top_temp', NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -3005,10 +3212,11 @@ VALUES
       ']}, '
       '{"id": ["total_time1", "total_time2"], "class": "table_obj_value", "title": "Time spent by the statement", "caption": "Elapsed(s)"}, '
       '{"id": ["rows1", "rows2"], "class": "table_obj_value", "title": "Total number of rows retrieved or affected by the statement", "caption": "Rows"}, '
-      '{"id": ["calls1", "calls2"], "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}'
+      '{"id": ["calls1", "calls2"], "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}, '
+      '{"id": ["stmt_cover1", "stmt_cover2"], "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']'
   '}]'::jsonb),
-(2, 'sqltmpiotime', 'sqlsthdr', 1125, 'Top SQL by temp I/O time', 'Top SQL by temp I/O time', 'statements_temp_io_times', NULL, 'top_temp_io_time', NULL,
+(2, 'sqltmpiotime', 'sqlsthdr', 1125, 'Top SQL by temp I/O time', 'Top SQL by temp I/O time', 'statements_temp_io_times', NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -3042,10 +3250,11 @@ VALUES
       ']}, '
       '{"id": ["total_time1", "total_time2"], "class": "table_obj_value", "title": "Time spent by the statement", "caption": "Elapsed(s)"}, '
       '{"id": ["rows1", "rows2"], "class": "table_obj_value", "title": "Total number of rows retrieved or affected by the statement", "caption": "Rows"}, '
-      '{"id": ["calls1", "calls2"], "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}'
+      '{"id": ["calls1", "calls2"], "class": "table_obj_value", "title": "Number of times the statement was executed", "caption": "Executions"}, '
+      '{"id": ["stmt_cover1", "stmt_cover2"], "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']'
   '}]'::jsonb),
-(2, 'sqljit', 'sqlsthdr', 1150, 'Top SQL by JIT elapsed time', 'Top SQL by JIT elapsed time', 'statements_jit_stats', NULL, 'top_jit', NULL,
+(2, 'sqljit', 'sqlsthdr', 1150, 'Top SQL by JIT elapsed time', 'Top SQL by JIT elapsed time', 'statements_jit_stats', NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_statements",'
@@ -3083,17 +3292,22 @@ VALUES
           '{"id": ["jit_emission_count1", "jit_emission_count2"], "class": "table_obj_value", "title": "Number of times code has been emitted.", "caption": "Count"}, '
           '{"id": ["jit_emission_time1", "jit_emission_time2"], "class": "table_obj_value", "title": "Time spent by the statement on emitting code, in seconds.", "caption": "Time (s)"}'
       ']}, '
+      '{"class": "table_obj_name", "caption": "Deform", "condition": "statements_jit_deform", "columns": ['
+        '{"id": ["jit_deform_count1", "jit_deform_count2"], "class": "table_obj_value", "title": "Number of tuple deform functions JIT-compiled by the statement.", "caption": "Count"}, '
+        '{"id": ["jit_deform_time1", "jit_deform_time2"], "class": "table_obj_value", "title": "Total time spent by the statement on JIT-compiling tuple deform functions, in seconds.", "caption": "Time (s)"}'
+      ']}, '
       '{"class": "table_obj_name", "caption": "Time (s)", "columns": ['
           '{"id": ["total_plan_time1", "total_plan_time2"], "class": "table_obj_value", "title": "Time spent planning statement", "condition": "planning_times", "caption": "Plan"}, '
           '{"id": ["total_exec_time1", "total_exec_time2"], "class": "table_obj_value", "title": "Time spent executing statement", "caption": "Exec"}'
       ']}, '
       '{"class": "table_obj_name", "caption": "I/O time (s)", "condition": "io_times", "columns": ['
-          '{"id": ["blk_read_time1", "blk_read_time2"], "class": "table_obj_value", "title": "Time spent reading blocks by statement", "caption": "Read"}, '
-          '{"id": ["blk_write_time1", "blk_write_time2"], "class": "table_obj_value", "title": "Time spent writing blocks by statement", "caption": "Write"}'
-      ']}'
+          '{"id": ["shared_blk_read_time1", "shared_blk_read_time2"], "class": "table_obj_value", "title": "Time spent reading blocks by statement", "caption": "Read"}, '
+          '{"id": ["shared_blk_write_time1", "shared_blk_write_time2"], "class": "table_obj_value", "title": "Time spent writing blocks by statement", "caption": "Write"}'
+      ']},'
+      '{"id": ["stmt_cover1", "stmt_cover2"], "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']}]'::jsonb),
-(2, 'sqlkcachehdr', 'sqlsthdr', 1200, 'rusage statistics', 'rusage statistics', 'kcachestatements', NULL, 'kcache_stat', NULL, NULL),
-(2, 'sqlrusgcpu_t', 'sqlkcachehdr', 100, 'Top SQL by system and user time', 'Top SQL by system and user time', NULL, NULL, 'kcache_time', NULL,
+(2, 'sqlkcachehdr', 'sqlsthdr', 1200, 'Rusage statistics', 'Rusage statistics', 'kcachestatements', NULL, NULL, NULL),
+(2, 'sqlrusgcpu_t', 'sqlkcachehdr', 100, 'Top SQL by system and user time', 'Top SQL by system and user time', NULL, NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "top_rusage_statements",'
@@ -3126,7 +3340,7 @@ VALUES
             ']}'
         ']'
     '}]'::jsonb),
-(2, 'sqlrusgio', 'sqlkcachehdr', 200, 'Top SQL by reads/writes done by filesystem layer', 'Top SQL by reads/writes done by filesystem layer', NULL, NULL, 'kcache_reads_writes', NULL,
+(2, 'sqlrusgio', 'sqlkcachehdr', 200, 'Top SQL by reads/writes done by filesystem layer', 'Top SQL by reads/writes done by filesystem layer', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_rusage_statements",'
@@ -3159,7 +3373,7 @@ VALUES
       ']}'
     ']'
   '}]'::jsonb),
-(2, 'sqllist', 'sqlsthdr', 1300, 'Complete list of SQL texts', 'Complete list of SQL texts', NULL, NULL, 'sql_list', NULL,
+(2, 'sqllist', 'sqlsthdr', 1300, 'Complete list of SQL texts', 'Complete list of SQL texts', NULL, NULL, NULL,
   '[{'
     '"type": "row_table", '
     '"source": "queries",'
@@ -3175,10 +3389,10 @@ VALUES
 
 -- Schema objects section of a differential report
 INSERT INTO report_struct (
-  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name, href,
+  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name,
   content, sect_struct)
 VALUES
-(2, 'tblscan', 'objects', 100, 'Top tables by estimated sequentially scanned volume', 'Top tables by estimated sequentially scanned volume', NULL, NULL, 'scanned_tbl', NULL,
+(2, 'tblscan', 'objects', 100, 'Top tables by estimated sequentially scanned volume', 'Top tables by estimated sequentially scanned volume', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_tables",'
@@ -3227,7 +3441,7 @@ VALUES
      ']}'
     ']'
   '}]'::jsonb),
-(2, 'tblfetch', 'objects', 200, 'Top tables by blocks fetched', 'Top tables by blocks fetched', NULL, NULL, 'fetch_tbl', NULL,
+(2, 'tblfetch', 'objects', 200, 'Top tables by blocks fetched', 'Top tables by blocks fetched', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_io_tables",'
@@ -3264,7 +3478,7 @@ VALUES
      ']}'
     ']'
   '}]'::jsonb),
-(2, 'tblrd', 'objects', 300, 'Top tables by blocks read', 'Top tables by blocks read', NULL, NULL, 'read_tbl', NULL,
+(2, 'tblrd', 'objects', 300, 'Top tables by blocks read', 'Top tables by blocks read', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_io_tables",'
@@ -3302,7 +3516,7 @@ VALUES
      '{"caption": "Hit(%)", "id": ["hit_pct1", "hit_pct2"], "class": "table_obj_value", "title": "Number of heap, indexes, toast and toast index blocks fetched from shared buffers as a percentage of all their blocks fetched from shared buffers and file system"}'
     ']'
   '}]'::jsonb),
-(2, 'tbldml', 'objects', 400, 'Top DML tables', 'Top DML tables', NULL, NULL, 'dml_tbl', NULL,
+(2, 'tbldml', 'objects', 400, 'Top DML tables', 'Top DML tables', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_tables",'
@@ -3335,7 +3549,7 @@ VALUES
      ']}'
     ']'
   '}]'::jsonb),
-(2, 'tblud', 'objects', 500, 'Top tables by updated/deleted tuples', 'Top tables by updated/deleted tuples', NULL, NULL, 'upd_del_tbl', NULL,
+(2, 'tblud', 'objects', 500, 'Top tables by updated/deleted tuples', 'Top tables by updated/deleted tuples', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_tables",'
@@ -3363,7 +3577,7 @@ VALUES
      '{"caption": "AutoAnalyze", "id": ["autoanalyze_count1", "autoanalyze_count2"], "title": "Number of times this table has been analyzed by the autovacuum daemon", "class": "table_obj_value"}'
     ']'
   '}]'::jsonb),
-(2, 'tblupd_np', 'objects', 550, 'Top tables by new-page updated tuples', 'Top tables by new-page updated tuples', 'table_new_page_updates', NULL, 'upd_np_tbl',
+(2, 'tblupd_np', 'objects', 550, 'Top tables by new-page updated tuples', 'Top tables by new-page updated tuples', 'table_new_page_updates', NULL,
   '{"class": "notice", "text": "Top tables by number of rows updated where the successor version goes onto a new heap page, '
   'leaving behind an original version with a t_ctid field that points to a different heap page. '
   'These are always non-HOT updates."}',
@@ -3391,7 +3605,7 @@ VALUES
      '{"caption": "Upd(HOT)", "id": ["n_tup_hot_upd1", "n_tup_hot_upd2"], "title": "Number of rows HOT updated (i.e., with no separate index update required)", "class": "table_obj_value"}'
     ']'
   '}]'::jsonb),
-(2, 'tblgrw', 'objects', 600, 'Top growing tables', 'Top growing tables', NULL, NULL, 'growth_tbl',
+(2, 'tblgrw', 'objects', 600, 'Top growing tables', 'Top growing tables', NULL, NULL,
   '{"class": "notice", "text": "Sizes in square brackets are based on pg_class.relpages data instead of pg_relation_size() function"}',
   '[{'
     '"type": "row_table",'
@@ -3429,7 +3643,7 @@ VALUES
      ']}'
     ']'
   '}]'::jsonb),
-(2, 'ixfetch', 'objects', 700, 'Top indexes by blocks fetched', 'Top indexes by blocks fetched', NULL, NULL, 'fetch_idx', NULL,
+(2, 'ixfetch', 'objects', 700, 'Top indexes by blocks fetched', 'Top indexes by blocks fetched', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_io_indexes",'
@@ -3455,7 +3669,7 @@ VALUES
      '{"caption": "%Total", "id": ["idx_blks_fetch_pct1", "idx_blks_fetch_pct2"], "title": "Blocks fetched from this index as a percentage of all blocks fetched in a cluster", "class": "table_obj_value"}'
     ']'
   '}]'::jsonb),
-(2, 'ixrd', 'objects', 800, 'Top indexes by blocks read', 'Top indexes by blocks read', NULL, NULL, 'read_idx', NULL,
+(2, 'ixrd', 'objects', 800, 'Top indexes by blocks read', 'Top indexes by blocks read', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_io_indexes",'
@@ -3482,7 +3696,7 @@ VALUES
      '{"caption": "Hits(%)", "id": ["idx_blks_hit_pct1", "idx_blks_hit_pct2"], "title": "Index blocks buffer cache hit percentage", "class": "table_obj_value"}'
     ']'
   '}]'::jsonb),
-(2, 'ixgrw', 'objects', 900, 'Top growing indexes', 'Top growing indexes', NULL, NULL, 'growth_idx',
+(2, 'ixgrw', 'objects', 900, 'Top growing indexes', 'Top growing indexes', NULL, NULL,
   '{"class": "notice", "text": "Sizes in square brackets are based on pg_class.relpages data instead of pg_relation_size() function"}',
   '[{'
     '"type": "row_table",'
@@ -3519,10 +3733,10 @@ VALUES
 
 -- Functions section of a differential report
 INSERT INTO report_struct (
-  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name, href,
+  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name,
   content, sect_struct)
 VALUES
-(2, 'func_t', 'funchdr', 100, 'Top functions by total time', 'Top functions by total time', NULL, NULL, 'funcs_time_stat', NULL,
+(2, 'func_t', 'funchdr', 100, 'Top functions by total time', 'Top functions by total time', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_functions",'
@@ -3548,7 +3762,7 @@ VALUES
      ']}'
     ']'
   '}]'::jsonb),
-(2, 'func_c', 'funchdr', 200, 'Top functions by executions', 'Top functions by executions', NULL, NULL, 'funcs_calls_stat', NULL,
+(2, 'func_c', 'funchdr', 200, 'Top functions by executions', 'Top functions by executions', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_functions",'
@@ -3574,7 +3788,7 @@ VALUES
      ']}'
     ']'
   '}]'::jsonb),
-(2, 'func_trg', 'funchdr', 300, 'Top trigger functions by total time', 'Top trigger functions by total time', 'trigger_function_stats', NULL, 'trg_funcs_time_stat', NULL,
+(2, 'func_trg', 'funchdr', 300, 'Top trigger functions by total time', 'Top trigger functions by total time', 'trigger_function_stats', NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_functions",'
@@ -3604,10 +3818,10 @@ VALUES
 
 -- Vacuum section of a regular report
 INSERT INTO report_struct (
-  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name, href,
+  report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name,
   content, sect_struct)
 VALUES
-(2, 'vacops', 'vachdr', 100, 'Top tables by vacuum operations', 'Top tables by vacuum operations', NULL, NULL, 'top_vacuum_cnt_tbl', NULL,
+(2, 'vacops', 'vachdr', 100, 'Top tables by vacuum operations', 'Top tables by vacuum operations', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_tables",'
@@ -3634,7 +3848,7 @@ VALUES
      '{"caption": "Upd(HOT)", "id": ["n_tup_hot_upd1", "n_tup_hot_upd2"], "class": "table_obj_value", "title": "Number of rows HOT updated (i.e., with no separate index update required)"}'
     ']'
   '}]'::jsonb),
-(2, 'anops', 'vachdr', 200, 'Top tables by analyze operations', 'Top tables by analyze operations', NULL, NULL, 'top_analyze_cnt_tbl', NULL,
+(2, 'anops', 'vachdr', 200, 'Top tables by analyze operations', 'Top tables by analyze operations', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_tables",'
@@ -3661,7 +3875,7 @@ VALUES
      '{"caption": "Upd(HOT)", "id": ["n_tup_hot_upd1", "n_tup_hot_upd2"], "class": "table_obj_value", "title": "Number of rows HOT updated (i.e., with no separate index update required)"}'
     ']'
   '}]'::jsonb),
-(2, 'ixvacest', 'vachdr', 300, 'Top indexes by estimated vacuum load', 'Top indexes by estimated vacuum load', NULL, NULL, 'top_ix_vacuum_bytes_cnt_tbl', NULL,
+(2, 'ixvacest', 'vachdr', 300, 'Top indexes by estimated vacuum load', 'Top indexes by estimated vacuum load', NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "top_indexes",'
@@ -3693,10 +3907,10 @@ VALUES
 
 -- Settings sections
 INSERT INTO report_struct(
-    report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name, href,
+    report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name,
     content, sect_struct)
 VALUES
-(2, 'definedset', 'settings', 800, NULL, NULL, NULL, NULL, NULL, NULL,
+(2, 'definedset', 'settings', 800, NULL, NULL, NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "settings",'

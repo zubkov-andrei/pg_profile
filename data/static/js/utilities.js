@@ -50,7 +50,7 @@ class Utilities {
     }
 
     static getInputField() {
-        return document.getElementById('searchField');
+        return document.getElementById('inputField');
     }
 
     static cancelSearchResults(rowsForSearch) {
@@ -137,18 +137,7 @@ class Utilities {
             }
         })
     }
-
-    /** Add dropdown menu
-     * Search can be executed by next attributes: */
-    static searchParams = {
-        'all': 'Everywhere',
-        'dbname': 'Database',
-        'username': 'User',
-        'relname': 'Table',
-        'indexrelname': 'Index',
-        'querytext': 'Query'
-    }
-
+    
     static search(rowsForSearch, searchParam, keyword) {
         keyword = keyword.toLowerCase();
 

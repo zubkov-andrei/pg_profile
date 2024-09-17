@@ -3,7 +3,7 @@ class BaseSection {
     constructor(section) {
         this.section = section;
         this.sectionHasContent = ('content' in section);
-        this.sectionHasBlocks = ('header' in section);
+        this.sectionHasTable = ('header' in section);
         this.sectionHasTitle = ('tbl_cap' in section);
     }
 
@@ -14,9 +14,7 @@ class BaseSection {
     static buildTitle(section) {
         let title = document.createElement('h3');
         title.innerHTML = section.tbl_cap;
-        if (section.href) {
-            title.id = section.href;
-        }
+        title.id = section.sect_id;
         return title;
     }
 
@@ -38,7 +36,7 @@ class BaseSection {
             contentDiv.innerHTML = contentText;
             div.appendChild(contentDiv);
         }
-        if (this.sectionHasBlocks) {
+        if (this.sectionHasTable) {
             let table = document.createElement('table');
 
             /** ID of table determined as sect_id + '_t' literal */
@@ -94,6 +92,11 @@ class BaseSection {
                     div.appendChild(new HorizontalTable(newBlock, table).init());
                 } else if (newBlock.header.type === 'column_table') {
                     div.appendChild(new VerticalTable(newBlock, table).init());
+                } else if (newBlock.header.type === 'chart') {
+                    div.appendChild(SessionChart.initTreshold(newBlock));
+                    let sessionChart = new SessionChart();
+                    div.appendChild(sessionChart.init(newBlock));
+                    div.appendChild(sessionChart.drawSessionChartLegend());
                 }
             }
         }
@@ -116,7 +119,6 @@ class BaseTable extends BaseSection {
         'queryText': BaseTable.buildQueryTextCell,
         'waitEvent': BaseTable.buildWaitEventDetailsCell,
         'pipeChart': PipeChart.drawIntoTable,
-        'pieChart': PieChart.drawIntoTable
     }
     static properties = {
         'topn': data.properties.topn,
@@ -267,7 +269,7 @@ class BaseTable extends BaseSection {
         /** Tag with hex(planid) and link */
         let p1 = document.createElement('p');
         let a1 = document.createElement('a');
-        a1.setAttribute('href', `#${row.hexqueryid}_${row.hexplanid}`);
+        a1.href = `#${row.hexqueryid}_${row.hexplanid}`;
         a1.innerHTML = row.hexplanid;
         p1.appendChild(a1);
 
@@ -673,6 +675,16 @@ class HorizontalTable extends BaseTable {
         }
     }
 
+    static setId(newRow, row, dataAttrs) {
+        let data = new Array();
+
+        dataAttrs.forEach(item => {
+            data.push(row[item]);
+        });
+
+        let customId = data.join("_");
+        newRow.setAttribute('id', customId)
+    }
     /**
      * Inserting rows into html-table
      */
@@ -681,6 +693,7 @@ class HorizontalTable extends BaseTable {
         let columns = HorizontalTable.getColumns(this.section.header);  // Getting columns matrix
         let highlightRowAttrs = this.section.header.highlight;
         let previewQueryAttrs = this.section.header.preview;
+        let scrollQueryAttrs = this.section.header.scroll;
         let rows = this.section.data;  // Getting json array with data
 
         /** Set data-attributes */
@@ -692,7 +705,10 @@ class HorizontalTable extends BaseTable {
             let result = JSON.stringify(previewQueryAttrs);
             this.table.setAttribute('data-preview', result);
         }
-
+        if (scrollQueryAttrs) {
+            let scrollAttrs = JSON.stringify(scrollQueryAttrs);
+            this.table.setAttribute('data-scroll', scrollAttrs);
+        }
         /** Iterate over the data */
         for (let i = 0; i < rows.length; i++) {
 
@@ -721,7 +737,9 @@ class HorizontalTable extends BaseTable {
                 if (previewQueryAttrs) {
                     HorizontalTable.setDataAttrs(newRow, row, previewQueryAttrs);
                 }
-
+                if (scrollQueryAttrs) {
+                    HorizontalTable.setId(newRow, row, scrollQueryAttrs);
+                }
                 /** Array to collect empty cells */
                 let isEmpty = [];
 

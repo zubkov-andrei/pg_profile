@@ -3,32 +3,15 @@ class Copier {
         let button = document.createElement('a');
         button.setAttribute('class', 'copyButton');
         button.setAttribute('title', 'Copy to clipboard');
-        let svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.style.marginLeft = '10px';
-        svg.setAttribute('height', '14px');
-        svg.setAttribute('width', '12px');
 
-        let rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        rect.setAttribute('x', '2');
-        rect.setAttribute('y', '2');
-        rect.setAttribute('height', '12px');
-        rect.setAttribute('width', '10px');
-        rect.setAttribute('rx', '4');
-        rect.setAttribute('stroke', 'grey');
-        rect.setAttribute('fill', 'transparent');
+        let svg = `
+            <svg height="14px" width="12px" style="margin-left: 10px;">
+                <rect x="2" y="2" height="12px" width="10px" rx="4" stroke="grey" fill="transparent"></rect>
+                <rect x="0" y="0" height="12px" width="10px" rx="4" stroke="grey" fill="transparent"></rect>
+            </svg>
+        `
 
-        let replica = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        replica.setAttribute('x', '0');
-        replica.setAttribute('y', '0');
-        replica.setAttribute('height', '12px');
-        replica.setAttribute('width', '10px');
-        replica.setAttribute('rx', '4');
-        replica.setAttribute('stroke', 'grey');
-        replica.setAttribute('fill', 'transparent');
-
-        svg.appendChild(rect);
-        svg.appendChild(replica);
-        button.appendChild(svg);
+        button.insertAdjacentHTML('afterbegin', svg);
 
         return button;
     }

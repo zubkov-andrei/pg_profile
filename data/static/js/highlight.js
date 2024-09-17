@@ -30,10 +30,10 @@ class Highlighter {
                     Highlighter.setBackgroundColorToRow(row, '', this.transition);
                     row.classList.add('active');
 
-                    /** Highlight navigator item */
+                    /** Highlight menu item */
                     let navId = this.getClosestTag(row, 0, 'div').firstChild.id;
                     if (navId) {
-                        let navLi = document.getElementById(`navigator_${navId}`);
+                        let navLi = document.getElementById(`menu_${navId}`);
                         if (navLi && !navLi.classList.contains('active')) {
                             navLi.classList.add('active');
                         }
@@ -84,8 +84,8 @@ class Highlighter {
                 elem.classList.remove('active');
             }
         })
-        let navigator = document.getElementById('navigator');
-        if (navigator) {
+        let menu = document.getElementById('sections');
+        if (menu) {
             let allItems = document.querySelectorAll('li');
             allItems.forEach(item => {
                 if (item.classList.contains('active')) {
