@@ -142,3 +142,8 @@ ALTER TABLE sample_statements_total
   RENAME COLUMN blk_write_time TO shared_blk_write_time;
 
 ALTER TABLE report_struct DROP COLUMN href;
+
+ALTER TABLE last_stat_kcache
+  ADD COLUMN stats_since         timestamp with time zone;
+ALTER TABLE sample_kcache
+  ADD COLUMN stats_since         timestamp with time zone;

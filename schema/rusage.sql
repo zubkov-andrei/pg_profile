@@ -31,6 +31,7 @@ CREATE TABLE sample_kcache (
     exec_nvcsws         bigint, -- Number of voluntary context switches
     exec_nivcsws        bigint,
     toplevel            boolean,
+    stats_since         timestamp with time zone,
     CONSTRAINT pk_sample_kcache_n PRIMARY KEY (server_id, sample_id, datid, userid, queryid, toplevel),
     CONSTRAINT fk_kcache_stmt_list FOREIGN KEY (server_id,queryid_md5)
       REFERENCES stmt_list (server_id,queryid_md5)
@@ -74,7 +75,8 @@ CREATE TABLE last_stat_kcache (
     exec_msgrcvs        bigint, -- Number of IPC messages received
     exec_nsignals       bigint, -- Number of signals received
     exec_nvcsws         bigint, -- Number of voluntary context switches
-    exec_nivcsws        bigint
+    exec_nivcsws        bigint,
+    stats_since         timestamp with time zone
 )
 PARTITION BY LIST (server_id);
 

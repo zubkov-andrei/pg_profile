@@ -91,7 +91,6 @@ RETURNS TABLE(
     jit_emission_time       double precision,
     jit_deform_count        bigint,
     jit_deform_time         double precision,
-    stmt_alloc              bigint,
     stmt_cover              double precision
 ) SET search_path=@extschema@ AS $$
     WITH
@@ -257,7 +256,6 @@ RETURNS TABLE(
         sum(st.jit_emission_time)/1000::double precision AS jit_emission_time,
         sum(st.jit_deform_count)::bigint AS jit_deform_count,
         sum(st.jit_deform_time)/1000::double precision AS jit_deform_time,
-        count(DISTINCT st.stats_since) AS stmt_alloc,
         100 - extract(epoch from sum(CASE
             WHEN st.stats_since <= s_prev.sample_time THEN '0'::interval
             ELSE st.stats_since - s_prev.sample_time
@@ -370,7 +368,6 @@ RETURNS TABLE(
     jit_emission_time       numeric,
     jit_deform_count        bigint,
     jit_deform_time         numeric,
-    stmt_alloc              bigint,
     stmt_cover              numeric,
     sum_tmp_blks            bigint,
     sum_jit_time            numeric,
@@ -476,7 +473,6 @@ SET search_path=@extschema@ AS $$
     round(CAST(NULLIF(st.jit_emission_time, 0.0) AS numeric), 2),
     NULLIF(st.jit_deform_count, 0),
     round(CAST(NULLIF(st.jit_deform_time, 0.0) AS numeric), 2),
-    NULLIF(st.stmt_alloc, 0),
     round(CAST(NULLIF(st.stmt_cover, 0.0) AS numeric)),
     COALESCE(st.temp_blks_read, 0) +
         COALESCE(st.temp_blks_written, 0) +
@@ -686,7 +682,6 @@ RETURNS TABLE(
     jit_emission_time1       numeric,
     jit_deform_count1        bigint,
     jit_deform_time1         numeric,
-    stmt_alloc1              bigint,
     stmt_cover1              numeric,
     --Second Interval
     plans2                   bigint,
@@ -761,7 +756,6 @@ RETURNS TABLE(
     jit_emission_time2       numeric,
     jit_deform_count2        bigint,
     jit_deform_time2         numeric,
-    stmt_alloc2              bigint,
     stmt_cover2              numeric,
     -- Filter and ordering fields
     sum_tmp_blks             bigint,
@@ -871,7 +865,6 @@ SET search_path=@extschema@ AS $$
     round(CAST(NULLIF(st1.jit_emission_time, 0.0) AS numeric), 2),
     NULLIF(st1.jit_deform_count, 0),
     round(CAST(NULLIF(st1.jit_deform_time, 0.0) AS numeric), 2),
-    NULLIF(st1.stmt_alloc, 0),
     round(CAST(NULLIF(st1.stmt_cover, 0.0) AS numeric)),
     -- Second Interval
     NULLIF(st2.plans, 0),
@@ -948,7 +941,6 @@ SET search_path=@extschema@ AS $$
     round(CAST(NULLIF(st2.jit_emission_time, 0.0) AS numeric), 2),
     NULLIF(st2.jit_deform_count, 0),
     round(CAST(NULLIF(st2.jit_deform_time, 0.0) AS numeric), 2),
-    NULLIF(st2.stmt_alloc, 0),
     round(CAST(NULLIF(st2.stmt_cover, 0.0) AS numeric)),
     -- Filter and ordering fields
     COALESCE(st1.temp_blks_read, 0) +

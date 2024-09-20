@@ -42,3 +42,4 @@ DROP FUNCTION stat_activity_states_format(integer, integer, integer);
 DROP FUNCTION stat_activity_states_format(integer, integer, integer, integer, integer);
 DROP FUNCTION mark_pg_stat_statements;
 DROP FUNCTION sections_jsonb;
+DROP FUNCTION top_kcache_statements;

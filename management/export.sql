@@ -2411,7 +2411,7 @@ BEGIN
               plan_nswaps,plan_reads,plan_writes,plan_msgsnds,plan_msgrcvs,plan_nsignals,
               plan_nvcsws,plan_nivcsws,exec_user_time,exec_system_time,exec_minflts,
               exec_majflts,exec_nswaps,exec_reads,exec_writes,exec_msgsnds,exec_msgrcvs,
-              exec_nsignals,exec_nvcsws,exec_nivcsws,toplevel)
+              exec_nsignals,exec_nvcsws,exec_nivcsws,toplevel,stats_since)
             SELECT
               (srv_map ->> dr.server_id::text)::integer,
               dr.sample_id,
@@ -2443,7 +2443,8 @@ BEGIN
               dr.exec_nsignals,
               dr.exec_nvcsws,
               dr.exec_nivcsws,
-              coalesce(dr.toplevel, true)
+              coalesce(dr.toplevel, true),
+              dr.stats_since
             FROM json_to_record(datarow.row_data) AS dr(
               server_id         integer,
               sample_id         integer,
@@ -2475,7 +2476,8 @@ BEGIN
               exec_nsignals     bigint,
               exec_nvcsws       bigint,
               exec_nivcsws      bigint,
-              toplevel          boolean
+              toplevel          boolean,
+              stats_since       timestamp with time zone
               )
             ON CONFLICT ON CONSTRAINT pk_sample_kcache_n DO NOTHING;
             GET DIAGNOSTICS row_proc = ROW_COUNT;
@@ -2493,7 +2495,7 @@ BEGIN
               plan_nswaps,plan_reads,plan_writes,plan_msgsnds,plan_msgrcvs,plan_nsignals,
               plan_nvcsws,plan_nivcsws,exec_user_time,exec_system_time,exec_minflts,
               exec_majflts,exec_nswaps,exec_reads,exec_writes,exec_msgsnds,exec_msgrcvs,
-              exec_nsignals,exec_nvcsws,exec_nivcsws,toplevel)
+              exec_nsignals,exec_nvcsws,exec_nivcsws,toplevel,stats_since)
             SELECT
               (srv_map ->> dr.server_id::text)::integer,
               dr.sample_id,
@@ -2529,7 +2531,8 @@ BEGIN
               dr.exec_nsignals,
               dr.exec_nvcsws,
               dr.exec_nivcsws,
-              coalesce(dr.toplevel, true)
+              coalesce(dr.toplevel, true),
+              dr.stats_since
             FROM json_to_record(datarow.row_data) AS dr(
               server_id         integer,
               sample_id         integer,
@@ -2561,7 +2564,8 @@ BEGIN
               exec_nsignals     bigint,
               exec_nvcsws       bigint,
               exec_nivcsws      bigint,
-              toplevel          boolean
+              toplevel          boolean,
+              stats_since    timestamp with time zone
               )
             ON CONFLICT ON CONSTRAINT pk_sample_kcache_n DO NOTHING;
             GET DIAGNOSTICS row_proc = ROW_COUNT;
@@ -3030,7 +3034,7 @@ BEGIN
           plan_nswaps,plan_reads,plan_writes,plan_msgsnds,plan_msgrcvs,plan_nsignals,
           plan_nvcsws,plan_nivcsws,exec_user_time,exec_system_time,exec_minflts,
           exec_majflts,exec_nswaps,exec_reads,exec_writes,exec_msgsnds,exec_msgrcvs,
-          exec_nsignals,exec_nvcsws,exec_nivcsws
+          exec_nsignals,exec_nvcsws,exec_nivcsws,stats_since
         )
         SELECT
           (srv_map ->> dr.server_id::text)::integer,
@@ -3062,7 +3066,8 @@ BEGIN
           dr.exec_msgrcvs,
           dr.exec_nsignals,
           dr.exec_nvcsws,
-          dr.exec_nivcsws
+          dr.exec_nivcsws,
+          dr.stats_since
         FROM json_to_record(datarow.row_data) AS dr(
           server_id         integer,
           sample_id         integer,
@@ -3093,7 +3098,8 @@ BEGIN
           exec_msgrcvs      bigint,
           exec_nsignals     bigint,
           exec_nvcsws       bigint,
-          exec_nivcsws      bigint
+          exec_nivcsws      bigint,
+          stats_since       timestamp with time zone
           )
         ON CONFLICT DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;

@@ -1323,7 +1323,8 @@ VALUES
         '{"id": "plan_system_time", "class": "table_obj_value", "title": "System CPU time elapsed during planning", "caption": "Plan (s)", "condition": "rusage_planstats"}, '
         '{"id": "exec_system_time", "class": "table_obj_value", "title": "System CPU time elapsed during execution", "caption":"Exec (s)"}, '
         '{"id": "system_time_pct", "class": "table_obj_value", "title": "System CPU time elapsed by this statement as a percentage of total system CPU time", "caption": "%Total"}'
-        ']}'
+        ']}, '
+      '{"id": "rusage_cover", "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
       ']'
     '}]'::jsonb),
 (1, 'sqlrusgio', 'sqlkcachehdr', 200, 'Top SQL by reads/writes done by filesystem layer', 'Top SQL by reads/writes done by filesystem layer', NULL, NULL, NULL,
@@ -1355,7 +1356,8 @@ VALUES
           '{"id": "plan_writes", "class": "table_obj_value", "title": "Filesystem write amount during planning", "caption": "Plan", "condition": "rusage_planstats"},'
           '{"id": "exec_writes", "class": "table_obj_value", "title": "Filesystem write amount during execution", "caption": "Bytes"},'
           '{"id": "writes_total_pct", "class": "table_obj_value", "title": "Filesystem write amount of this statement as a percentage of all statements FS read amount", "caption": "%Total"}'
-      ']}'
+      ']}, '
+      '{"id": "rusage_cover", "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']'
   '}]'::jsonb),
 (1, 'sqllist', 'sqlsthdr', 1300, 'Complete list of SQL texts', 'Complete list of SQL texts', NULL, NULL, NULL,
@@ -3337,7 +3339,8 @@ VALUES
             '{"id": ["plan_system_time1", "plan_system_time2"], "class": "table_obj_value", "title": "System CPU time elapsed during planning", "caption": "Plan (s)", "condition": "rusage_planstats"}, '
             '{"id": ["exec_system_time1", "exec_system_time2"], "class": "table_obj_value", "title": "System CPU time elapsed during execution", "caption":"Exec (s)"}, '
             '{"id": ["system_time_pct1", "system_time_pct2"], "class": "table_obj_value", "title": "System CPU time elapsed by this statement as a percentage of total system CPU time", "caption": "%Total"}'
-            ']}'
+            ']}, '
+        '{"id": ["rusage_cover1", "rusage_cover2"], "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
         ']'
     '}]'::jsonb),
 (2, 'sqlrusgio', 'sqlkcachehdr', 200, 'Top SQL by reads/writes done by filesystem layer', 'Top SQL by reads/writes done by filesystem layer', NULL, NULL, NULL,
@@ -3370,7 +3373,8 @@ VALUES
           '{"id": ["plan_writes1", "plan_writes2"], "class": "table_obj_value", "title": "Filesystem write amount during planning", "caption": "Plan", "condition": "rusage_planstats"},'
          '{"id": ["exec_writes1", "exec_writes2"], "class": "table_obj_value", "title": "Filesystem write amount during execution", "caption": "Bytes"},'
          '{"id": ["writes_total_pct1", "writes_total_pct2"], "class": "table_obj_value", "title": "Filesystem write amount of this statement as a percentage of all statements FS read amount", "caption": "%Total"}'
-      ']}'
+      ']}, '
+      '{"id": ["rusage_cover1", "rusage_cover2"], "class": "table_obj_value", "condition": "statements_coverage", "caption": "%Cvr", "title": "Coverage: statement stats collection duration as a percentage of the report duration"} '
     ']'
   '}]'::jsonb),
 (2, 'sqllist', 'sqlsthdr', 1300, 'Complete list of SQL texts', 'Complete list of SQL texts', NULL, NULL, NULL,

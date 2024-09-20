@@ -36,16 +36,25 @@ RETURNS TABLE(
     plan_msgrcvs             bigint, -- Number of IPC messages received
     plan_nsignals            bigint, -- Number of signals received
     plan_nvcsws              bigint, -- Number of voluntary context switches
-    plan_nivcsws             bigint
+    plan_nivcsws             bigint,
+    rusage_cover             double precision
 ) SET search_path=@extschema@ AS $$
-  WITH tot AS (
+    WITH
+      tot AS (
         SELECT
             COALESCE(sum(exec_user_time), 0.0) + COALESCE(sum(plan_user_time), 0.0) AS user_time,
             COALESCE(sum(exec_system_time), 0.0) + COALESCE(sum(plan_system_time), 0.0)  AS system_time,
             COALESCE(sum(exec_reads), 0) + COALESCE(sum(plan_reads), 0) AS reads,
             COALESCE(sum(exec_writes), 0) + COALESCE(sum(plan_writes), 0) AS writes
         FROM sample_kcache_total
-        WHERE server_id = sserver_id AND sample_id BETWEEN start_id + 1 AND end_id)
+        WHERE server_id = sserver_id AND sample_id BETWEEN start_id + 1 AND end_id),
+      r_samples AS (
+        SELECT e.sample_time - s.sample_time AS duration
+        FROM samples s, samples e
+        WHERE
+          (s.server_id, s.sample_id) = (sserver_id, start_id) AND
+          (e.server_id, e.sample_id) = (sserver_id, end_id)
+      )
     SELECT
         kc.server_id AS server_id,
         kc.datid AS datid,
@@ -85,7 +94,12 @@ RETURNS TABLE(
         sum(kc.plan_msgrcvs)::bigint AS plan_msgrcvs,
         sum(kc.plan_nsignals)::bigint AS plan_nsignals,
         sum(kc.plan_nvcsws)::bigint AS plan_nvcsws,
-        sum(kc.plan_nivcsws)::bigint AS plan_nivcsws
+        sum(kc.plan_nivcsws)::bigint AS plan_nivcsws,
+        100 - extract(epoch from sum(CASE
+            WHEN kc.stats_since <= s_prev.sample_time THEN '0'::interval
+            ELSE kc.stats_since - s_prev.sample_time
+          END)) * 100 / -- Possibly lost stats time intervel
+          extract(epoch from min(r_samples.duration)) AS rusage_cover
    FROM sample_kcache kc
         -- User name
         JOIN roles_list rl USING (server_id, userid)
@@ -94,6 +108,9 @@ RETURNS TABLE(
         USING (server_id, sample_id, datid)
         -- Total stats
         CROSS JOIN tot
+        -- Prev sample is needed to calc stat coverage
+        JOIN samples s_prev ON (s_prev.server_id, s_prev.sample_id) = (sserver_id, kc.sample_id - 1)
+        CROSS JOIN r_samples
     WHERE kc.server_id = sserver_id AND kc.sample_id BETWEEN start_id + 1 AND end_id
     GROUP BY
       kc.server_id,
@@ -144,9 +161,10 @@ RETURNS TABLE(
     plan_nsignals            bigint,
     plan_nvcsws              bigint,
     plan_nivcsws             bigint,
+    rusage_cover             numeric,
+
     sum_cpu_time             numeric,
     sum_io_bytes             bigint,
-
     ord_cpu_time             bigint,
     ord_io_bytes             bigint
 )
@@ -191,6 +209,8 @@ SET search_path=@extschema@ AS $$
     NULLIF(st.plan_nsignals, 0),
     NULLIF(st.plan_nvcsws, 0),
     NULLIF(st.plan_nivcsws, 0),
+    round(CAST(NULLIF(st.rusage_cover, 0.0) AS numeric)) AS rusage_cover,
+
     (COALESCE(st.plan_user_time, 0.0) + COALESCE(st.plan_system_time, 0.0) +
       COALESCE(st.exec_user_time, 0.0) + COALESCE(st.exec_system_time, 0.0))::numeric AS sum_cpu_time,
     COALESCE(st.plan_reads, 0) + COALESCE(st.plan_writes, 0) +
@@ -253,6 +273,7 @@ RETURNS TABLE(
     plan_nsignals1           bigint,
     plan_nvcsws1             bigint,
     plan_nivcsws1            bigint,
+    rusage_cover1            numeric,
     -- Second interval
     exec_user_time2          numeric,
     user_time_pct2           numeric,
@@ -282,6 +303,7 @@ RETURNS TABLE(
     plan_nsignals2           bigint,
     plan_nvcsws2             bigint,
     plan_nivcsws2            bigint,
+    rusage_cover2            numeric,
     -- Filter and ordering fields
     sum_cpu_time             double precision,
     sum_io_bytes             bigint,
@@ -332,6 +354,7 @@ SET search_path=@extschema@ AS $$
     NULLIF(st1.plan_nsignals, 0),
     NULLIF(st1.plan_nvcsws, 0),
     NULLIF(st1.plan_nivcsws, 0),
+    round(CAST(NULLIF(st1.rusage_cover, 0.0) AS numeric)),
     -- Second interval
     round(CAST(NULLIF(st2.exec_user_time, 0.0) AS numeric), 2),
     round(CAST(NULLIF(st2.user_time_pct, 0.0) AS numeric), 2),
@@ -361,6 +384,7 @@ SET search_path=@extschema@ AS $$
     NULLIF(st2.plan_nsignals, 0),
     NULLIF(st2.plan_nvcsws, 0),
     NULLIF(st2.plan_nivcsws, 0),
+    round(CAST(NULLIF(st2.rusage_cover, 0.0) AS numeric)),
     -- Filter and ordering fields
     COALESCE(st1.plan_user_time, 0.0) + COALESCE(st1.plan_system_time, 0.0) +
       COALESCE(st1.exec_user_time, 0.0) + COALESCE(st1.exec_system_time, 0.0) +

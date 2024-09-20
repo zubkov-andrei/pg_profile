@@ -563,7 +563,8 @@ BEGIN
             'kc.msgrcvs as exec_msgrcvs,'
             'kc.nsignals as exec_nsignals,'
             'kc.nvcsws as exec_nvcsws,'
-            'kc.nivcsws as exec_nivcsws '
+            'kc.nivcsws as exec_nivcsws,'
+            'NULL as stats_since '
           );
         -- pg_stat_kcache v.2.2.0, 2.2.1, 2.2.2
         WHEN '2.2.0', '2.2.1', '2.2.2', '2.2.3'
@@ -593,7 +594,38 @@ BEGIN
             'kc.exec_msgrcvs as exec_msgrcvs,'
             'kc.exec_nsignals as exec_nsignals,'
             'kc.exec_nvcsws as exec_nvcsws,'
-            'kc.exec_nivcsws as exec_nivcsws '
+            'kc.exec_nivcsws as exec_nivcsws,'
+            'NULL as stats_since '
+          );
+        WHEN '2.3.0'
+        THEN
+          st_query := replace(st_query, '{kcache_fields}',
+            'kc.top as toplevel,'
+            'kc.plan_user_time as plan_user_time,'
+            'kc.plan_system_time as plan_system_time,'
+            'kc.plan_minflts as plan_minflts,'
+            'kc.plan_majflts as plan_majflts,'
+            'kc.plan_nswaps as plan_nswaps,'
+            'kc.plan_reads as plan_reads,'
+            'kc.plan_writes as plan_writes,'
+            'kc.plan_msgsnds as plan_msgsnds,'
+            'kc.plan_msgrcvs as plan_msgrcvs,'
+            'kc.plan_nsignals as plan_nsignals,'
+            'kc.plan_nvcsws as plan_nvcsws,'
+            'kc.plan_nivcsws as plan_nivcsws,'
+            'kc.exec_user_time as exec_user_time,'
+            'kc.exec_system_time as exec_system_time,'
+            'kc.exec_minflts as exec_minflts,'
+            'kc.exec_majflts as exec_majflts,'
+            'kc.exec_nswaps as exec_nswaps,'
+            'kc.exec_reads as exec_reads,'
+            'kc.exec_writes as exec_writes,'
+            'kc.exec_msgsnds as exec_msgsnds,'
+            'kc.exec_msgrcvs as exec_msgrcvs,'
+            'kc.exec_nsignals as exec_nsignals,'
+            'kc.exec_nvcsws as exec_nvcsws,'
+            'kc.exec_nivcsws as exec_nivcsws,'
+            'kc.stats_since as stats_since '
           );
         ELSE
           st_query := NULL;
@@ -630,7 +662,8 @@ BEGIN
           exec_msgrcvs,
           exec_nsignals,
           exec_nvcsws,
-          exec_nivcsws
+          exec_nivcsws,
+          stats_since
         )
         SELECT
           sserver_id,
@@ -662,7 +695,8 @@ BEGIN
           dbl.exec_msgrcvs  AS exec_msgrcvs,
           dbl.exec_nsignals  AS exec_nsignals,
           dbl.exec_nvcsws  AS exec_nvcsws,
-          dbl.exec_nivcsws  AS exec_nivcsws
+          dbl.exec_nivcsws  AS exec_nivcsws,
+          dbl.stats_since AS stats_since
         FROM dblink('server_connection',st_query)
         AS dbl (
           userid            oid,
@@ -692,7 +726,8 @@ BEGIN
           exec_msgrcvs      bigint,
           exec_nsignals     bigint,
           exec_nvcsws       bigint,
-          exec_nivcsws      bigint
+          exec_nivcsws      bigint,
+          stats_since       timestamp with time zone
         ) JOIN last_stat_statements lss USING (userid, datid, queryid, toplevel)
         WHERE
           (lss.server_id, lss.sample_id) = (sserver_id, s_id);
@@ -855,17 +890,19 @@ BEGIN
           AS x(extname text, extversion text)
         WHERE extname = 'pg_stat_kcache'
     )
-      WHEN '2.1.0','2.1.1','2.1.2','2.1.3','2.2.0','2.2.1','2.2.2','2.2.3'
+      WHEN '2.1.0','2.1.1','2.1.2','2.1.3','2.2.0','2.2.1','2.2.2','2.2.3','2.3.0'
       THEN
-        SELECT * INTO qres FROM dblink('server_connection',
-          format('SELECT %1$I.pg_stat_kcache_reset()',
-            (
-              SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
-                AS x(extname text, extnamespace text)
-              WHERE extname = 'pg_stat_kcache'
+        IF (properties #> '{properties,statements_reset}')::boolean THEN
+          SELECT * INTO qres FROM dblink('server_connection',
+            format('SELECT %1$I.pg_stat_kcache_reset()',
+              (
+                SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
+                  AS x(extname text, extnamespace text)
+                WHERE extname = 'pg_stat_kcache'
+              )
             )
-          )
-        ) AS t(res char(1));
+          ) AS t(res char(1));
+        END IF;
       ELSE
         NULL;
     END CASE;
@@ -1046,21 +1083,47 @@ SET search_path=@extschema@ AS $$
       cur.datid,
       cur.queryid,
       cur.toplevel,
-      CASE WHEN COALESCE(plan_user_time, 0.0) + COALESCE(plan_system_time, 0.0) > 0.0 THEN
-        row_number() OVER (ORDER BY plan_user_time + plan_system_time DESC NULLS LAST)
+      CASE WHEN COALESCE(cur.plan_user_time, 0.0) + COALESCE(cur.plan_system_time, 0.0) -
+        COALESCE(lst.plan_user_time, 0.0) - COALESCE(lst.plan_system_time, 0.0) > 0.0
+      THEN
+        row_number() OVER (ORDER BY
+          COALESCE(cur.plan_user_time, 0.0) + COALESCE(cur.plan_system_time, 0.0) -
+          COALESCE(lst.plan_user_time, 0.0) - COALESCE(lst.plan_system_time, 0.0)
+          DESC NULLS LAST)
       ELSE NULL END AS plan_cpu_time_rank,
 
-      row_number() OVER (ORDER BY exec_user_time + exec_system_time DESC NULLS LAST) AS exec_cpu_time_rank,
+      row_number() OVER (ORDER BY
+         cur.exec_user_time + cur.exec_system_time -
+         COALESCE(lst.exec_user_time, 0.0) - COALESCE(lst.exec_system_time, 0.0)
+         DESC NULLS LAST) AS exec_cpu_time_rank,
 
-      CASE WHEN COALESCE(plan_user_time, 0.0) + COALESCE(plan_system_time, 0.0) > 0.0 THEN
-        row_number() OVER (ORDER BY plan_reads + plan_writes DESC NULLS LAST)
+      CASE WHEN COALESCE(cur.plan_reads, 0.0) + COALESCE(cur.plan_writes, 0.0) -
+        COALESCE(lst.plan_reads, 0.0) - COALESCE(lst.plan_writes, 0.0) > 0.0
+      THEN
+        row_number() OVER (ORDER BY
+          COALESCE(cur.plan_reads, 0.0) + COALESCE(cur.plan_writes, 0.0) -
+          COALESCE(lst.plan_reads, 0.0) - COALESCE(lst.plan_writes, 0.0)
+        DESC NULLS LAST)
       ELSE NULL END AS plan_io_rank,
 
-      row_number() OVER (ORDER BY exec_reads + exec_writes DESC NULLS LAST) AS exec_io_rank
+      row_number() OVER (ORDER BY
+        COALESCE(cur.exec_reads, 0) + COALESCE(cur.exec_writes, 0) -
+        COALESCE(lst.exec_reads, 0) - COALESCE(lst.exec_writes, 0)
+        DESC NULLS LAST) AS exec_io_rank
     FROM
       last_stat_kcache cur
       -- In case of statements in already dropped database
       JOIN sample_stat_database db USING (server_id, sample_id, datid)
+      LEFT JOIN last_stat_kcache lst ON
+        (cur.server_id, lst.server_id, cur.sample_id, lst.sample_id, cur.datid,
+        cur.userid, cur.queryid, cur.toplevel) =
+        (sserver_id, sserver_id, s_id, s_id - 1, lst.datid, lst.userid,
+        lst.queryid, lst.toplevel) AND
+        (cur.stats_since = lst.stats_since OR (
+            (NOT statements_reset) AND
+            cur.exec_user_time >= lst.exec_user_time
+          )
+        )
     WHERE
       (cur.server_id, cur.sample_id) = (sserver_id, s_id)
     ) diff
@@ -1300,58 +1363,68 @@ SET search_path=@extschema@ AS $$
     jit_deform_time
   )
   SELECT
-    server_id,
-    sample_id,
-    datid,
-    sum(lss.plans),
-    sum(lss.total_plan_time),
-    sum(lss.calls),
-    sum(lss.total_exec_time),
-    sum(lss.rows),
-    sum(lss.shared_blks_hit),
-    sum(lss.shared_blks_read),
-    sum(lss.shared_blks_dirtied),
-    sum(lss.shared_blks_written),
-    sum(lss.local_blks_hit),
-    sum(lss.local_blks_read),
-    sum(lss.local_blks_dirtied),
-    sum(lss.local_blks_written),
-    sum(lss.temp_blks_read),
-    sum(lss.temp_blks_written),
-    sum(lss.shared_blk_read_time),
-    sum(lss.shared_blk_write_time),
-    sum(lss.wal_records),
-    sum(lss.wal_fpi),
-    sum(lss.wal_bytes),
-    count(*),
-    sum(lss.jit_functions),
-    sum(lss.jit_generation_time),
-    sum(lss.jit_inlining_count),
-    sum(lss.jit_inlining_time),
-    sum(lss.jit_optimization_count),
-    sum(lss.jit_optimization_time),
-    sum(lss.jit_emission_count),
-    sum(lss.jit_emission_time),
-    sum(lss.temp_blk_read_time),
-    sum(lss.temp_blk_write_time),
-    avg(lss.max_plan_time)::double precision,
-    avg(lss.max_exec_time)::double precision,
-    avg(lss.min_plan_time)::double precision,
-    avg(lss.min_exec_time)::double precision,
-    sum(lss.local_blk_read_time),
-    sum(lss.local_blk_write_time),
-    sum(lss.jit_deform_count),
-    sum(lss.jit_deform_time)
+    cur.server_id,
+    s_id,
+    cur.datid,
+    sum(cur.plans - COALESCE(lst.plans, 0)),
+    sum(cur.total_plan_time - COALESCE(lst.total_plan_time, 0.0)),
+    sum(cur.calls - COALESCE(lst.calls, 0)),
+    sum(cur.total_exec_time - COALESCE(lst.total_exec_time, 0.0)),
+    sum(cur.rows - COALESCE(lst.rows, 0)),
+    sum(cur.shared_blks_hit - COALESCE(lst.shared_blks_hit, 0)),
+    sum(cur.shared_blks_read - COALESCE(lst.shared_blks_read, 0)),
+    sum(cur.shared_blks_dirtied - COALESCE(lst.shared_blks_dirtied, 0)),
+    sum(cur.shared_blks_written - COALESCE(lst.shared_blks_written, 0)),
+    sum(cur.local_blks_hit - COALESCE(lst.local_blks_hit, 0)),
+    sum(cur.local_blks_read - COALESCE(lst.local_blks_read, 0)),
+    sum(cur.local_blks_dirtied - COALESCE(lst.local_blks_dirtied, 0)),
+    sum(cur.local_blks_written - COALESCE(lst.local_blks_written, 0)),
+    sum(cur.temp_blks_read - COALESCE(lst.temp_blks_read, 0)),
+    sum(cur.temp_blks_written - COALESCE(lst.temp_blks_written, 0)),
+    sum(cur.shared_blk_read_time - COALESCE(lst.shared_blk_read_time, 0)),
+    sum(cur.shared_blk_write_time - COALESCE(lst.shared_blk_write_time, 0)),
+    sum(cur.wal_records - COALESCE(lst.wal_records, 0)),
+    sum(cur.wal_fpi - COALESCE(lst.wal_fpi, 0)),
+    sum(cur.wal_bytes - COALESCE(lst.wal_bytes, 0)),
+    count(nullif(cur.calls - COALESCE(lst.calls, 0), 0)),
+    sum(cur.jit_functions - COALESCE(lst.jit_functions, 0)),
+    sum(cur.jit_generation_time - COALESCE(lst.jit_generation_time, 0)),
+    sum(cur.jit_inlining_count - COALESCE(lst.jit_inlining_count, 0)),
+    sum(cur.jit_inlining_time - COALESCE(lst.jit_inlining_time, 0)),
+    sum(cur.jit_optimization_count - COALESCE(lst.jit_optimization_count, 0)),
+    sum(cur.jit_optimization_time - COALESCE(lst.jit_optimization_time, 0)),
+    sum(cur.jit_emission_count - COALESCE(lst.jit_emission_count, 0)),
+    sum(cur.jit_emission_time - COALESCE(lst.jit_emission_time, 0)),
+    sum(cur.temp_blk_read_time - COALESCE(lst.temp_blk_read_time, 0)),
+    sum(cur.temp_blk_write_time - COALESCE(lst.temp_blk_write_time, 0)),
+    avg(cur.max_plan_time)::double precision,
+    avg(cur.max_exec_time)::double precision,
+    avg(cur.min_plan_time)::double precision,
+    avg(cur.min_exec_time)::double precision,
+    sum(cur.local_blk_read_time - COALESCE(lst.local_blk_read_time, 0)),
+    sum(cur.local_blk_write_time - COALESCE(lst.local_blk_write_time, 0)),
+    sum(cur.jit_deform_count - COALESCE(lst.jit_deform_count, 0)),
+    sum(cur.jit_deform_time - COALESCE(lst.jit_deform_time, 0))
   FROM
-    last_stat_statements lss
+    last_stat_statements cur
     -- In case of already dropped database
     JOIN sample_stat_database ssd USING (server_id, sample_id, datid)
+    LEFT JOIN last_stat_statements lst ON
+      (cur.server_id, lst.server_id, cur.sample_id, lst.sample_id, cur.datid,
+      cur.userid, cur.queryid, cur.toplevel) =
+      (sserver_id, sserver_id, s_id, s_id - 1, lst.datid,
+      lst.userid, lst.queryid, lst.toplevel) AND
+      (cur.stats_since = lst.stats_since OR (
+          (NOT statements_reset) AND
+          cur.calls >= lst.calls
+        )
+      )
   WHERE
-    (server_id, sample_id) = (sserver_id, s_id)
+    (cur.server_id, cur.sample_id) = (sserver_id, s_id)
   GROUP BY
-    server_id,
-    sample_id,
-    datid
+    cur.server_id,
+    cur.sample_id,
+    cur.datid
   ;
 
   /*
@@ -1389,7 +1462,8 @@ SET search_path=@extschema@ AS $$
       exec_nsignals,
       exec_nvcsws,
       exec_nivcsws,
-      toplevel
+      toplevel,
+      stats_since
   )
   SELECT
     cur.server_id,
@@ -1398,35 +1472,46 @@ SET search_path=@extschema@ AS $$
     cur.datid,
     cur.queryid,
     sst.queryid_md5,
-    cur.plan_user_time,
-    cur.plan_system_time,
-    cur.plan_minflts,
-    cur.plan_majflts,
-    cur.plan_nswaps,
-    cur.plan_reads,
-    cur.plan_writes,
-    cur.plan_msgsnds,
-    cur.plan_msgrcvs,
-    cur.plan_nsignals,
-    cur.plan_nvcsws,
-    cur.plan_nivcsws,
-    cur.exec_user_time,
-    cur.exec_system_time,
-    cur.exec_minflts,
-    cur.exec_majflts,
-    cur.exec_nswaps,
-    cur.exec_reads,
-    cur.exec_writes,
-    cur.exec_msgsnds,
-    cur.exec_msgrcvs,
-    cur.exec_nsignals,
-    cur.exec_nvcsws,
-    cur.exec_nivcsws,
-    cur.toplevel
+    cur.plan_user_time - COALESCE(lst.plan_user_time, 0.0),
+    cur.plan_system_time - COALESCE(lst.plan_system_time, 0.0),
+    cur.plan_minflts - COALESCE(lst.plan_minflts, 0),
+    cur.plan_majflts - COALESCE(lst.plan_majflts, 0),
+    cur.plan_nswaps - COALESCE(lst.plan_nswaps, 0),
+    cur.plan_reads - COALESCE(lst.plan_reads, 0),
+    cur.plan_writes - COALESCE(lst.plan_writes, 0),
+    cur.plan_msgsnds - COALESCE(lst.plan_msgsnds, 0),
+    cur.plan_msgrcvs - COALESCE(lst.plan_msgrcvs, 0),
+    cur.plan_nsignals - COALESCE(lst.plan_nsignals, 0),
+    cur.plan_nvcsws - COALESCE(lst.plan_nvcsws, 0),
+    cur.plan_nivcsws - COALESCE(lst.plan_nivcsws, 0),
+    cur.exec_user_time - COALESCE(lst.exec_user_time, 0.0),
+    cur.exec_system_time - COALESCE(lst.exec_system_time, 0.0),
+    cur.exec_minflts - COALESCE(lst.exec_minflts, 0),
+    cur.exec_majflts - COALESCE(lst.exec_majflts, 0),
+    cur.exec_nswaps - COALESCE(lst.exec_nswaps, 0),
+    cur.exec_reads - COALESCE(lst.exec_reads, 0),
+    cur.exec_writes - COALESCE(lst.exec_writes, 0),
+    cur.exec_msgsnds - COALESCE(lst.exec_msgsnds, 0),
+    cur.exec_msgrcvs - COALESCE(lst.exec_msgrcvs, 0),
+    cur.exec_nsignals - COALESCE(lst.exec_nsignals, 0),
+    cur.exec_nvcsws - COALESCE(lst.exec_nvcsws, 0),
+    cur.exec_nivcsws - COALESCE(lst.exec_nivcsws, 0),
+    cur.toplevel,
+    cur.stats_since
   FROM
     last_stat_kcache cur JOIN last_stat_statements sst ON
       (sst.server_id, cur.server_id, sst.sample_id, sst.userid, sst.datid, sst.queryid, sst.toplevel) =
       (sserver_id, sserver_id, cur.sample_id, cur.userid, cur.datid, cur.queryid, cur.toplevel)
+      LEFT JOIN last_stat_kcache lst ON
+        (cur.server_id, lst.server_id, cur.sample_id, lst.sample_id, cur.datid,
+        cur.userid, cur.queryid, cur.toplevel) =
+        (sserver_id, sserver_id, s_id, s_id - 1, lst.datid, lst.userid,
+        lst.queryid, lst.toplevel) AND
+        (cur.stats_since = lst.stats_since OR (
+            (NOT statements_reset) AND
+            cur.exec_user_time >= lst.exec_user_time
+          )
+        )
   WHERE
     (cur.server_id, cur.sample_id, sst.in_sample) = (sserver_id, s_id, true)
     AND sst.queryid_md5 IS NOT NULL;
@@ -1466,41 +1551,53 @@ SET search_path=@extschema@ AS $$
     cur.server_id,
     cur.sample_id,
     cur.datid,
-    sum(plan_user_time),
-    sum(plan_system_time),
-    sum(plan_minflts),
-    sum(plan_majflts),
-    sum(plan_nswaps),
-    sum(plan_reads),
-    sum(plan_writes),
-    sum(plan_msgsnds),
-    sum(plan_msgrcvs),
-    sum(plan_nsignals),
-    sum(plan_nvcsws),
-    sum(plan_nivcsws),
-    sum(exec_user_time),
-    sum(exec_system_time),
-    sum(exec_minflts),
-    sum(exec_majflts),
-    sum(exec_nswaps),
-    sum(exec_reads),
-    sum(exec_writes),
-    sum(exec_msgsnds),
-    sum(exec_msgrcvs),
-    sum(exec_nsignals),
-    sum(exec_nvcsws),
-    sum(exec_nivcsws),
-    count(*)
+    SUM(cur.plan_user_time - COALESCE(lst.plan_user_time, 0.0)),
+    SUM(cur.plan_system_time - COALESCE(lst.plan_system_time, 0.0)),
+    SUM(cur.plan_minflts - COALESCE(lst.plan_minflts, 0)),
+    SUM(cur.plan_majflts - COALESCE(lst.plan_majflts, 0)),
+    SUM(cur.plan_nswaps - COALESCE(lst.plan_nswaps, 0)),
+    SUM(cur.plan_reads - COALESCE(lst.plan_reads, 0)),
+    SUM(cur.plan_writes - COALESCE(lst.plan_writes, 0)),
+    SUM(cur.plan_msgsnds - COALESCE(lst.plan_msgsnds, 0)),
+    SUM(cur.plan_msgrcvs - COALESCE(lst.plan_msgrcvs, 0)),
+    SUM(cur.plan_nsignals - COALESCE(lst.plan_nsignals, 0)),
+    SUM(cur.plan_nvcsws - COALESCE(lst.plan_nvcsws, 0)),
+    SUM(cur.plan_nivcsws - COALESCE(lst.plan_nivcsws, 0)),
+
+    SUM(cur.exec_user_time - COALESCE(lst.exec_user_time, 0.0)),
+    SUM(cur.exec_system_time - COALESCE(lst.exec_system_time, 0.0)),
+    SUM(cur.exec_minflts - COALESCE(lst.exec_minflts, 0)),
+    SUM(cur.exec_majflts - COALESCE(lst.exec_majflts, 0)),
+    SUM(cur.exec_nswaps - COALESCE(lst.exec_nswaps, 0)),
+    SUM(cur.exec_reads - COALESCE(lst.exec_reads, 0)),
+    SUM(cur.exec_writes - COALESCE(lst.exec_writes, 0)),
+    SUM(cur.exec_msgsnds - COALESCE(lst.exec_msgsnds, 0)),
+    SUM(cur.exec_msgrcvs - COALESCE(lst.exec_msgrcvs, 0)),
+    SUM(cur.exec_nsignals - COALESCE(lst.exec_nsignals, 0)),
+    SUM(cur.exec_nvcsws - COALESCE(lst.exec_nvcsws, 0)),
+    SUM(cur.exec_nivcsws - COALESCE(lst.exec_nivcsws, 0)),
+
+    COUNT(NULLIF(cur.exec_user_time - COALESCE(lst.exec_user_time, 0.0), 0.0))
   FROM
     last_stat_kcache cur
     -- In case of already dropped database
     JOIN sample_stat_database db USING (server_id, sample_id, datid)
+    LEFT JOIN last_stat_kcache lst ON
+      (cur.server_id, lst.server_id, cur.sample_id, lst.sample_id, cur.datid,
+      cur.userid, cur.queryid, cur.toplevel) =
+      (sserver_id, sserver_id, s_id, s_id - 1, lst.datid, lst.userid,
+      lst.queryid, lst.toplevel) AND
+      (cur.stats_since = lst.stats_since OR (
+          (NOT statements_reset) AND
+          cur.exec_user_time >= lst.exec_user_time
+        )
+      )
   WHERE
     (cur.server_id, cur.sample_id) = (sserver_id, s_id) AND
-    toplevel
+    cur.toplevel
   GROUP BY
-    server_id,
-    sample_id,
-    datid
+    cur.server_id,
+    cur.sample_id,
+    cur.datid
   ;
 $$ LANGUAGE sql;
