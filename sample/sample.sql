@@ -382,12 +382,12 @@ BEGIN
           NOT
           CASE WHEN timezone('UTC',current_time) > timezone('UTC',qres.size_smp_wnd_start) THEN
             timezone('UTC',now()) <=
-            timezone('UTC',now())::date +
+            timezone('UTC',now())::pg_catalog.date +
             timezone('UTC',qres.size_smp_wnd_start) +
             qres.size_smp_wnd_dur
           ELSE
             timezone('UTC',now()) <=
-            timezone('UTC',now() - interval '1 day')::date +
+            timezone('UTC',now() - interval '1 day')::pg_catalog.date +
             timezone('UTC',qres.size_smp_wnd_start) +
             qres.size_smp_wnd_dur
           END
