@@ -63,6 +63,7 @@ If CPU and filesystem statistics is needed, consider installing *pg_stat_kcache*
 * **1.9** supported since version 4.0
 * **1.8** supported since version 0.1.2
 ## _pg_stat_kcache_ extension
+* **2.3.0** supported since version 4.7
 * **2.2.3** supported since version 4.4
 * **2.2.2** supported since version 4.3
 * **2.2.1** supported since version 4.0

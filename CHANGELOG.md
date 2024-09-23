@@ -3,6 +3,7 @@
 ## 4.7
 - support of PostgreSQL 17 cluster statistics
 - support of *pg_stat_statements* 1.11
+- support of *pg_stat_kcache* 2.3.0
 - *pg_stat_statements_reset()* call can be skipped now
 - visualisation of session states timeline (@Djoongaar)
 - *take_sample()* function inherits *lock_timeout* setting
