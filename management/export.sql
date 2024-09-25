@@ -616,6 +616,10 @@ BEGIN
             sample_id       integer,
             sample_time     timestamp(0) with time zone
           )
+        JOIN
+          servers s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer) =
+            (s_ctl.server_id)
         ON CONFLICT ON CONSTRAINT pk_samples DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -638,7 +642,12 @@ BEGIN
             bl_id        integer,
             bl_name      character varying(25),
             keep_until   timestamp (0) with time zone
-          );
+          )
+        JOIN
+          servers s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer) =
+            (s_ctl.server_id)
+        ;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
         IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
@@ -676,6 +685,10 @@ BEGIN
             sourceline       integer,
             pending_restart  boolean
           )
+        JOIN
+          servers s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer) =
+            (s_ctl.server_id)
         ON CONFLICT ON CONSTRAINT pk_sample_settings DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -696,7 +709,12 @@ BEGIN
             server_id       integer,
             sample_id       integer,
             bl_id           integer
-          );
+          )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
+        ;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
         IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
@@ -746,6 +764,10 @@ BEGIN
             wal_lsn                pg_lsn,
             in_recovery            boolean
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT ON CONSTRAINT pk_sample_stat_cluster DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -832,6 +854,10 @@ BEGIN
           checksum_failures   bigint,
           checksum_last_failure timestamp with time zone
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT ON CONSTRAINT pk_sample_stat_database DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -871,6 +897,10 @@ BEGIN
             wal_sync_time       double precision,
             stats_reset         timestamp with time zone
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT ON CONSTRAINT pk_sample_stat_wal DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -906,6 +936,10 @@ BEGIN
             last_failed_time    timestamp with time zone,
             stats_reset         timestamp with time zone
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT ON CONSTRAINT pk_sample_stat_archiver DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -963,6 +997,10 @@ BEGIN
             fsync_time                  double precision,
             stats_reset                 timestamp with time zone
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT ON CONSTRAINT pk_sample_stat_io DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -1002,6 +1040,10 @@ BEGIN
             truncates      bigint,
             stats_reset    timestamp with time zone
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT ON CONSTRAINT pk_sample_stat_slru DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -1217,6 +1259,10 @@ BEGIN
             event          text,
             time_spent     interval minute to second(2)
           )
+         JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT ON CONSTRAINT pk_sample_timings
           DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
@@ -1277,6 +1323,10 @@ BEGIN
             size          bigint,
             size_delta    bigint
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT ON CONSTRAINT pk_sample_stat_tablespaces
           DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
@@ -1308,6 +1358,10 @@ BEGIN
             tot_waited          bigint,
             stmt_waited         bigint
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT ON CONSTRAINT pk_sample_weid
           DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
@@ -1476,6 +1530,10 @@ BEGIN
               stats_since          timestamp with time zone,
               minmax_stats_since   timestamp with time zone
               )
+            JOIN
+              samples s_ctl ON
+                ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+                (s_ctl.server_id, s_ctl.sample_id)
             ON CONFLICT ON CONSTRAINT pk_sample_statements_n DO NOTHING;
             GET DIAGNOSTICS row_proc = ROW_COUNT;
             rowcnt := rowcnt + row_proc;
@@ -1604,6 +1662,10 @@ BEGIN
               temp_blk_read_time   double precision,
               temp_blk_write_time  double precision
               )
+            JOIN
+              samples s_ctl ON
+                ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+                (s_ctl.server_id, s_ctl.sample_id)
             ON CONFLICT ON CONSTRAINT pk_sample_statements_n DO NOTHING;
             GET DIAGNOSTICS row_proc = ROW_COUNT;
             rowcnt := rowcnt + row_proc;
@@ -1625,6 +1687,10 @@ BEGIN
                   server_id            integer,
                   userid               oid
               )
+              JOIN
+                servers s_ctl ON
+                  ((srv_map ->> dr.server_id::text)::integer) =
+                  (s_ctl.server_id)
             ON CONFLICT ON CONSTRAINT pk_roles_list DO
               UPDATE SET (last_sample_id, username) =
                 (EXCLUDED.last_sample_id, EXCLUDED.username);
@@ -1750,6 +1816,10 @@ BEGIN
               temp_blk_read_time   double precision,
               temp_blk_write_time  double precision
               )
+            JOIN
+              samples s_ctl ON
+                ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+                (s_ctl.server_id, s_ctl.sample_id)
             ON CONFLICT ON CONSTRAINT pk_sample_statements_n DO NOTHING;
             GET DIAGNOSTICS row_proc = ROW_COUNT;
             rowcnt := rowcnt + row_proc;
@@ -1864,6 +1934,10 @@ BEGIN
                 jit_deform_count    bigint,
                 jit_deform_time     double precision
               )
+            JOIN
+              samples s_ctl ON
+                ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+                (s_ctl.server_id, s_ctl.sample_id)
             ON CONFLICT ON CONSTRAINT pk_sample_statements_total DO NOTHING;
             GET DIAGNOSTICS row_proc = ROW_COUNT;
             rowcnt := rowcnt + row_proc;
@@ -1963,6 +2037,10 @@ BEGIN
                 mean_min_plan_time  double precision,
                 mean_min_exec_time  double precision
               )
+            JOIN
+              samples s_ctl ON
+                ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+                (s_ctl.server_id, s_ctl.sample_id)
             ON CONFLICT ON CONSTRAINT pk_sample_statements_total DO NOTHING;
             GET DIAGNOSTICS row_proc = ROW_COUNT;
             rowcnt := rowcnt + row_proc;
@@ -2043,6 +2121,10 @@ BEGIN
             exec_nivcsws      bigint,
             statements        bigint
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT ON CONSTRAINT pk_sample_kcache_total DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -2075,6 +2157,10 @@ BEGIN
             self_time   double precision,
             trg_fn      boolean
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT ON CONSTRAINT pk_sample_stat_user_functions DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -2103,6 +2189,10 @@ BEGIN
             total_time  double precision,
             trg_fn      boolean
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT ON CONSTRAINT pk_sample_stat_user_func_total DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -2216,6 +2306,10 @@ BEGIN
           last_idx_scan        timestamp with time zone,
           n_tup_newpage_upd    bigint
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT ON CONSTRAINT pk_sample_stat_tables DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -2308,6 +2402,10 @@ BEGIN
           relsize_diff       bigint,
           n_tup_newpage_upd  bigint
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT ON CONSTRAINT pk_sample_stat_tables_tot DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -2357,6 +2455,10 @@ BEGIN
           relpages_bytes_diff bigint,
           last_idx_scan  timestamp with time zone
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT ON CONSTRAINT pk_sample_stat_indexes DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -2393,6 +2495,10 @@ BEGIN
           idx_blks_hit   bigint,
           relsize_diff   bigint
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT ON CONSTRAINT pk_sample_stat_indexes_tot DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -2479,6 +2585,10 @@ BEGIN
               toplevel          boolean,
               stats_since       timestamp with time zone
               )
+            JOIN
+              samples s_ctl ON
+                ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+                (s_ctl.server_id, s_ctl.sample_id)
             ON CONFLICT ON CONSTRAINT pk_sample_kcache_n DO NOTHING;
             GET DIAGNOSTICS row_proc = ROW_COUNT;
             rowcnt := rowcnt + row_proc;
@@ -2567,6 +2677,10 @@ BEGIN
               toplevel          boolean,
               stats_since    timestamp with time zone
               )
+            JOIN
+              samples s_ctl ON
+                ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+                (s_ctl.server_id, s_ctl.sample_id)
             ON CONFLICT ON CONSTRAINT pk_sample_kcache_n DO NOTHING;
             GET DIAGNOSTICS row_proc = ROW_COUNT;
             rowcnt := rowcnt + row_proc;
@@ -2657,6 +2771,10 @@ BEGIN
           checksum_failures   bigint,
           checksum_last_failure timestamp with time zone
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -2687,6 +2805,10 @@ BEGIN
           size            bigint,
           size_delta      bigint
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -2733,6 +2855,10 @@ BEGIN
           stats_reset            timestamp with time zone,
           wal_size               bigint
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -2767,6 +2893,10 @@ BEGIN
           last_failed_time    timestamp with time zone,
           stats_reset         timestamp with time zone
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -2879,6 +3009,10 @@ BEGIN
           last_idx_scan        timestamp with time zone,
           n_tup_newpage_upd    bigint
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -2939,6 +3073,10 @@ BEGIN
           relpages_bytes_diff bigint,
           last_idx_scan  timestamp with time zone
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -2979,6 +3117,10 @@ BEGIN
           trg_fn      boolean,
           in_sample   boolean
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -3018,6 +3160,10 @@ BEGIN
           wal_sync_time       double precision,
           stats_reset         timestamp with time zone
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -3101,6 +3247,10 @@ BEGIN
           exec_nivcsws      bigint,
           stats_since       timestamp with time zone
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -3236,6 +3386,10 @@ BEGIN
               stats_since          timestamp with time zone,
               minmax_stats_since   timestamp with time zone
               )
+            JOIN
+              samples s_ctl ON
+                ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+                (s_ctl.server_id, s_ctl.sample_id)
             ON CONFLICT DO NOTHING;
             GET DIAGNOSTICS row_proc = ROW_COUNT;
             rowcnt := rowcnt + row_proc;
@@ -3355,6 +3509,10 @@ BEGIN
               temp_blk_read_time   double precision,
               temp_blk_write_time  double precision
               )
+            JOIN
+              samples s_ctl ON
+                ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+                (s_ctl.server_id, s_ctl.sample_id)
             ON CONFLICT DO NOTHING;
             GET DIAGNOSTICS row_proc = ROW_COUNT;
             rowcnt := rowcnt + row_proc;
@@ -3417,6 +3575,10 @@ BEGIN
           fsync_time        double precision,
           stats_reset       timestamp with time zone
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -3457,6 +3619,10 @@ BEGIN
           truncates      bigint,
           stats_reset    timestamp with time zone
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -3464,38 +3630,34 @@ BEGIN
           RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
         END IF;
       END LOOP; -- over data rows
-    WHEN 'act_query' THEN
-      LOOP
-        FETCH data INTO datarow;
-        EXIT WHEN NOT FOUND;
-        INSERT INTO act_query(server_id, act_query_md5, act_query, last_sample_id)
-        SELECT
-          (srv_map ->> dr.server_id::text)::integer,
-          dr.act_query_md5,
-          dr.act_query,
-          s.sample_id
-        FROM json_to_record(datarow.row_data) AS dr(
-            server_id      integer,
-            act_query_md5  char(32),
-            act_query      text,
-            last_sample_id integer
-          )
-          LEFT JOIN samples s ON (s.server_id, s.sample_id) =
-            ((srv_map ->> dr.server_id::text)::integer, dr.last_sample_id)
-        ON CONFLICT ON CONSTRAINT pk_act_query DO
-          NOTHING;
-        GET DIAGNOSTICS row_proc = ROW_COUNT;
-        rowcnt := rowcnt + row_proc;
-        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
-          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
-        END IF;
-      END LOOP; -- over data rows
+    ELSE
+      rows_processed := -1;
+      RETURN; -- table not found
+  END CASE; -- over table name
+  rows_processed := rowcnt;
+  RETURN;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE FUNCTION import_section_data_subsample(IN data refcursor, IN imp_table_name name, IN srv_map jsonb,
+  IN import_meta jsonb, IN versions_array text[],
+  OUT rows_processed bigint, OUT new_import_meta jsonb)
+SET search_path=profile AS $$
+DECLARE
+  datarow          record;
+  rowcnt           bigint = 0;
+  row_proc         bigint = 0;
+  section_meta     jsonb;
+BEGIN
+  new_import_meta := import_meta;
+  CASE imp_table_name
+    WHEN 'last_stat_activity_count' THEN NULL; -- skip table without PK
     WHEN 'server_subsample' THEN
       LOOP
         FETCH data INTO datarow;
         EXIT WHEN NOT FOUND;
-        INSERT INTO server_subsample(server_id, subsample_enabled, min_query_dur, min_xact_dur,
-          min_xact_age, min_idle_xact_dur)
+        INSERT INTO server_subsample(server_id, subsample_enabled, min_query_dur,
+          min_xact_dur, min_xact_age, min_idle_xact_dur)
         SELECT
           (srv_map ->> dr.server_id::text)::integer,
           dr.subsample_enabled,
@@ -3504,24 +3666,18 @@ BEGIN
           dr.min_xact_age,
           dr.min_idle_xact_dur
         FROM json_to_record(datarow.row_data) AS dr(
-            server_id         integer,
-            subsample_enabled boolean,
-            min_query_dur     interval hour to second,
-            min_xact_dur      interval hour to second,
-            min_xact_age      bigint,
-            min_idle_xact_dur interval hour to second
+            server_id           integer,
+            subsample_enabled   boolean,
+            min_query_dur       interval hour to second,
+            min_xact_dur        interval hour to second,
+            min_xact_age        bigint,
+            min_idle_xact_dur   interval hour to second
           )
-        ON CONFLICT ON CONSTRAINT pk_server_subsample DO
-        UPDATE SET (subsample_enabled, min_query_dur, min_xact_dur,
-          min_xact_age, min_idle_xact_dur) =
-          (EXCLUDED.subsample_enabled, EXCLUDED.min_query_dur, EXCLUDED.min_xact_dur,
-          EXCLUDED.min_xact_age, EXCLUDED.min_idle_xact_dur)
-        WHERE (server_subsample.subsample_enabled, server_subsample.min_query_dur,
-          server_subsample.min_xact_dur, server_subsample.min_xact_age,
-          server_subsample.min_idle_xact_dur)
-          IS DISTINCT FROM
-          (EXCLUDED.subsample_enabled, EXCLUDED.min_query_dur, EXCLUDED.min_xact_dur,
-          EXCLUDED.min_xact_age, EXCLUDED.min_idle_xact_dur);
+        JOIN
+          servers s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer) =
+            (s_ctl.server_id)
+        ON CONFLICT ON CONSTRAINT pk_server_subsample DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
         IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
@@ -3566,6 +3722,10 @@ BEGIN
             backend_type      text,
             backend_last_ts   timestamp with time zone
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT ON CONSTRAINT pk_sample_backends DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -3596,6 +3756,10 @@ BEGIN
             backend_xid       text,
             xact_last_ts      timestamp with time zone
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT ON CONSTRAINT pk_sample_xact DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -3638,7 +3802,37 @@ BEGIN
             backend_xmin_age  bigint,
             query_start       timestamp with time zone
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT ON CONSTRAINT pk_sample_bk_state DO NOTHING;
+        GET DIAGNOSTICS row_proc = ROW_COUNT;
+        rowcnt := rowcnt + row_proc;
+        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+        END IF;
+      END LOOP; -- over data rows
+    WHEN 'act_query' THEN
+      LOOP
+        FETCH data INTO datarow;
+        EXIT WHEN NOT FOUND;
+        INSERT INTO act_query(server_id, act_query_md5, act_query, last_sample_id)
+        SELECT
+          (srv_map ->> dr.server_id::text)::integer,
+          dr.act_query_md5,
+          dr.act_query,
+          s.sample_id
+        FROM json_to_record(datarow.row_data) AS dr(
+            server_id      integer,
+            act_query_md5  char(32),
+            act_query      text,
+            last_sample_id integer
+          )
+          LEFT JOIN samples s ON (s.server_id, s.sample_id) =
+            ((srv_map ->> dr.server_id::text)::integer, dr.last_sample_id)
+        ON CONFLICT ON CONSTRAINT pk_act_query DO
+          NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
         IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
@@ -3680,6 +3874,10 @@ BEGIN
               stmt_last_ts      timestamp with time zone,
               xact_start        timestamp with time zone
             )
+          JOIN
+            samples s_ctl ON
+              ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+              (s_ctl.server_id, s_ctl.sample_id)
           ON CONFLICT ON CONSTRAINT pk_sample_act_stmt DO NOTHING;
           GET DIAGNOSTICS row_proc = ROW_COUNT;
           rowcnt := rowcnt + row_proc;
@@ -3742,226 +3940,6 @@ BEGIN
           END IF;
         END LOOP; -- over data rows
       END IF;
-    ELSE
-      rows_processed := -1;
-      RETURN; -- table not found
-  END CASE; -- over table name
-  rows_processed := rowcnt;
-  RETURN;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE FUNCTION import_section_data_subsample(IN data refcursor, IN imp_table_name name, IN srv_map jsonb,
-  IN import_meta jsonb, IN versions_array text[],
-  OUT rows_processed bigint, OUT new_import_meta jsonb)
-SET search_path=profile AS $$
-DECLARE
-  datarow          record;
-  rowcnt           bigint = 0;
-  row_proc         bigint = 0;
-  section_meta     jsonb;
-BEGIN
-  new_import_meta := import_meta;
-  CASE imp_table_name
-    WHEN 'last_stat_activity_count' THEN NULL; -- skip table withoup PK
-    WHEN 'server_subsample' THEN
-      LOOP
-        FETCH data INTO datarow;
-        EXIT WHEN NOT FOUND;
-        INSERT INTO server_subsample(server_id, subsample_enabled, min_query_dur,
-          min_xact_dur, min_xact_age, min_idle_xact_dur)
-        SELECT
-          (srv_map ->> dr.server_id::text)::integer,
-          dr.subsample_enabled,
-          dr.min_query_dur,
-          dr.min_xact_dur,
-          dr.min_xact_age,
-          dr.min_idle_xact_dur
-        FROM json_to_record(datarow.row_data) AS dr(
-            server_id           integer,
-            subsample_enabled   boolean,
-            min_query_dur       interval hour to second,
-            min_xact_dur        interval hour to second,
-            min_xact_age        bigint,
-            min_idle_xact_dur   interval hour to second
-          )
-        ON CONFLICT ON CONSTRAINT pk_server_subsample DO NOTHING;
-        GET DIAGNOSTICS row_proc = ROW_COUNT;
-        rowcnt := rowcnt + row_proc;
-        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
-          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
-        END IF;
-      END LOOP; -- over data rows
-    WHEN 'sample_act_backend' THEN
-      LOOP
-        FETCH data INTO datarow;
-        EXIT WHEN NOT FOUND;
-        INSERT INTO sample_act_backend(server_id, sample_id, pid, backend_start, datid,
-          datname, usesysid, usename, application_name, client_addr, client_hostname,
-          client_port, backend_type, backend_last_ts)
-        SELECT
-          (srv_map ->> dr.server_id::text)::integer,
-          dr.sample_id,
-          dr.pid,
-          dr.backend_start,
-          dr.datid,
-          dr.datname,
-          dr.usesysid,
-          dr.usename,
-          dr.application_name,
-          dr.client_addr,
-          dr.client_hostname,
-          dr.client_port,
-          dr.backend_type,
-          dr.backend_last_ts
-        FROM json_to_record(datarow.row_data) AS dr(
-            server_id         integer,
-            sample_id         integer,
-            pid               integer,
-            backend_start     timestamp with time zone,
-            datid             oid,
-            datname           name,
-            usesysid          oid,
-            usename           name,
-            application_name  text,
-            client_addr       inet,
-            client_hostname   text,
-            client_port       integer,
-            backend_type      text,
-            backend_last_ts   timestamp with time zone
-          )
-        ON CONFLICT ON CONSTRAINT pk_sample_backends DO NOTHING;
-        GET DIAGNOSTICS row_proc = ROW_COUNT;
-        rowcnt := rowcnt + row_proc;
-        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
-          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
-        END IF;
-      END LOOP; -- over data rows
-    WHEN 'sample_act_xact' THEN
-      LOOP
-        FETCH data INTO datarow;
-        EXIT WHEN NOT FOUND;
-        INSERT INTO sample_act_xact(server_id, sample_id, pid, backend_start,xact_start,
-          backend_xid,xact_last_ts)
-        SELECT
-          (srv_map ->> dr.server_id::text)::integer,
-          dr.sample_id,
-          dr.pid,
-          dr.backend_start,
-          dr.xact_start,
-          dr.backend_xid,
-          dr.xact_last_ts
-        FROM json_to_record(datarow.row_data) AS dr(
-            server_id         integer,
-            sample_id         integer,
-            pid               integer,
-            backend_start     timestamp with time zone,
-            xact_start        timestamp with time zone,
-            backend_xid       text,
-            xact_last_ts      timestamp with time zone
-          )
-        ON CONFLICT ON CONSTRAINT pk_sample_xact DO NOTHING;
-        GET DIAGNOSTICS row_proc = ROW_COUNT;
-        rowcnt := rowcnt + row_proc;
-        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
-          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
-        END IF;
-      END LOOP; -- over data rows
-    WHEN 'sample_act_backend_state' THEN
-      LOOP
-        FETCH data INTO datarow;
-        EXIT WHEN NOT FOUND;
-        INSERT INTO sample_act_backend_state(server_id, sample_id,
-          pid, backend_start, state_code, state_last_ts, xact_start,
-          backend_xmin, backend_xmin_age)
-        SELECT
-          (srv_map ->> dr.server_id::text)::integer,
-          dr.sample_id,
-          dr.pid,
-          dr.backend_start,
-          dr.state_code,
-          dr.state_change,
-          dr.state_last_ts,
-          dr.xact_start,
-          dr.backend_xmin,
-          dr.backend_xmin_age
-        FROM json_to_record(datarow.row_data) AS dr(
-            server_id         integer,
-            sample_id         integer,
-            pid               integer,
-            backend_start     timestamp with time zone,
-            state_code        integer,
-            state_change      timestamp with time zone,
-            state_last_ts     timestamp with time zone,
-            xact_start        timestamp with time zone,
-            backend_xmin      text,
-            backend_xmin_age  bigint
-          )
-        ON CONFLICT ON CONSTRAINT pk_sample_bk_state DO NOTHING;
-        GET DIAGNOSTICS row_proc = ROW_COUNT;
-        rowcnt := rowcnt + row_proc;
-        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
-          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
-        END IF;
-      END LOOP; -- over data rows
-    WHEN 'act_query' THEN
-      LOOP
-        FETCH data INTO datarow;
-        EXIT WHEN NOT FOUND;
-        INSERT INTO act_query(server_id, act_query_md5, act_query, last_sample_id)
-        SELECT
-          (srv_map ->> dr.server_id::text)::integer,
-          act_query_md5,
-          act_query,
-          NULL
-        FROM json_to_record(datarow.row_data) AS dr(
-            server_id      integer,
-            act_query_md5  char(32),
-            act_query      text,
-            last_sample_id integer
-          )
-        ON CONFLICT ON CONSTRAINT pk_act_query DO NOTHING;
-        GET DIAGNOSTICS row_proc = ROW_COUNT;
-        rowcnt := rowcnt + row_proc;
-        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
-          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
-        END IF;
-      END LOOP; -- over data rows
-    WHEN 'sample_act_statement' THEN
-      LOOP
-        FETCH data INTO datarow;
-        EXIT WHEN NOT FOUND;
-        INSERT INTO sample_act_statement(server_id, sample_id, pid,
-          leader_pid, state_change, query_start, query_id,
-          act_query_md5, stmt_last_ts)
-        SELECT
-          (srv_map ->> dr.server_id::text)::integer,
-          dr.sample_id,
-          dr.pid,
-          dr.leader_pid,
-          dr.state_change,
-          dr.query_start,
-          dr.query_id,
-          dr.act_query_md5,
-          dr.stmt_last_ts
-        FROM json_to_record(datarow.row_data) AS dr(
-            server_id         integer,
-            sample_id         integer,
-            pid               integer,
-            leader_pid        integer,
-            state_change      timestamp with time zone,
-            query_start       timestamp with time zone,
-            query_id          bigint,
-            act_query_md5     char(32),
-            stmt_last_ts      timestamp with time zone
-          )
-        ON CONFLICT ON CONSTRAINT pk_sample_act_stmt DO NOTHING;
-        GET DIAGNOSTICS row_proc = ROW_COUNT;
-        rowcnt := rowcnt + row_proc;
-        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
-          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
-        END IF;
-      END LOOP; -- over data rows
     WHEN 'last_stat_activity' THEN
       LOOP
         FETCH data INTO datarow;
@@ -4024,6 +4002,10 @@ BEGIN
             backend_type      text,
             backend_xmin_age  bigint
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -4061,6 +4043,10 @@ BEGIN
             client_addr       inet,
             last_sample_id    integer
           )
+        JOIN
+          servers s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer) =
+            (s_ctl.server_id)
         ON CONFLICT ON CONSTRAINT pk_subsample_sa DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -4117,6 +4103,10 @@ BEGIN
             timeout           integer,
             io                integer
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT ON CONSTRAINT pk_sample_stat_activity_cnt DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
@@ -4186,6 +4176,10 @@ BEGIN
             timeout           integer,
             io                integer
           )
+        JOIN
+          samples s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer, dr.sample_id) =
+            (s_ctl.server_id, s_ctl.sample_id)
         ON CONFLICT DO NOTHING;
         GET DIAGNOSTICS row_proc = ROW_COUNT;
         rowcnt := rowcnt + row_proc;
