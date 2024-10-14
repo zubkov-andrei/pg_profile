@@ -175,12 +175,6 @@ BEGIN
           'NULL as local_blk_write_time, '
           'NULL as jit_deform_count, '
           'NULL as jit_deform_time, '
-          'NULL as temp_blk_read_time, '
-          'NULL as temp_blk_write_time, '
-          'NULL as local_blk_read_time, '
-          'NULL as local_blk_write_time, '
-          'NULL as jit_deform_count, '
-          'NULL as jit_deform_time, '
           'NULL as stats_since, '
           'NULL as minmax_stats_since '
         );
