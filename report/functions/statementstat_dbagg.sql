@@ -123,13 +123,13 @@ SET search_path=@extschema@ AS $$
         sum(st.jit_deform_count)::bigint AS jit_deform_count,
         sum(st.jit_deform_time)/1000::double precision AS jit_deform_time,
         sum(st.mean_max_plan_time * st.statements)::double precision /
-          sum(st.statements) AS mean_max_plan_time,
+          NULLIF(sum(st.statements), 0) AS mean_max_plan_time,
         sum(st.mean_max_exec_time * st.statements)::double precision /
-          sum(st.statements) AS mean_max_exec_time,
+          NULLIF(sum(st.statements), 0) AS mean_max_exec_time,
         sum(st.mean_min_plan_time * st.statements)::double precision /
-          sum(st.statements) AS mean_min_plan_time,
+          NULLIF(sum(st.statements), 0) AS mean_min_plan_time,
         sum(st.mean_min_exec_time * st.statements)::double precision /
-          sum(st.statements) AS mean_min_exec_time,
+          NULLIF(sum(st.statements), 0) AS mean_min_exec_time,
         sum(st.mean_max_plan_time - st.mean_min_plan_time)::double precision * 100 /
           NULLIF(sum(st.mean_min_plan_time), 0.0) AS min_max_plan_delta,
         sum(st.mean_max_exec_time - st.mean_min_exec_time)::double precision * 100 /
