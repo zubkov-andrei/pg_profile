@@ -712,7 +712,7 @@ SET search_path=@extschema@ AS $$
     delete_samples.time_range @> smp.sample_time
   GROUP BY server_id
 $$ LANGUAGE sql;
-COMMENT ON FUNCTION delete_samples(name, integer, integer) IS
+COMMENT ON FUNCTION delete_samples(name, tstzrange) IS
   'Manually deletes server samples for provided server name and time interval';
 
 CREATE FUNCTION delete_samples(IN time_range tstzrange)
@@ -720,5 +720,5 @@ RETURNS integer
 SET search_path=@extschema@ AS $$
   SELECT delete_samples('local', time_range);
 $$ LANGUAGE sql;
-COMMENT ON FUNCTION delete_samples(name, integer, integer) IS
+COMMENT ON FUNCTION delete_samples(tstzrange) IS
   'Manually deletes server samples for time interval on local server';
