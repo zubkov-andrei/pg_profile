@@ -731,7 +731,7 @@ BEGIN
     END IF; -- pg_stat_kcache extension is available
 
     PERFORM mark_pg_stat_statements(sserver_id, s_id, topn,
-      (properties #> '{properties,statements_reset}')::boolean);
+      (properties #> '{properties,statements_reset}') = to_jsonb(true));
 
     -- Get queries texts
     CASE (
@@ -911,7 +911,7 @@ BEGIN
       -- pg_stat_statements v 1.3-1.8
       WHEN '1.3','1.4','1.5','1.6','1.7','1.8','1.9','1.10'
       THEN
-        IF (properties #> '{properties,statements_reset}')::boolean THEN
+        IF (properties #> '{properties,statements_reset}') = to_jsonb(true) THEN
           SELECT * INTO qres FROM dblink('server_connection',
             format('SELECT %1$I.pg_stat_statements_reset()',
               (
@@ -951,7 +951,7 @@ BEGIN
 
     -- Save the diffs in a sample
     PERFORM save_pg_stat_statements(sserver_id, s_id,
-      (properties #> '{properties,statements_reset}')::boolean);
+      (properties #> '{properties,statements_reset}') = to_jsonb(true));
     -- Delete obsolete last_* data
     DELETE FROM last_stat_kcache WHERE server_id = sserver_id AND sample_id < s_id;
     DELETE FROM last_stat_statements WHERE server_id = sserver_id AND sample_id < s_id;
