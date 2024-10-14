@@ -2,6 +2,13 @@ INSERT INTO import_queries_version_order VALUES
 ('pg_profile','4.7','pg_profile','4.6')
 ;
 
+COMMENT ON FUNCTION delete_samples(name, tstzrange) IS
+  'Manually deletes server samples for provided server name and time interval';
+COMMENT ON FUNCTION delete_samples(tstzrange) IS
+  'Manually deletes server samples for time interval on local server';
+COMMENT ON FUNCTION delete_samples(name, integer, integer) IS
+  'Manually deletes server samples for provided server name. By default deletes all samples';
+
 ALTER TABLE sample_act_backend_state
   ADD COLUMN query_start timestamp with time zone,
   ADD CONSTRAINT fk_bk_state_statement
