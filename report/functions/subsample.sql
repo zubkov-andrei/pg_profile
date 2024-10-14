@@ -1,4 +1,6 @@
-CREATE FUNCTION stat_activity_states(IN sserver_id integer, IN start_id integer, IN end_id integer)
+CREATE FUNCTION stat_activity_states(IN sserver_id integer,
+  IN start1_id integer, IN end1_id integer,
+  IN start2_id integer = NULL, IN end2_id integer = NULL)
 RETURNS TABLE(
     server_id         integer,
     datid             oid,
@@ -78,7 +80,10 @@ RETURNS TABLE(
         SELECT server_id, pid, backend_start, max(backend_last_ts) as backend_last_ts
         FROM sample_act_backend
         WHERE server_id = sserver_id
-          AND sample_id BETWEEN start_id + 1 AND end_id
+          AND (
+            sample_id BETWEEN start1_id + 1 AND end1_id OR
+            sample_id BETWEEN start2_id + 1 AND end2_id
+          )
         GROUP BY server_id, pid, backend_start
       ) as act_backend USING (server_id, pid, backend_start, backend_last_ts))
     JOIN
@@ -86,7 +91,10 @@ RETURNS TABLE(
         SELECT server_id, pid, state_change, max(state_last_ts) as state_last_ts
         FROM sample_act_backend_state
         WHERE server_id = sserver_id
-          AND sample_id BETWEEN start_id + 1 AND end_id
+          AND (
+            sample_id BETWEEN start1_id + 1 AND end1_id OR
+            sample_id BETWEEN start2_id + 1 AND end2_id
+          )
         GROUP BY server_id, pid, state_change
       ) as backend_state
       USING (server_id, pid, state_change, state_last_ts))
@@ -96,7 +104,10 @@ RETURNS TABLE(
         SELECT server_id, pid, xact_start, max(xact_last_ts) as xact_last_ts
         FROM sample_act_xact
         WHERE server_id = sserver_id
-          AND sample_id BETWEEN start_id + 1 AND end_id
+          AND (
+            sample_id BETWEEN start1_id + 1 AND end1_id OR
+            sample_id BETWEEN start2_id + 1 AND end2_id
+          )
         GROUP BY server_id, pid, xact_start
       ) as act_xact USING (server_id, pid, xact_start, xact_last_ts))
     USING (server_id, pid, backend_start, xact_start)
@@ -105,7 +116,10 @@ RETURNS TABLE(
         SELECT server_id, pid, query_start, max(stmt_last_ts) as stmt_last_ts
         FROM sample_act_statement
         WHERE server_id = sserver_id
-          AND sample_id BETWEEN start_id + 1 AND end_id
+          AND (
+            sample_id BETWEEN start1_id + 1 AND end1_id OR
+            sample_id BETWEEN start2_id + 1 AND end2_id
+          )
         GROUP BY server_id, pid, query_start
       ) as act_stmt
       USING (server_id, pid, query_start, stmt_last_ts))
@@ -431,11 +445,8 @@ RETURNS TABLE(
       row_number() OVER (ORDER BY backend_xmin_age DESC)::integer AS ord_age,
       row_number() OVER (ORDER BY xact_duration DESC)::integer AS ord_xact,
       coalesce(xact_last_ts = state_last_ts, false) AND backend_xmin_age > 0 as flt_age
-    FROM (
-      SELECT * FROM stat_activity_states(sserver_id, start1_id, end1_id)
-      UNION
-      SELECT * FROM stat_activity_states(sserver_id, start2_id, end2_id)
-    ) st
+    FROM
+      stat_activity_states(sserver_id, start1_id, end1_id, start2_id, end2_id) st
 $$ LANGUAGE sql;
 
 CREATE FUNCTION report_active_queries_format(IN report_context jsonb, IN sserver_id integer,
