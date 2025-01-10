@@ -520,6 +520,20 @@ class BaseTable extends BaseSection {
      * @returns {HTMLTableElement} tag wit table
      */
     buildHeader() {
+        // Three-level headers building
+        if (this.section.header.class) {
+            /** Checking if the header has unique class */
+            let classList = this.section.header.class.split(' ');
+            for (let i = 0; i < classList.length; i++) {
+
+                /** If true, build header by special method */
+                let klass = classList[i].trim();
+                if (BaseTable.uniqueHeaders[klass]) {
+                    return BaseTable.uniqueHeaders[klass](this.table, this.section.header);
+                }
+            }
+        };
+
         /** Collecting header into matrix */
         let headerMatrix = BaseTable.collectHeader(this.section.header, 0, null);
 
