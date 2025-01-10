@@ -101,7 +101,10 @@ class Utilities {
 
     static searchWithParam(rowsForSearch, keyword, searchParam) {
         let foundQueries = {};
-        /** If search with 'all' parameter */
+        /** if we search everywhere, then first we need to 
+         * find the keyword in the query texts, and then 
+         * we display all the lines related to this query
+         */
         if (searchParam === 'all') {
             foundQueries = Utilities.searchQueryText(keyword)
         }

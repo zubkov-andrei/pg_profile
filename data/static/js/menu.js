@@ -118,7 +118,7 @@ class Menu {
                     <option value="relname">Table</option>
                     <option value="indexrelname">Index</option>
                     <option value="querytext">Query</option>
-                <select>
+                </select>
             </div>
         `
         /** Top Navigation */

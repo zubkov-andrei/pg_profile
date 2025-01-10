@@ -681,20 +681,15 @@ class HorizontalTable extends BaseTable {
      * @param row Object with data for populating html table
      * @param dataAttrs Object with attr name for setting data-attrs in <tr> tag
      */
-    static setDataAttrs(newRow, row, dataAttrs) {
+    static setDataAttrs(newRow, row) {
         /** Collecting search array */
         let searchArray = [];
-
-        /** Set attributes for strings highlighting */
-        if (dataAttrs) {
-            dataAttrs.forEach(attr => {
-                newRow.setAttribute(`data-${attr.id}`, row[attr.id]);
-                searchArray.push(row[attr.id]);
-            })
-            /** Set data-search attribute */
-            let searchString = Object.values(searchArray).join(' ').replace(/\s\s+/g, ' ');
-            newRow.setAttribute('data-all', searchString);
-        }
+        Object.keys(row).forEach(attr => {
+            newRow.setAttribute(`data-${attr}`, row[attr]);
+            searchArray.push(row[attr]);
+        });
+        let searchString = Object.values(searchArray).join(' ').replace(/\s\s+/g, ' ');
+        newRow.setAttribute('data-all', searchString);
     }
 
     static setId(newRow, row, dataAttrs) {
@@ -753,12 +748,8 @@ class HorizontalTable extends BaseTable {
                     newRow.classList.add('grey');
                 }
                 /** Set data-attributes */
-                if (highlightRowAttrs) {
-                    HorizontalTable.setDataAttrs(newRow, row, highlightRowAttrs);
-                }
-                if (previewQueryAttrs) {
-                    HorizontalTable.setDataAttrs(newRow, row, previewQueryAttrs);
-                }
+                HorizontalTable.setDataAttrs(newRow, row);
+                /** Set id for row anchor (scroll feature) */
                 if (scrollQueryAttrs) {
                     HorizontalTable.setId(newRow, row, scrollQueryAttrs);
                 }
