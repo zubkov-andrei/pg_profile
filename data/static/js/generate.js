@@ -245,7 +245,11 @@ class BaseTable extends BaseSection {
         newCell.appendChild(p2);
 
         /** Copy query id into clipboard button */
-        let button = Copier.drawButton();
+        let button = Previewer.drawCopyButton();
+        button.addEventListener("click", event => {
+            navigator.clipboard.writeText(newRow.dataset.queryid).then(r => console.log(newRow.dataset.queryid))
+        });
+        
         button.classList.add('copyQueryId');
         p1.appendChild(button);
 

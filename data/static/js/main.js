@@ -33,9 +33,6 @@ function main() {
     /** Add query text and plan feature */
     Previewer.init();
 
-    /** Add copy feature */
-    Copier.init();
-
     /** Add menu feature */
     Menu.init();
 }
