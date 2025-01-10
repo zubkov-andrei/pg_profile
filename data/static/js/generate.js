@@ -50,28 +50,32 @@ class BaseSection {
 
                 if (newBlock.header.source) {
                     newBlock.data = data.datasets[newBlock.header.source];
-
-                    /** Filtering data if expected */
-                    if (newBlock.header.filter) {
-                        newBlock.data = Utilities.filter(newBlock.data, newBlock.header.filter);
-                    }
-                    /** Ordering data if expected */
-                    if (newBlock.header.ordering) {
-                        let direction = 1;
-                        let key = newBlock.header.ordering;
-
-                        if (newBlock.header.ordering.startsWith('-')) {
-                            direction = -1;
-                            key = newBlock.header.ordering.slice(1);
-                        }
-                        newBlock.data = Utilities.sort(newBlock.data, key, direction);
-                    }
-                    /** Limiting data if expected */
-                    if (newBlock.header.limit) {
-                        newBlock.data = Utilities.limit(newBlock.data, Number.parseInt(data.properties[newBlock.header.limit]));
-                    }
                 } else {
                     newBlock.data = this.section.data[i];
+                }
+
+                if (!newBlock.data) {
+                    console.log(newBlock);
+                    continue;
+                }
+                /** Filtering data if expected */
+                if (newBlock.header.filter) {
+                    newBlock.data = Utilities.filter(newBlock.data, newBlock.header.filter);
+                }
+                /** Ordering data if expected */
+                if (newBlock.header.ordering) {
+                    let direction = 1;
+                    let key = newBlock.header.ordering;
+
+                    if (newBlock.header.ordering.startsWith('-')) {
+                        direction = -1;
+                        key = newBlock.header.ordering.slice(1);
+                    }
+                    newBlock.data = Utilities.sort(newBlock.data, key, direction);
+                }
+                /** Limiting data if expected */
+                if (newBlock.header.limit) {
+                    newBlock.data = Utilities.limit(newBlock.data, Number.parseInt(data.properties[newBlock.header.limit]));
                 }
 
                 /** Class of table determined by parameter 'class' in header (section_structure).
