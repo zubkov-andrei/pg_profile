@@ -2149,6 +2149,35 @@ BEGIN
       PERFORM dblink('server_db_connection','SET search_path=''''');
 
       IF (properties #>> '{collect_timings}')::boolean THEN
+        result := jsonb_set(result,ARRAY['timings',format('db:%s get extensions version',qres.datname)],jsonb_build_object('start',clock_timestamp()));
+      END IF;
+
+      t_query := 'SELECT '
+      	'extname,'
+      	'extversion '
+      	'FROM pg_extension';
+
+			INSERT INTO last_extension_versions (
+    		server_id,
+				datid,
+				sample_id,
+    		extname,
+    		extversion
+			)
+			SELECT
+				sserver_id as server_id,
+				qres.datid,
+				s_id as sample_id,
+				dbl.extname,
+				dbl.extversion
+			FROM dblink('server_db_connection', t_query)
+      AS dbl (
+      	 extname 		name,
+      	 extversion	text
+      );
+
+      IF (result #>> '{collect_timings}')::boolean THEN
+        result := jsonb_set(result,ARRAY['timings',format('db:%s get extensions version',qres.datname),'end'],to_jsonb(clock_timestamp()));
         result := jsonb_set(result,ARRAY['timings',format('db:%s collect tables stats',qres.datname)],jsonb_build_object('start',clock_timestamp()));
       END IF;
 
@@ -2738,7 +2767,6 @@ $$ LANGUAGE plpgsql;
 CREATE FUNCTION sample_dbobj_delta(IN properties jsonb, IN sserver_id integer, IN s_id integer,
   IN topn integer, IN skip_sizes boolean) RETURNS jsonb AS $$
 DECLARE
-    qres    record;
     result  jsonb := sample_dbobj_delta.properties;
 BEGIN
 
@@ -3552,6 +3580,46 @@ BEGIN
 
     IF (result #>> '{collect_timings}')::boolean THEN
       result := jsonb_set(result,'{timings,calculate functions stats,end}',to_jsonb(clock_timestamp()));
+      result := jsonb_set(result,'{timings,merge new extensions version}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
+		UPDATE extension_versions ev
+		SET last_sample_id = s_id - 1
+		FROM last_extension_versions prev_lev
+			LEFT JOIN last_extension_versions cur_lev ON
+				(cur_lev.server_id, cur_lev.datid, cur_lev.sample_id, cur_lev.extname, cur_lev.extversion) =
+				(sserver_id, prev_lev.datid, s_id, prev_lev.extname, prev_lev.extversion)
+	 	WHERE
+	 	  (prev_lev.server_id, prev_lev.sample_id) = (sserver_id, s_id - 1) AND
+		  (ev.server_id, ev.datid, ev.extname, ev.extversion) =
+			(sserver_id, prev_lev.datid, prev_lev.extname, prev_lev.extversion) AND
+		  ev.last_sample_id IS NULL AND
+		  cur_lev.extname IS NULL;
+
+    INSERT INTO extension_versions (
+      server_id,
+      datid,
+      first_seen,
+      extname,
+      extversion
+    )
+    SELECT
+      cur_lev.server_id,
+      cur_lev.datid,
+      s.sample_time as first_seen,
+      cur_lev.extname,
+      cur_lev.extversion
+    FROM last_extension_versions cur_lev
+      JOIN samples s on (s.server_id, s.sample_id) = (sserver_id, s_id)
+		  LEFT JOIN last_extension_versions prev_lev ON
+				(prev_lev.server_id, prev_lev.datid, prev_lev.sample_id, prev_lev.extname, prev_lev.extversion) =
+				(sserver_id, cur_lev.datid, s_id - 1, cur_lev.extname, cur_lev.extversion)
+	 	WHERE
+	 	  (cur_lev.server_id, cur_lev.sample_id) = (sserver_id, s_id) AND
+		  prev_lev.extname IS NULL;
+
+    IF (result #>> '{collect_timings}')::boolean THEN
+      result := jsonb_set(result,'{timings,merge new extensions version,end}',to_jsonb(clock_timestamp()));
     END IF;
 
     -- Clear data in last_ tables, holding data only for next diff sample
@@ -3560,6 +3628,8 @@ BEGIN
     DELETE FROM last_stat_indexes WHERE server_id=sserver_id AND sample_id != s_id;
 
     DELETE FROM last_stat_user_functions WHERE server_id=sserver_id AND sample_id != s_id;
+
+    DELETE FROM last_extension_versions WHERE server_id = sserver_id AND sample_id != s_id;
 
     RETURN result;
 END;

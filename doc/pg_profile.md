@@ -1529,6 +1529,17 @@ This section of a report contains PostgreSQL GUC parameters, and values of funct
 * *Source*  - configuration file, where this setting was defined, line number after semicolon.
 * *Notes* - This field will contain timestamp of a sample, when this value was observed first time during report interval.
 
+### Extension versions during the report interval
+
+This section of a report contains database extension versions during report interval.
+Columns *First seen* and *Last seen* are not shown if the extension versions haven't changed during report interval.
+
+* *Name* - name of the extension
+* *DB* - name of the database
+* *First seen* - the first appearance this extension version.
+* *Last seen* - the last appearance of the extension version
+* *Version* - version name for the extension
+
 ### What you need to remember...
 1. PostgreSQL collects execution statistics __after__ execution is complete. If single execution of a statement lasts for several samples, it will affect statistics of only the last sample (when it was completed). And you can't get statistics on still running statements. Also, maintenance processes like vacuum and checkpointer will update statistics only on completion.
 1. Resetting any PostgreSQL statistics may affect accuracy of a next sample.

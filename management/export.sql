@@ -3630,6 +3630,66 @@ BEGIN
           RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
         END IF;
       END LOOP; -- over data rows
+    WHEN 'extension_versions' THEN
+      LOOP
+        FETCH data INTO datarow;
+        EXIT WHEN NOT FOUND;
+        INSERT INTO extension_versions(server_id,datid,extname,first_seen,last_sample_id,extversion)
+        SELECT
+          (srv_map ->> dr.server_id::text)::integer AS server_id,
+          dr.datid,
+          dr.extname,
+          dr.first_seen,
+          dr.last_sample_id,
+          dr.extversion
+        FROM json_to_record(datarow.row_data) AS dr(
+            server_id        integer,
+            datid            oid,
+            extname          name,
+            first_seen       timestamp(0) with time zone,
+            last_sample_id   integer,
+            extversion       text
+          )
+        JOIN
+          servers s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer) =
+            (s_ctl.server_id)
+        ON CONFLICT ON CONSTRAINT pk_extension_versions DO NOTHING;
+        GET DIAGNOSTICS row_proc = ROW_COUNT;
+        rowcnt := rowcnt + row_proc;
+        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+        END IF;
+      END LOOP; -- over data rows
+    WHEN 'last_extension_versions' THEN
+      LOOP
+        FETCH data INTO datarow;
+        EXIT WHEN NOT FOUND;
+        INSERT INTO last_extension_versions(server_id, datid, sample_id, extname, extversion)
+        SELECT
+          (srv_map ->> dr.server_id::text)::integer AS server_id,
+          dr.datid,
+          dr.sample_id,
+          dr.extname,
+          dr.extversion
+        FROM json_to_record(datarow.row_data) AS dr(
+            server_id        integer,
+            datid            oid,
+            sample_id        integer,
+            extname          name,
+            extversion       text
+          )
+        JOIN
+          servers s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer) =
+            (s_ctl.server_id)
+        ON CONFLICT ON CONSTRAINT pk_last_extension_versions DO NOTHING;
+        GET DIAGNOSTICS row_proc = ROW_COUNT;
+        rowcnt := rowcnt + row_proc;
+        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+        END IF;
+      END LOOP; -- over data rows
     ELSE
       rows_processed := -1;
       RETURN; -- table not found

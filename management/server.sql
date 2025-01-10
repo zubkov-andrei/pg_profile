@@ -271,7 +271,8 @@ BEGIN
         fk_user_functions_functions,
         fk_stmt_list,
         fk_kcache_stmt_list,
-        fk_statements_roles
+        fk_statements_roles,
+        fk_extension_versions_samples
       DEFERRED;
     DELETE FROM samples WHERE server_id = dserver_id;
     DELETE FROM indexes_list WHERE server_id = dserver_id;
@@ -284,7 +285,8 @@ BEGIN
         fk_user_functions_functions,
         fk_stmt_list,
         fk_kcache_stmt_list,
-        fk_statements_roles
+        fk_statements_roles,
+        fk_extension_versions_samples
       IMMEDIATE;
     DELETE FROM servers WHERE server_id = dserver_id;
     GET DIAGNOSTICS del_rows = ROW_COUNT;
@@ -617,6 +619,30 @@ BEGIN
       (uls.server_id, uls.funcid) =
       (delete_samples.server_id, new_lastids.funcid)
       AND uls.last_sample_id BETWEEN start_id AND end_id;
+
+    -- Extensions history
+    UPDATE extension_versions eve
+    SET last_sample_id = new_lastids.last_sample_id
+    FROM (
+      SELECT
+        ev.server_id,
+        ev.datid,
+        ev.extname,
+        ev.first_seen,
+        max(s.sample_id) as last_sample_id
+      FROM extension_versions ev
+      JOIN samples s ON
+        s.server_id = ev.server_id AND
+        s.sample_id < start_id AND
+        s.sample_time >= ev.first_seen
+      WHERE
+        ev.server_id = delete_samples.server_id AND
+        ev.last_sample_id BETWEEN start_id AND end_id
+      GROUP BY ev.server_id, ev.datid, ev.extname, ev.first_seen
+      ) new_lastids
+    WHERE
+      (eve.server_id, eve.datid, eve.extname, eve.first_seen) =
+      (delete_samples.server_id, new_lastids.datid, new_lastids.extname, new_lastids.first_seen);
   END IF;
 
   -- Delete specified samples without baseline samples
@@ -628,7 +654,8 @@ BEGIN
       fk_user_functions_functions,
       fk_stmt_list,
       fk_kcache_stmt_list,
-      fk_statements_roles
+      fk_statements_roles,
+      fk_extension_versions_samples
     DEFERRED;
   DELETE FROM samples dsmp
   USING
@@ -654,7 +681,8 @@ BEGIN
       fk_user_functions_functions,
       fk_stmt_list,
       fk_kcache_stmt_list,
-      fk_statements_roles
+      fk_statements_roles,
+      fk_extension_versions_samples
     IMMEDIATE;
 
   IF smp_delcount > 0 THEN

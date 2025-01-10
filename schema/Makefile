@@ -14,7 +14,8 @@ schema_files = \
 	import.sql \
 	settings.sql \
 	smpl_timing.sql \
-	reports.sql
+	reports.sql \
+	extension_versions.sql
 
 schema.sql: $(schema_files)
 	cat $(schema_files) \

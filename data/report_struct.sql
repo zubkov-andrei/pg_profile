@@ -52,7 +52,8 @@ VALUES
 (1, 'objects', NULL, 400, 'Schema object statistics', 'Schema object statistics', NULL, NULL, NULL, NULL),
 (1, 'funchdr', NULL, 500, 'User function statistics', 'User function statistics', 'function_stats', NULL, NULL, NULL),
 (1, 'vachdr', NULL, 600, 'Vacuum-related statistics', 'Vacuum-related statistics', NULL, NULL, NULL, NULL),
-(1, 'settings', NULL, 700, 'Cluster settings during the report interval', 'Cluster settings during the report interval', NULL, NULL, NULL, NULL),
+(1, 'settings', NULL, 700, 'Cluster settings', 'Cluster settings during the report interval', NULL, NULL, NULL, NULL),
+(1, 'extensions', NULL, 750, 'Extension versions', 'Extension versions during the report interval', NULL, NULL, NULL, NULL),
 (1, 'stmt_warn', NULL, 800, NULL, 'Warning!', 'stmt_cnt_all', NULL, NULL,
   '[{'
     '"type": "row_table", '
@@ -1984,6 +1985,26 @@ VALUES
   '}]'::jsonb)
 ;
 
+-- Extension sections
+INSERT INTO report_struct(
+    report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name,
+    content, sect_struct)
+VALUES
+(1, 'extension_versions', 'extensions', 900, NULL, NULL, NULL, NULL, NULL,
+  '[{'
+    '"type": "row_table",'
+    '"source": "extension_versions",'
+    '"ordering": "ord_ext",'
+    '"columns": ['
+     '{"caption": "Name", "id": "extname", "class": "table_obj_name", "title": "Name of the extension"},'
+     '{"caption": "DB", "id": "dbname", "class": "table_obj_name", "title": "Name of the database"},'
+     '{"caption": "First seen", "condition": "extension_versions_show_date_columns", "id": "first_seen", "class": "table_obj_value", "title": " The first appearance this extension version"},'
+     '{"caption": "Last seen", "condition": "extension_versions_show_date_columns", "id": "last_seen", "class": "table_obj_value", "title": "The last appearance of the extension version"},'
+     '{"caption": "Version", "id": "extversion", "class": "table_obj_value", "title": "Version name for the extension"}'
+    ']'
+  '}]'::jsonb)
+;
+
 -- Schema objects section of a differential report
 INSERT INTO report_struct (
   report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name,
@@ -2037,7 +2058,8 @@ VALUES
 (2, 'objects', NULL, 500, 'Schema object statistics', 'Schema object statistics', NULL, NULL, NULL, NULL),
 (2, 'funchdr', NULL, 600, 'User function statistics', 'User function statistics', 'function_stats', NULL, NULL, NULL),
 (2, 'vachdr', NULL, 700, 'Vacuum-related statistics', 'Vacuum-related statistics', NULL, NULL, NULL, NULL),
-(2, 'settings', NULL, 800, 'Cluster settings during the report interval', 'Cluster settings during the report interval', NULL, NULL, NULL, NULL),
+(2, 'settings', NULL, 800, 'Cluster settings', 'Cluster settings during the report interval', NULL, NULL, NULL, NULL),
+(2, 'extensions', NULL, 850, 'Extension versions', 'Extension versions during the report interval', NULL, NULL, NULL, NULL),
 (2, 'stmt_warn', NULL, 900, NULL, 'Warning!', 'stmt_cnt_all', NULL, NULL,
   '[{'
     '"type": "row_table", '
@@ -3943,6 +3965,25 @@ VALUES
           '{"caption": "Source", "id": "source", "class": "table_obj_value"},'
           '{"caption": "Notes", "id": "notes", "class": "table_obj_value switch_bold"}'
      ']}'
+    ']'
+  '}]'::jsonb)
+;
+-- Extension sections
+INSERT INTO report_struct(
+    report_id, sect_id, parent_sect_id, s_ord, toc_cap, tbl_cap, feature, function_name,
+    content, sect_struct)
+VALUES
+(2, 'extension_versions', 'extensions', 900, NULL, NULL, NULL, NULL, NULL,
+  '[{'
+    '"type": "row_table",'
+    '"source": "extension_versions",'
+    '"ordering": "ord_ext",'
+    '"columns": ['
+     '{"caption": "Name", "id": "extname", "class": "table_obj_name", "title": "Name of the extension"},'
+     '{"caption": "DB", "id": "dbname", "class": "table_obj_name", "title": "Name of the database"},'
+     '{"caption": "First seen", "condition": "extension_versions_show_date_columns", "id": "first_seen", "class": "table_obj_value", "title": " The first appearance this extension version"},'
+     '{"caption": "Last seen", "condition": "extension_versions_show_date_columns", "id": "last_seen", "class": "table_obj_value", "title": "The last appearance of the extension version"},'
+     '{"caption": "Version", "id": "extversion", "class": "table_obj_value", "title": "Version name for the extension"}'
     ']'
   '}]'::jsonb)
 ;
