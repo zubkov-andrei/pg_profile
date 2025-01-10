@@ -879,6 +879,7 @@ BEGIN
     END IF;
 
     -- Flushing pg_stat_kcache
+    st_query := NULL;
     CASE (
         SELECT extversion FROM jsonb_to_recordset(properties #> '{extensions}')
           AS x(extname text, extversion text)
@@ -887,21 +888,26 @@ BEGIN
       WHEN '2.1.0','2.1.1','2.1.2','2.1.3','2.2.0','2.2.1','2.2.2','2.2.3','2.3.0'
       THEN
         IF (properties #> '{properties,statements_reset}')::boolean THEN
-          SELECT * INTO qres FROM dblink('server_connection',
-            format('SELECT %1$I.pg_stat_kcache_reset()',
-              (
-                SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
-                  AS x(extname text, extnamespace text)
-                WHERE extname = 'pg_stat_kcache'
-              )
-            )
-          ) AS t(res char(1));
+          st_query := 'SELECT %1$I.pg_stat_kcache_reset() IS NULL';
         END IF;
       ELSE
         NULL;
     END CASE;
 
+    IF st_query IS NOT NULL THEN
+      st_query := format(st_query,
+          (
+            SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
+              AS x(extname text, extnamespace text)
+            WHERE extname = 'pg_stat_kcache'
+          )
+        );
+
+      PERFORM 0 FROM dblink('server_connection', st_query) AS dbl(t boolean);
+    END IF;
+
     -- Flushing statements
+    st_query := NULL;
     CASE (
         SELECT extversion
         FROM jsonb_to_recordset(properties #> '{extensions}')
@@ -912,42 +918,31 @@ BEGIN
       WHEN '1.3','1.4','1.5','1.6','1.7','1.8','1.9','1.10'
       THEN
         IF (properties #> '{properties,statements_reset}') = to_jsonb(true) THEN
-          SELECT * INTO qres FROM dblink('server_connection',
-            format('SELECT %1$I.pg_stat_statements_reset()',
-              (
-                SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
-                  AS x(extname text, extnamespace text)
-                WHERE extname = 'pg_stat_statements'
-              )
-            )
-          ) AS t(res char(1));
+          st_query := 'SELECT %1$I.pg_stat_statements_reset() IS NULL';
         END IF;
       WHEN '1.11'
       THEN
         IF (properties #> '{properties,statements_reset}')::boolean THEN
-          SELECT * INTO qres FROM dblink('server_connection',
-            format('SELECT %1$I.pg_stat_statements_reset()',
-              (
-                SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
-                  AS x(extname text, extnamespace text)
-                WHERE extname = 'pg_stat_statements'
-              )
-            )
-          ) AS t(rst_time timestamp with time zone);
+          st_query := 'SELECT %1$I.pg_stat_statements_reset() IS NULL';
         ELSE
-          SELECT * INTO qres FROM dblink('server_connection',
-            format('SELECT %1$I.pg_stat_statements_reset(0, 0, 0, true)',
-              (
-                SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
-                  AS x(extname text, extnamespace text)
-                WHERE extname = 'pg_stat_statements'
-              )
-            )
-          ) AS t(mm_rst_time timestamp with time zone);
+          st_query := 'SELECT %1$I.pg_stat_statements_reset(0, 0, 0, true) IS NULL';
         END IF;
       ELSE
         RAISE 'Unsupported pg_stat_statements version.';
     END CASE;
+
+    IF st_query IS NOT NULL THEN
+      st_query :=
+        format(st_query,
+          (
+            SELECT extnamespace FROM jsonb_to_recordset(properties #> '{extensions}')
+              AS x(extname text, extnamespace text)
+            WHERE extname = 'pg_stat_statements'
+          )
+        );
+
+      PERFORM 0 FROM dblink('server_connection', st_query) AS dbl(t boolean);
+    END IF;
 
     -- Save the diffs in a sample
     PERFORM save_pg_stat_statements(sserver_id, s_id,

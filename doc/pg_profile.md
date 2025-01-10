@@ -724,11 +724,11 @@ Contains per-database aggregated min/max timing statistics of *pg_stat_statement
 * *Average planning times (ms)* - the average value of min/max planning timings
   * *Min (ms.)* - The average value of *min_plan_time* for all statements and all samples included in the report
   * *Max (ms.)* - The average value of *max_plan_time* for all statements and all samples included in the report
-  * *Delta%* - Difference between mean *max_plan_time* and mean *min_plan_time* as a percentage of mean *min_plan_time*. The less this difference the more stable is query planning in your database
+  * *Delta%* - Difference between mean *max_plan_time* and mean *min_plan_time* as a percentage of mean *min_plan_time*. The less this difference the more stable query planning in your database is
 * *Average execution times (ms)* - the average value of min/max execution timings
   * *Min (ms.)* - The average value of *min_exec_time* for all statements and all samples included in the report
   * *Max (ms.)* - The average value of *max_exec_time* for all statements and all samples included in the report
-  * *Delta%* - Difference between mean *max_exec_time* and mean *min_exec_time* as a percentage of mean *min_exec_time*. The less this difference the more stable is query planning in your database
+  * *Delta%* - Difference between mean *max_exec_time* and mean *min_exec_time* as a percentage of mean *min_exec_time*. The less this difference the more stable query execution in your database is
 * *Statements* - total count of captured statements
 
 #### JIT statistics by database

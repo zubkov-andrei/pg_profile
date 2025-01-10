@@ -1,5 +1,9 @@
 # pg_profile changelog
 
+## 4.8
+- Added database extension version section
+- Add possibility to exclude some databases from report
+
 ## 4.7
 - support of PostgreSQL 17 cluster statistics
 - support of *pg_stat_statements* 1.11

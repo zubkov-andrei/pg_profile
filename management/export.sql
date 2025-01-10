@@ -1601,7 +1601,7 @@ BEGIN
               dr.temp_blks_read,
               dr.temp_blks_written,
               dr.blk_read_time as shared_blk_read_time,
-              dr.blk_write_time as  as shared_blk_write_time,
+              dr.blk_write_time as shared_blk_write_time,
               dr.wal_records,
               dr.wal_fpi,
               dr.wal_bytes,
@@ -3265,7 +3265,7 @@ BEGIN
           LOOP
             FETCH data INTO datarow;
             EXIT WHEN NOT FOUND;
-            INSERT INTO last_stat_statements (server_id, sample_id, userid, username, datid, queryid, 
+            INSERT INTO last_stat_statements (server_id, sample_id, userid, username, datid, queryid,
               queryid_md5, plans, total_plan_time, min_plan_time, max_plan_time, mean_plan_time,
               stddev_plan_time, calls, total_exec_time, min_exec_time, max_exec_time,
               mean_exec_time, stddev_exec_time, rows, shared_blks_hit, shared_blks_read,
@@ -3402,7 +3402,7 @@ BEGIN
           LOOP
             FETCH data INTO datarow;
             EXIT WHEN NOT FOUND;
-            INSERT INTO last_stat_statements (server_id, sample_id, userid, username, datid, queryid, 
+            INSERT INTO last_stat_statements (server_id, sample_id, userid, username, datid, queryid,
               queryid_md5, plans, total_plan_time, min_plan_time, max_plan_time, mean_plan_time,
               stddev_plan_time, calls, total_exec_time, min_exec_time, max_exec_time,
               mean_exec_time, stddev_exec_time, rows, shared_blks_hit, shared_blks_read,
