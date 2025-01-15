@@ -10,6 +10,8 @@ DROP FUNCTION drop_server;
 DROP FUNCTION stat_activity_states_format(integer, integer, integer, integer, integer);
 DROP FUNCTION stat_activity_states_format(integer, integer, integer);
 DROP FUNCTION statements_dbstats;
+DROP FUNCTION import_data;
+DROP FUNCTION collect_pg_wait_sampling_stats_11;
 
 DROP FUNCTION get_report(integer, integer, integer, text, boolean);
 DROP FUNCTION get_report(name, integer, integer, text, boolean);
@@ -33,3 +35,5 @@ DROP FUNCTION get_diffreport(integer, integer, varchar, text, boolean);
 DROP FUNCTION get_diffreport(name, tstzrange, tstzrange, text, boolean);
 DROP FUNCTION get_diffreport(name, varchar, tstzrange, text, boolean);
 DROP FUNCTION get_diffreport(name, tstzrange, varchar, text, boolean);
+
+DROP FUNCTION take_sample(integer, boolean);

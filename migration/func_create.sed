@@ -18,3 +18,8 @@
 /^COMMENT ON FUNCTION get_diffreport(.*$/,/';$/p
 /^CREATE FUNCTION get_report_latest(.*$/,/\$\$[[:space:]]*LANGUAGE[[:space:]]\+\(plpg\)\?sql[[:space:]]*;[[:space:]]*$/p
 /^COMMENT ON FUNCTION get_report_latest.*';$/p
+/^CREATE FUNCTION import_data(.*$/,/\$\$[[:space:]]*LANGUAGE[[:space:]]\+\(plpg\)\?sql[[:space:]]*;[[:space:]]*$/p
+/^COMMENT ON FUNCTION import_data(.*$/,/';$/p
+/^CREATE FUNCTION collect_pg_wait_sampling_stats_11(.*$/,/\$\$[[:space:]]*LANGUAGE[[:space:]]\+\(plpg\)\?sql[[:space:]]*;[[:space:]]*$/p
+/^CREATE FUNCTION take_sample(IN sserver_id integer.*$/,/\$\$[[:space:]]*LANGUAGE[[:space:]]\+\(plpg\)\?sql[[:space:]]*;[[:space:]]*$/p
+/^COMMENT ON FUNCTION take_sample(IN sserver_id integer.*$/,/';$/p

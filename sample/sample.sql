@@ -1481,9 +1481,9 @@ BEGIN
     IF (SELECT count(*) > 0 FROM last_stat_activity_count WHERE server_id = sserver_id) OR
        (SELECT count(*) > 0 FROM last_stat_activity WHERE server_id = sserver_id)
     THEN
-      EXECUTE format('TRUNCATE TABLE last_stat_activity_srv%1$s',
+      EXECUTE format('DELETE FROM last_stat_activity_srv%1$s',
         sserver_id);
-      EXECUTE format('TRUNCATE TABLE last_stat_activity_count_srv%1$s',
+      EXECUTE format('DELETE FROM last_stat_activity_count_srv%1$s',
         sserver_id);
     END IF;
 
