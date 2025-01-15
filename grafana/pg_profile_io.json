@@ -311,7 +311,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  (coalesce(sum(total_plan_time), 0) + sum(total_exec_time)) / 1000 as \"Elapsed (s)\",\n  round(sum(blk_read_time)::numeric / 1000, 2) as \"Read time (s)\",\n  round(sum(blk_write_time)::numeric / 1000, 2) as \"Write time (s)\"\nFROM sample_statements_total sst\nWHERE\n  sst.server_id = ${profile_servers}\n  AND sample_id BETWEEN $startid + 1 AND $endid \n",
+          "rawSql": "SELECT\n  (coalesce(sum(total_plan_time), 0) + sum(total_exec_time)) / 1000 as \"Elapsed (s)\",\n  round(sum(shared_blk_read_time)::numeric / 1000, 2) as \"Read time (s)\",\n  round(sum(shared_blk_write_time)::numeric / 1000, 2) as \"Write time (s)\"\nFROM sample_statements_total sst\nWHERE\n  sst.server_id = ${profile_servers}\n  AND sample_id BETWEEN $startid + 1 AND $endid \n",
           "refId": "stmts_agg",
           "sql": {
             "columns": [

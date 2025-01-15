@@ -511,7 +511,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  (coalesce(sum(total_plan_time), 0) + sum(total_exec_time)) / 1000 as \"Elapsed (s)\",\n  (sum(blk_read_time) + sum(blk_write_time)) / 1000 as \"I/O time (s)\"\nFROM sample_statements_total sst\nWHERE\n  sst.server_id = ${profile_servers}\n  AND sample_id BETWEEN $startid + 1 AND $endid \n",
+          "rawSql": "SELECT\n  (coalesce(sum(total_plan_time), 0) + sum(total_exec_time)) / 1000 as \"Elapsed (s)\",\n  (sum(shared_blk_read_time) + sum(shared_blk_write_time)) / 1000 as \"I/O time (s)\"\nFROM sample_statements_total sst\nWHERE\n  sst.server_id = ${profile_servers}\n  AND sample_id BETWEEN $startid + 1 AND $endid \n",
           "refId": "stmts_agg",
           "sql": {
             "columns": [
@@ -3330,7 +3330,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sum(total_plan_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Planning\",\n  sum(total_exec_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Execution\",\n  sum(sst.blk_read_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Read\",\n  sum(sst.blk_write_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Write\"\nFROM sample_statements_total sst\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sst.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time\nORDER BY time",
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sum(total_plan_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Planning\",\n  sum(total_exec_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Execution\",\n  sum(sst.shared_blk_read_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Read\",\n  sum(sst.shared_blk_write_time / extract(epoch from smpe.sample_time - smps.sample_time))/1000 as \"Write\"\nFROM sample_statements_total sst\n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sst.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY time\nORDER BY time",
           "refId": "stmt_time",
           "sql": {
             "columns": [
