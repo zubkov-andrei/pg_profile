@@ -533,10 +533,10 @@ Reports are generated in HTML markup by reporting functions. There are two types
 
 #### Regular report functions
 
-* **get_report([server name,] start_id integer, end_id integer [, description text [, with_growth boolean]])** - generate report by sample identifiers
-* **get_report([server name,] time_range tstzrange [, description text [, with_growth boolean]])** - generate report for the shortest sample interval, covering provided *time_range*.
-* **get_report([server name], baseline varchar(25) [, description text [, with_growth boolean]])** - generate report, using baseline as samples interval
-* **get_report_latest([server name])** - generate report for two latest samples
+* **get_report([server name,] start_id integer, end_id integer [, description text [, with_growth boolean [, db_exclude name[] ]]])** - generate report by sample identifiers
+* **get_report([server name,] time_range tstzrange [, description text [, with_growth boolean[, with_growth boolean [, db_exclude name[] ]]])** - generate report for the shortest sample interval, covering provided *time_range*.
+* **get_report([server name], baseline varchar(25) [, description text [, with_growth boolean[, with_growth boolean [, db_exclude name[] ]]])** - generate report, using baseline as samples interval
+* **get_report_latest([server name [, db_exclude name[] ]])** - generate report for two latest samples
 Function arguments:
   * *server* - server name. *local* server is assumed if omitted
   * *start_id* - interval begin sample identifier
@@ -545,14 +545,15 @@ Function arguments:
   * *baseline* - a baseline name
   * *with_growth* - a flag, requesting interval expansion to nearest bounds with relation growth data available. Default value is *false*
   * *description* - a text memo, it will be included in report as a report description
+  * *db_exclude* - database exclude list. Listed databases will be excluded from all tables with the *Database* column. Used in cases, when you want to hide some databases from the report
 
 #### Differential report functions
 
 You can generate differential report using sample identifiers, baselines and time ranges as interval bounds:
 
-* **get_diffreport([server name,] start1_id integer, end1_id integer, start2_id integer, end2_id integer [, description text [, with_growth boolean]])** - generate differential report on two intervals by sample identifiers
-* **get_diffreport([server name,] baseline1 varchar(25), baseline2 varchar(25) [, description text [, with_growth boolean]])** - generate differential report on two intervals, defined by basename names
-* **get_diffreport([server name,] time_range1 tstzrange, time_range2 tstzrange [, description text [, with_growth boolean]])** - generate differential report on two intervals, defined by time ranges
+* **get_diffreport([server name,] start1_id integer, end1_id integer, start2_id integer, end2_id integer [, description text [, with_growth boolean [, db_exclude name[] ]]])** - generate differential report on two intervals by sample identifiers
+* **get_diffreport([server name,] baseline1 varchar(25), baseline2 varchar(25) [, description text [, with_growth boolean [, db_exclude name[] ]]])** - generate differential report on two intervals, defined by basename names
+* **get_diffreport([server name,] time_range1 tstzrange, time_range2 tstzrange [, description text [, with_growth boolean [, db_exclude name[] ]]])** - generate differential report on two intervals, defined by time ranges
   * *server* is server name. *local* server is assumed if omitted
   * *start1_id*, *end1_id* - sample identifiers of first interval
   * *start2_id*, *end2_id* - sample identifiers of second interval
@@ -562,13 +563,14 @@ You can generate differential report using sample identifiers, baselines and tim
   * *time_range2* - second interval time range
   * *description* is a text memo - it will be included in report as report description
   * *with_growth* is a flag, requesting both intervals expansion to nearest bounds with relation growth data available. Default value is *false*
+  * *db_exclude* - exclude databases list from all rows in tables with column *Database*. Used in cases, when you want to hide some databases in report
 
 Also, you can use some combinations of the above:
 
-* **get_diffreport([server name,] baseline varchar(25), time_range tstzrange [, description text [, with_growth boolean]])**
-* **get_diffreport([server name,] time_range tstzrange, baseline varchar(25) [, description text [, with_growth boolean]])**
-* **get_diffreport([server name,] start1_id integer, end1_id integer, baseline varchar(25) [, description text [, with_growth boolean]])**
-* **get_diffreport([server name,] baseline varchar(25), start2_id integer, end2_id integer [, description text [, with_growth boolean]])**
+* **get_diffreport([server name,] baseline varchar(25), time_range tstzrange [, description text [, with_growth boolean [, db_exclude name[] ]]])**
+* **get_diffreport([server name,] time_range tstzrange, baseline varchar(25) [, description text [, with_growth boolean [, db_exclude name[] ]]])**
+* **get_diffreport([server name,] start1_id integer, end1_id integer, baseline varchar(25) [, description text [, with_growth boolean [, db_exclude name[] ]]])**
+* **get_diffreport([server name,] baseline varchar(25), start2_id integer, end2_id integer [, description text [, with_growth boolean [, db_exclude name[] ]]])**
 
 Report generation example:
 ```

@@ -565,7 +565,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION get_report_datasets(IN report_context jsonb, IN sserver_id integer)
+CREATE FUNCTION get_report_datasets(IN report_context jsonb, IN sserver_id integer, IN db_exclude name[] = NULL)
 RETURNS jsonb SET search_path=@extschema@ AS $$
 DECLARE
   start1_id   integer = (report_context #>> '{report_properties,start1_id}')::integer;
@@ -945,8 +945,10 @@ BEGIN
             entry(
               userid  oid,
               datid   oid,
+              dbname	name,
               queryid bigint
             )
+        WHERE dbname <> ALL (db_exclude) OR db_exclude IS NULL
         )
       LOOP
         queries_set := queries_set || jsonb_build_object(
@@ -1373,8 +1375,10 @@ BEGIN
             entry(
               userid  oid,
               datid   oid,
+              dbname 	name,
               queryid bigint
             )
+        WHERE dbname <> ALL (db_exclude) OR db_exclude IS NULL
         )
       LOOP
         queries_set := queries_set || jsonb_build_object(
