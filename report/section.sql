@@ -161,6 +161,18 @@ BEGIN
           WHERE server_id = sserver_id AND
             sample_id BETWEEN start1_id AND end1_id AND
             (first_seen > start1_time OR last_sample_id < end1_id)
+          ),
+        'table_storage_parameters', (
+          SELECT count(*) > 0
+          FROM v_table_storage_parameters
+          WHERE server_id = sserver_id AND
+            sample_id BETWEEN start1_id AND end1_id
+          ),
+        'index_storage_parameters', (
+          SELECT count(*) > 0
+          FROM v_index_storage_parameters
+          WHERE server_id = sserver_id AND
+            sample_id BETWEEN start1_id AND end1_id
           )
       ),
       'report_properties',jsonb_build_object(
@@ -402,6 +414,18 @@ BEGIN
             (sample_id BETWEEN start1_id AND end1_id OR
             sample_id BETWEEN start2_id AND end2_id) AND
             (first_seen > least(start1_time, start2_time) OR last_sample_id < greatest(end1_id, end2_id))
+          ),
+        'table_storage_parameters', (
+          SELECT count(*) > 0
+          FROM v_table_storage_parameters
+          WHERE server_id = sserver_id AND
+            sample_id BETWEEN start1_id AND end1_id
+          ),
+        'index_storage_parameters', (
+          SELECT count(*) > 0
+          FROM v_index_storage_parameters
+          WHERE server_id = sserver_id AND
+            sample_id BETWEEN start1_id AND end1_id
           )
       ),
       'report_properties', jsonb_build_object(
@@ -1040,6 +1064,16 @@ BEGIN
         dataset := dataset || to_jsonb(r_result);
       END LOOP;
       datasets := jsonb_set(datasets, '{extension_versions}', dataset);
+    IF (report_context #>> '{report_features,table_storage_parameters}')::boolean THEN
+      SELECT coalesce(jsonb_set(datasets, '{table_storage_parameters}', jsonb_agg(to_jsonb(dt))), datasets)
+      INTO datasets
+      FROM table_storage_parameters_format(sserver_id, start1_id, end1_id) dt;
+    END IF;
+
+    IF (report_context #>> '{report_features,index_storage_parameters}')::boolean THEN
+      SELECT coalesce(jsonb_set(datasets, '{index_storage_parameters}', jsonb_agg(to_jsonb(dt))), datasets)
+      INTO datasets
+      FROM index_storage_parameters_format(sserver_id, start1_id, end1_id) dt;
     END IF;
 
   ELSIF num_nulls(start1_id, end1_id, start2_id, end2_id) = 0 THEN
@@ -1484,6 +1518,16 @@ BEGIN
         dataset := dataset || to_jsonb(r_result);
       END LOOP;
       datasets := jsonb_set(datasets, '{extension_versions}', dataset);
+    IF (report_context #>> '{report_features,table_storage_parameters}')::boolean THEN
+      SELECT coalesce(jsonb_set(datasets, '{table_storage_parameters}', jsonb_agg(to_jsonb(dt))), datasets)
+      INTO datasets
+      FROM table_storage_parameters_format(sserver_id, start1_id, end1_id, start2_id, end2_id) dt;
+    END IF;
+
+    IF (report_context #>> '{report_features,index_storage_parameters}')::boolean THEN
+      SELECT coalesce(jsonb_set(datasets, '{index_storage_parameters}', jsonb_agg(to_jsonb(dt))), datasets)
+      INTO datasets
+      FROM index_storage_parameters_format(sserver_id, start1_id, end1_id, start2_id, end2_id) dt;
     END IF;
 
   END IF;

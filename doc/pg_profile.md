@@ -1224,6 +1224,8 @@ Query texts of all statements mentioned in report. You can use *Query ID* link i
 
 This section of report contains top database objects, using statistics from Statistics Collector views.
 
+Sections containing data for tables and indexes have a storage parameters preview - you can click on the row to see storage parameters of an object just under the row.
+
 #### Top tables by estimated sequentially scanned volume
 
 Top database tables sorted by estimated volume, read by sequential scans. Based on *pg_stat_all_tables* view. Here you can search for tables, possibly lacks some index on it. When there is no relation sizes collected with *pg_relation_size()*, estimation will be calculated based on *pg_class.relpages* field. This will be less accurate, so such values will be provided in square brackets.

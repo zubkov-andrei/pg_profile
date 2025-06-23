@@ -1,6 +1,7 @@
 # pg_profile changelog
 
 ## 4.9
+- Added table and index storage parameter sections (@blackstranger, @Djoongaar)
 - Report design refactored (@Djoongaar)
 ## 4.8
 - Added database extension version section

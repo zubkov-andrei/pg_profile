@@ -3620,6 +3620,94 @@ BEGIN
 
     IF (result #>> '{collect_timings}')::boolean THEN
       result := jsonb_set(result,'{timings,merge new extensions version,end}',to_jsonb(clock_timestamp()));
+      result := jsonb_set(result,'{timings,merge new relation storage parameters}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
+    UPDATE table_storage_parameters tsp
+    SET last_sample_id = s_id - 1
+    FROM last_stat_tables prev_lst
+      LEFT JOIN last_stat_tables cur_lst ON
+        (cur_lst.server_id, cur_lst.datid, cur_lst.relid, cur_lst.sample_id, cur_lst.reloptions) =
+        (sserver_id, prev_lst.datid, prev_lst.relid, s_id, prev_lst.reloptions)
+    WHERE
+      (prev_lst.server_id, prev_lst.sample_id) = (sserver_id, s_id - 1) AND
+      prev_lst.reloptions IS NOT NULL AND
+      (tsp.server_id, tsp.datid, tsp.relid, tsp.reloptions) =
+      (sserver_id, prev_lst.datid, prev_lst.relid, prev_lst.reloptions) AND
+      tsp.last_sample_id IS NULL AND
+      cur_lst IS NULL;
+
+    INSERT INTO table_storage_parameters (
+      server_id,
+      datid,
+      relid,
+      first_seen,
+      reloptions
+    )
+    SELECT
+      cur_lst.server_id,
+      cur_lst.datid,
+      cur_lst.relid,
+      s.sample_time as first_seen,
+      cur_lst.reloptions
+    FROM last_stat_tables cur_lst
+      JOIN samples s on (s.server_id, s.sample_id) = (sserver_id, s_id)
+      LEFT JOIN last_stat_tables prev_lst ON
+        (prev_lst.server_id, prev_lst.datid, prev_lst.relid, prev_lst.sample_id, prev_lst.in_sample, prev_lst.reloptions) =
+        (sserver_id, cur_lst.datid, cur_lst.relid, s_id - 1, true, cur_lst.reloptions)
+      LEFT JOIN table_storage_parameters tsp ON
+        (tsp.server_id, tsp.datid, tsp.relid, tsp.reloptions) =
+        (sserver_id, cur_lst.datid, cur_lst.relid, cur_lst.reloptions)
+    WHERE
+      (cur_lst.server_id, cur_lst.sample_id, cur_lst.in_sample) = (sserver_id, s_id, true) AND
+      cur_lst.reloptions IS NOT NULL AND
+      prev_lst IS NULL AND
+      tsp IS NULL;
+
+    UPDATE index_storage_parameters tsp
+    SET last_sample_id = s_id - 1
+      FROM last_stat_indexes prev_lsi
+      LEFT JOIN last_stat_indexes cur_lsi ON
+        (cur_lsi.server_id, cur_lsi.datid, cur_lsi.relid, cur_lsi.indexrelid, cur_lsi.sample_id, cur_lsi.reloptions) =
+        (sserver_id, prev_lsi.datid, prev_lsi.relid, prev_lsi.indexrelid, s_id, prev_lsi.reloptions)
+    WHERE (prev_lsi.server_id, prev_lsi.sample_id) = (sserver_id, s_id - 1)AND
+      prev_lsi.reloptions IS NOT NULL AND
+      (tsp.server_id, tsp.datid, tsp.relid, tsp.indexrelid, tsp.reloptions) =
+      (sserver_id, prev_lsi.datid, prev_lsi.relid, prev_lsi.indexrelid, prev_lsi.reloptions) AND
+      tsp.last_sample_id IS NULL AND
+      cur_lsi IS NULL;
+
+    INSERT INTO index_storage_parameters (
+      server_id,
+      datid,
+      relid,
+      indexrelid,
+      first_seen,
+      reloptions
+    )
+    SELECT
+      cur_lsi.server_id,
+      cur_lsi.datid,
+      cur_lsi.relid,
+      cur_lsi.indexrelid,
+      s.sample_time as first_seen,
+      cur_lsi.reloptions
+    FROM last_stat_indexes cur_lsi
+      JOIN samples s on (s.server_id, s.sample_id) = (sserver_id, s_id)
+      LEFT JOIN last_stat_indexes prev_lsi ON
+        (prev_lsi.server_id, prev_lsi.datid, prev_lsi.relid, prev_lsi.indexrelid, prev_lsi.sample_id, prev_lsi.in_sample, prev_lsi.reloptions) =
+        (sserver_id, cur_lsi.datid, cur_lsi.relid, cur_lsi.indexrelid, s_id - 1, true, cur_lsi.reloptions)
+      LEFT JOIN index_storage_parameters isp ON
+        (isp.server_id, isp.datid, isp.relid, isp.indexrelid, isp.reloptions) =
+        (sserver_id, cur_lsi.datid, cur_lsi.relid, cur_lsi.indexrelid, cur_lsi.reloptions)
+    WHERE
+      (cur_lsi.server_id, cur_lsi.sample_id, cur_lsi.in_sample) = (sserver_id, s_id, true) AND
+      cur_lsi.reloptions IS NOT NULL AND
+      prev_lsi IS NULL AND
+      isp IS NULL;
+
+    IF (result #>> '{collect_timings}')::boolean THEN
+      result := jsonb_set(result,'{timings,merge new relation storage parameters,end}',to_jsonb(clock_timestamp()));
     END IF;
 
     -- Clear data in last_ tables, holding data only for next diff sample

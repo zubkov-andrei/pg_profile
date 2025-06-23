@@ -7,7 +7,7 @@ $(EXTENSION)--4.8--4.9.sql: migration/func_drop.sql migration/func_create.sed \
 	-e '1i \\\echo Use "ALTER EXTENSION $(EXTENSION) UPDATE" to load this file. \\quit' \
 	$(sed_extension) \
 	migration/func_drop.sql \
-	schema/extension_versions.sql \
+	schema/relation_storage_parameters.sql \
 	> $(EXTENSION)--4.8--4.9.sql;
 	sed -n \
 	$(sed_extension) \

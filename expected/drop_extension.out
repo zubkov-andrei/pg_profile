@@ -1,5 +1,7 @@
 /* Drop test objects */
 DROP TABLE profile.grow_table;
+DROP TABLE profile.test_rel_storage_params1;
+DROP TABLE profile.test_rel_storage_params2;
 DROP FUNCTION profile.dummy_func();
 DROP FUNCTION profile.grow_table_trg_f();
 DROP FUNCTION profile.get_ids;

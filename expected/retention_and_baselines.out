@@ -1,23 +1,49 @@
 UPDATE profile.samples
 SET sample_time = now() - (5 - sample_id) * '1 day'::interval - '10 minutes'::interval
 WHERE sample_id <= 5;
+ALTER TABLE profile.test_rel_storage_params1 RESET (autovacuum_vacuum_threshold,fillfactor,autovacuum_enabled);
+ALTER INDEX profile.ix_test_rel_storage_params_id1 RESET (fillfactor);
+ALTER INDEX profile.ix_test_rel_storage_params_val1 RESET (fillfactor);
 SELECT server,result FROM profile.take_sample();
  server | result 
 --------+--------
  local  | OK
 (1 row)
 
+SELECT relname, t.last_sample_id, reloptions
+FROM profile.table_storage_parameters t JOIN profile.tables_list
+  USING (server_id, relid)
+WHERE relname IN ('test_rel_storage_params1','test_rel_storage_params2') ORDER BY relid, last_sample_id;
+         relname          | last_sample_id |                                         reloptions                                          
+--------------------------+----------------+---------------------------------------------------------------------------------------------
+ test_rel_storage_params1 |              8 | ["autovacuum_vacuum_threshold=50", "fillfactor=100", "autovacuum_enabled=true"]
+ test_rel_storage_params2 |                | ["vacuum_index_cleanup=true", "vacuum_truncate=true", "autovacuum_vacuum_scale_factor=0.2"]
+(2 rows)
+
+SELECT relname, indexrelname, i.last_sample_id, reloptions
+FROM profile.index_storage_parameters i JOIN profile.tables_list
+  USING (server_id, relid)
+  JOIN profile.indexes_list USING (server_id, relid, indexrelid)
+WHERE relname IN ('test_rel_storage_params1','test_rel_storage_params2') ORDER BY relid, indexrelid, last_sample_id;
+         relname          |          indexrelname           | last_sample_id |     reloptions     
+--------------------------+---------------------------------+----------------+--------------------
+ test_rel_storage_params1 | ix_test_rel_storage_params_id1  |              8 | ["fillfactor=100"]
+ test_rel_storage_params1 | ix_test_rel_storage_params_val1 |              8 | ["fillfactor=90"]
+ test_rel_storage_params2 | ix_test_rel_storage_params_id2  |                | ["fillfactor=80"]
+ test_rel_storage_params2 | ix_test_rel_storage_params_val2 |                | ["fillfactor=70"]
+(4 rows)
+
 BEGIN;
   SELECT profile.delete_samples();
  delete_samples 
 ----------------
-              5
+              8
 (1 row)
 
   SELECT sample FROM profile.show_samples() ORDER BY sample;
  sample 
 --------
-      6
+      9
 (1 row)
 
 ROLLBACK;
@@ -59,7 +85,10 @@ BEGIN;
       3
       4
       6
-(4 rows)
+      7
+      8
+      9
+(7 rows)
 
 ROLLBACK;
 BEGIN;
@@ -81,7 +110,10 @@ BEGIN;
       3
       4
       6
-(4 rows)
+      7
+      8
+      9
+(7 rows)
 
 ROLLBACK;
 SELECT * FROM profile.create_baseline('testline2',2,4);

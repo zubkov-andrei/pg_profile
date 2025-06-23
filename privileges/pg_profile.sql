@@ -35,6 +35,8 @@ GRANT SELECT ON report_static TO public;
 GRANT SELECT ON report TO public;
 GRANT SELECT ON report_struct TO public;
 GRANT SELECT ON extension_versions TO public;
+GRANT SELECT ON table_storage_parameters TO public;
+GRANT SELECT ON index_storage_parameters TO public;
 GRANT SELECT ON v_sample_stat_indexes TO public;
 GRANT SELECT ON v_sample_stat_tablespaces TO public;
 GRANT SELECT ON v_sample_timings TO public;
@@ -42,6 +44,8 @@ GRANT SELECT ON v_sample_stat_tables TO public;
 GRANT SELECT ON v_sample_settings TO public;
 GRANT SELECT ON v_sample_stat_user_functions TO public;
 GRANT SELECT ON v_extension_versions TO public;
+GRANT SELECT ON v_table_storage_parameters TO public;
+GRANT SELECT ON v_index_storage_parameters TO public;
 
 -- pg_read_all_stats can see the query texts
 GRANT SELECT ON stmt_list TO pg_read_all_stats;

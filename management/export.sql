@@ -3691,6 +3691,70 @@ BEGIN
           RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
         END IF;
       END LOOP; -- over data rows
+    WHEN 'table_storage_parameters' THEN
+      LOOP
+        FETCH data INTO datarow;
+        EXIT WHEN NOT FOUND;
+        INSERT INTO table_storage_parameters(server_id,datid,relid,first_seen,last_sample_id,reloptions)
+        SELECT
+          (srv_map ->> dr.server_id::text)::integer AS server_id,
+          dr.datid,
+          dr.relid,
+          dr.first_seen,
+          dr.last_sample_id,
+          dr.reloptions
+        FROM json_to_record(datarow.row_data) AS dr(
+            server_id        integer,
+            datid            oid,
+            relid            oid,
+            first_seen       timestamp(0) with time zone,
+            last_sample_id   integer,
+            reloptions       jsonb
+          )
+        JOIN
+          servers s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer) =
+            (s_ctl.server_id)
+        ON CONFLICT ON CONSTRAINT pk_table_storage_parameters DO NOTHING;
+        GET DIAGNOSTICS row_proc = ROW_COUNT;
+        rowcnt := rowcnt + row_proc;
+        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+        END IF;
+      END LOOP; -- over data rows
+    WHEN 'index_storage_parameters' THEN
+      LOOP
+        FETCH data INTO datarow;
+        EXIT WHEN NOT FOUND;
+        INSERT INTO index_storage_parameters(server_id,datid,relid,indexrelid,first_seen,last_sample_id,reloptions)
+        SELECT
+          (srv_map ->> dr.server_id::text)::integer AS server_id,
+          dr.datid,
+          dr.relid,
+          dr.indexrelid,
+          dr.first_seen,
+          dr.last_sample_id,
+          dr.reloptions
+        FROM json_to_record(datarow.row_data) AS dr(
+            server_id        integer,
+            datid            oid,
+            relid            oid,
+            indexrelid       oid,
+            first_seen       timestamp(0) with time zone,
+            last_sample_id   integer,
+            reloptions       jsonb
+          )
+        JOIN
+          servers s_ctl ON
+            ((srv_map ->> dr.server_id::text)::integer) =
+            (s_ctl.server_id)
+        ON CONFLICT ON CONSTRAINT pk_index_storage_parameters DO NOTHING;
+        GET DIAGNOSTICS row_proc = ROW_COUNT;
+        rowcnt := rowcnt + row_proc;
+        IF (rowcnt > 0 AND rowcnt % 1000 = 0) THEN
+          RAISE NOTICE '%', format('Table %s processed: %s rows', imp_table_name, rowcnt);
+        END IF;
+      END LOOP; -- over data rows
     ELSE
       rows_processed := -1;
       RETURN; -- table not found

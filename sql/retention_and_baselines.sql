@@ -1,7 +1,23 @@
 UPDATE profile.samples
 SET sample_time = now() - (5 - sample_id) * '1 day'::interval - '10 minutes'::interval
 WHERE sample_id <= 5;
+
+ALTER TABLE profile.test_rel_storage_params1 RESET (autovacuum_vacuum_threshold,fillfactor,autovacuum_enabled);
+ALTER INDEX profile.ix_test_rel_storage_params_id1 RESET (fillfactor);
+ALTER INDEX profile.ix_test_rel_storage_params_val1 RESET (fillfactor);
+
 SELECT server,result FROM profile.take_sample();
+
+SELECT relname, t.last_sample_id, reloptions
+FROM profile.table_storage_parameters t JOIN profile.tables_list
+  USING (server_id, relid)
+WHERE relname IN ('test_rel_storage_params1','test_rel_storage_params2') ORDER BY relid, last_sample_id;
+SELECT relname, indexrelname, i.last_sample_id, reloptions
+FROM profile.index_storage_parameters i JOIN profile.tables_list
+  USING (server_id, relid)
+  JOIN profile.indexes_list USING (server_id, relid, indexrelid)
+WHERE relname IN ('test_rel_storage_params1','test_rel_storage_params2') ORDER BY relid, indexrelid, last_sample_id;
+
 BEGIN;
   SELECT profile.delete_samples();
   SELECT sample FROM profile.show_samples() ORDER BY sample;

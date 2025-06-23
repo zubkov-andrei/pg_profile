@@ -10,6 +10,30 @@ CREATE TABLE profile.grow_table (
 
 CREATE INDEX IF NOT EXISTS ix_grow_table ON profile.grow_table(short_str);
 
+CREATE TABLE profile.test_rel_storage_params1
+(
+  id  INTEGER,
+  val NUMERIC
+) WITH (
+    autovacuum_vacuum_threshold = 50,
+    fillfactor = 100,
+    autovacuum_enabled = TRUE
+);
+CREATE INDEX ix_test_rel_storage_params_id1 ON profile.test_rel_storage_params1 (id) WITH (fillfactor = 100);
+CREATE INDEX ix_test_rel_storage_params_val1 ON profile.test_rel_storage_params1 (val) WITH (fillfactor = 90);
+
+CREATE TABLE profile.test_rel_storage_params2
+(
+  id  INTEGER,
+  val NUMERIC
+) WITH (
+    vacuum_index_cleanup = true,
+    vacuum_truncate = true,
+    autovacuum_vacuum_scale_factor = 0.2
+);
+CREATE INDEX ix_test_rel_storage_params_id2 ON profile.test_rel_storage_params2 (id) WITH (fillfactor = 80);
+CREATE INDEX ix_test_rel_storage_params_val2 ON profile.test_rel_storage_params2 (val) WITH (fillfactor = 70);
+
 CREATE OR REPLACE FUNCTION profile.dummy_func() RETURNS VOID AS $$
 BEGIN
   PERFORM pg_sleep(0.5);
@@ -46,6 +70,10 @@ array_to_string(array
   FROM   generate_series(1, 7900)), ''
 )
 FROM generate_series(1,20);
+INSERT INTO profile.test_rel_storage_params1(id, val)
+SELECT gs.id, gs.id FROM generate_series(1,100) as gs(id);
+INSERT INTO profile.test_rel_storage_params2(id, val)
+SELECT gs.id, gs.id FROM generate_series(1,100) as gs(id);
 SELECT * FROM profile.dummy_func();
 /* Taking next sample */
 -- (sample 2)

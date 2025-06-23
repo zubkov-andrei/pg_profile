@@ -272,7 +272,11 @@ BEGIN
         fk_stmt_list,
         fk_kcache_stmt_list,
         fk_statements_roles,
-        fk_extension_versions_samples
+        fk_extension_versions_samples,
+        fk_table_storage_parameters_samples,
+        fk_table_storage_parameters_tables,
+        fk_index_storage_parameters_samples,
+        fk_index_storage_parameters_indexes
       DEFERRED;
     DELETE FROM samples WHERE server_id = dserver_id;
     DELETE FROM indexes_list WHERE server_id = dserver_id;
@@ -286,7 +290,11 @@ BEGIN
         fk_stmt_list,
         fk_kcache_stmt_list,
         fk_statements_roles,
-        fk_extension_versions_samples
+        fk_extension_versions_samples,
+        fk_table_storage_parameters_samples,
+        fk_table_storage_parameters_tables,
+        fk_index_storage_parameters_samples,
+        fk_index_storage_parameters_indexes
       IMMEDIATE;
     DELETE FROM servers WHERE server_id = dserver_id;
     GET DIAGNOSTICS del_rows = ROW_COUNT;
@@ -643,6 +651,57 @@ BEGIN
     WHERE
       (eve.server_id, eve.datid, eve.extname, eve.first_seen) =
       (delete_samples.server_id, new_lastids.datid, new_lastids.extname, new_lastids.first_seen);
+
+    UPDATE table_storage_parameters tsp
+    SET last_sample_id = new_lastids.last_sample_id
+    FROM (
+      SELECT
+        tsp.server_id,
+        tsp.datid,
+        tsp.relid,
+        tsp.first_seen,
+        max(s.sample_id) as last_sample_id
+      FROM table_storage_parameters tsp
+      JOIN samples s ON (s.server_id = tsp.server_id AND
+        s.sample_time >= tsp.first_seen AND s.sample_id <= tsp.last_sample_id)
+      LEFT JOIN bl_samples bl ON
+          (bl.server_id, bl.sample_id) = (s.server_id, s.sample_id)
+          AND bl.sample_id BETWEEN start_id AND end_id
+      WHERE
+        tsp.server_id = delete_samples.server_id AND
+        tsp.last_sample_id BETWEEN start_id AND end_id AND
+        (s.sample_id < start_id OR bl.sample_id IS NOT NULL)
+      GROUP BY tsp.server_id, tsp.datid, tsp.relid, tsp.first_seen
+      ) new_lastids
+    WHERE
+      (tsp.server_id, tsp.datid, tsp.relid, tsp.first_seen) =
+      (delete_samples.server_id, new_lastids.datid, new_lastids.relid, new_lastids.first_seen);
+
+    UPDATE index_storage_parameters isp
+    SET last_sample_id = new_lastids.last_sample_id
+    FROM (
+      SELECT
+        isp.server_id,
+        isp.datid,
+        isp.relid,
+        isp.indexrelid,
+        isp.first_seen,
+        max(s.sample_id) as last_sample_id
+      FROM index_storage_parameters isp
+      JOIN samples s ON (s.server_id = isp.server_id AND
+        s.sample_time >= isp.first_seen AND s.sample_id <= isp.last_sample_id)
+      LEFT JOIN bl_samples bl ON
+          (bl.server_id, bl.sample_id) = (s.server_id, s.sample_id)
+          AND bl.sample_id BETWEEN start_id AND end_id
+      WHERE
+        isp.server_id = delete_samples.server_id AND
+        isp.last_sample_id BETWEEN start_id AND end_id AND
+        (s.sample_id < start_id OR bl.sample_id IS NOT NULL)
+      GROUP BY isp.server_id, isp.datid, isp.relid, isp.indexrelid, isp.first_seen
+      ) new_lastids
+    WHERE
+      (isp.server_id, isp.datid, isp.relid, isp.indexrelid, isp.first_seen) =
+      (delete_samples.server_id, new_lastids.datid, new_lastids.relid, new_lastids.indexrelid, new_lastids.first_seen);
   END IF;
 
   -- Delete specified samples without baseline samples
@@ -655,7 +714,11 @@ BEGIN
       fk_stmt_list,
       fk_kcache_stmt_list,
       fk_statements_roles,
-      fk_extension_versions_samples
+      fk_extension_versions_samples,
+      fk_table_storage_parameters_samples,
+      fk_table_storage_parameters_tables,
+      fk_index_storage_parameters_samples,
+      fk_index_storage_parameters_indexes
     DEFERRED;
   DELETE FROM samples dsmp
   USING
@@ -682,7 +745,11 @@ BEGIN
       fk_stmt_list,
       fk_kcache_stmt_list,
       fk_statements_roles,
-      fk_extension_versions_samples
+      fk_extension_versions_samples,
+      fk_table_storage_parameters_samples,
+      fk_table_storage_parameters_tables,
+      fk_index_storage_parameters_samples,
+      fk_index_storage_parameters_indexes
     IMMEDIATE;
 
   IF smp_delcount > 0 THEN

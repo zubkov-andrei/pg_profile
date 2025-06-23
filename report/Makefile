@@ -19,6 +19,7 @@ report_files = \
 	functions/walstat.sql \
 	functions/subsample.sql \
 	functions/extensions.sql \
+	functions/relation_storage_parameters.sql \
 	section.sql \
 	report.sql \
 	reportdiff.sql
