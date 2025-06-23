@@ -1078,368 +1078,236 @@ BEGIN
 
   ELSIF num_nulls(start1_id, end1_id, start2_id, end2_id) = 0 THEN
     -- Differential report
-    -- report properties dataset
-    dataset := '[]'::jsonb;
-    dataset := dataset || (report_context #>> '{report_properties}')::jsonb;
-    datasets := jsonb_set(datasets, '{properties}', dataset);
 
     -- database statistics dataset
-    dataset := '[]'::jsonb;
-    FOR r_result IN (
-        SELECT *
-        FROM dbstats_format_diff(sserver_id, start1_id, end1_id,
-          start2_id, end2_id)
-      ) LOOP
-      dataset := dataset || to_jsonb(r_result);
-    END LOOP;
-    datasets := jsonb_set(datasets, '{dbstat}', dataset);
+    SELECT coalesce(jsonb_set(datasets, '{dbstat}', jsonb_agg(to_jsonb(dt))), datasets)
+    INTO datasets
+    FROM dbstats_format_diff(sserver_id, start1_id, end1_id,
+      start2_id, end2_id) dt;
 
     IF (report_context #>> '{report_features,dbstats_reset}')::boolean THEN
       -- dbstats reset dataset
-      dataset := '[]'::jsonb;
-      FOR r_result IN (
-          SELECT *
-          FROM dbstats_reset_format_diff(sserver_id, start1_id, end1_id,
-            start2_id, end2_id)
-        ) LOOP
-        dataset := dataset || to_jsonb(r_result);
-      END LOOP;
-      datasets := jsonb_set(datasets, '{dbstats_reset}', dataset);
+      SELECT coalesce(jsonb_set(datasets, '{dbstats_reset}', jsonb_agg(to_jsonb(dt))), datasets)
+      INTO datasets
+      FROM dbstats_reset_format_diff(sserver_id, start1_id, end1_id,
+        start2_id, end2_id) dt;
     END IF;
 
     IF (report_context #>> '{report_features,stat_io}')::boolean THEN
       -- stat_io dataset
-      dataset := '[]'::jsonb;
-      FOR r_result IN (
-          SELECT *
-          FROM cluster_stat_io_format(sserver_id, start1_id, end1_id,
-                 start2_id, end2_id)
-        ) LOOP
-        dataset := dataset || to_jsonb(r_result);
-      END LOOP;
-      datasets := jsonb_set(datasets, '{stat_io}', dataset);
+      SELECT coalesce(jsonb_set(datasets, '{stat_io}', jsonb_agg(to_jsonb(dt))), datasets)
+      INTO datasets
+      FROM cluster_stat_io_format(sserver_id, start1_id, end1_id,
+        start2_id, end2_id) dt;
       IF (report_context #>> '{report_features,stat_io_reset}')::boolean THEN
         -- SLRU reset dataset
-        dataset := '[]'::jsonb;
-        FOR r_result IN (
-            SELECT *
-            FROM cluster_stat_io_reset_format(sserver_id,
-              start1_id, end1_id, start2_id, end2_id)
-          ) LOOP
-          dataset := dataset || to_jsonb(r_result);
-        END LOOP;
-        datasets := jsonb_set(datasets, '{stat_io_reset}', dataset);
+        SELECT coalesce(jsonb_set(datasets, '{stat_io_reset}', jsonb_agg(to_jsonb(dt))), datasets)
+        INTO datasets
+        FROM cluster_stat_io_reset_format(sserver_id,
+          start1_id, end1_id, start2_id, end2_id) dt;
       END IF;
     END IF;
 
     IF (report_context #>> '{report_features,stat_slru}')::boolean THEN
       -- stat_slru dataset
-      dataset := '[]'::jsonb;
-      FOR r_result IN (
-          SELECT *
-          FROM cluster_stat_slru_format(sserver_id, start1_id, end1_id,
-                 start2_id, end2_id)
-        ) LOOP
-        dataset := dataset || to_jsonb(r_result);
-      END LOOP;
-      datasets := jsonb_set(datasets, '{stat_slru}', dataset);
+      SELECT coalesce(jsonb_set(datasets, '{stat_slru}', jsonb_agg(to_jsonb(dt))), datasets)
+      INTO datasets
+      FROM cluster_stat_slru_format(sserver_id, start1_id, end1_id,
+        start2_id, end2_id) dt;
       IF (report_context #>> '{report_features,stat_slru_reset}')::boolean THEN
         -- SLRU reset dataset
-        dataset := '[]'::jsonb;
-        FOR r_result IN (
-            SELECT *
-            FROM cluster_stat_slru_reset_format(sserver_id,
-              start1_id, end1_id, start2_id, end2_id)
-          ) LOOP
-          dataset := dataset || to_jsonb(r_result);
-        END LOOP;
-        datasets := jsonb_set(datasets, '{stat_slru_reset}', dataset);
+        SELECT coalesce(jsonb_set(datasets, '{stat_slru_reset}', jsonb_agg(to_jsonb(dt))), datasets)
+        INTO datasets
+        FROM cluster_stat_slru_reset_format(sserver_id,
+          start1_id, end1_id, start2_id, end2_id) dt;
       END IF;
     END IF;
 
     IF (report_context #>> '{report_features,statstatements}')::boolean THEN
       -- statements by database dataset
-      dataset := '[]'::jsonb;
-      FOR r_result IN (
-          SELECT *
-          FROM statements_dbstats_format_diff(sserver_id, start1_id, end1_id,
-                 start2_id, end2_id)
-        ) LOOP
-        dataset := dataset || to_jsonb(r_result);
-      END LOOP;
-      datasets := jsonb_set(datasets, '{statements_dbstats}', dataset);
+      SELECT coalesce(jsonb_set(datasets, '{statements_dbstats}', jsonb_agg(to_jsonb(dt))), datasets)
+      INTO datasets
+      FROM statements_dbstats_format_diff(sserver_id, start1_id, end1_id,
+        start2_id, end2_id) dt;
     END IF;
 
     IF (report_context #>> '{report_features,stmt_cnt_range}')::boolean THEN
       -- statements count of max for interval
-      dataset := '[]'::jsonb;
-      FOR r_result IN (
-          SELECT *
-          FROM stmt_cnt_format_diff(sserver_id, start1_id, end1_id,
-            start2_id, end2_id)
-        ) LOOP
-        dataset := dataset || to_jsonb(r_result);
-      END LOOP;
-      datasets := jsonb_set(datasets, '{stmt_cnt_range}', dataset);
+      SELECT coalesce(jsonb_set(datasets, '{stmt_cnt_range}', jsonb_agg(to_jsonb(dt))), datasets)
+      INTO datasets
+      FROM stmt_cnt_format_diff(sserver_id, start1_id, end1_id,
+        start2_id, end2_id) dt;
     END IF;
 
     IF (report_context #>> '{report_features,stmt_cnt_all}')::boolean THEN
       -- statements count of max for all samples
-      dataset := '[]'::jsonb;
-      FOR r_result IN (
-          SELECT *
-          FROM stmt_cnt_format(sserver_id, 0, 0)
-        ) LOOP
-        dataset := dataset || to_jsonb(r_result);
-      END LOOP;
-      datasets := jsonb_set(datasets, '{stmt_cnt_all}', dataset);
+      SELECT coalesce(jsonb_set(datasets, '{stmt_cnt_all}', jsonb_agg(to_jsonb(dt))), datasets)
+      INTO datasets
+      FROM stmt_cnt_format(sserver_id, 0, 0) dt;
     END IF;
 
     -- cluster statistics dataset
-    dataset := '[]'::jsonb;
-    FOR r_result IN (
-        SELECT *
-        FROM cluster_stats_format_diff(sserver_id, start1_id, end1_id,
-                 start2_id, end2_id)
-      ) LOOP
-      dataset := dataset || to_jsonb(r_result);
-    END LOOP;
-    datasets := jsonb_set(datasets, '{cluster_stats}', dataset);
+    SELECT coalesce(jsonb_set(datasets, '{cluster_stats}', jsonb_agg(to_jsonb(dt))), datasets)
+    INTO datasets
+    FROM cluster_stats_format_diff(sserver_id, start1_id, end1_id,
+      start2_id, end2_id) dt;
 
     IF (report_context #>> '{report_features,cluster_stats_reset}')::boolean THEN
       -- cluster stats reset dataset
-      dataset := '[]'::jsonb;
-      FOR r_result IN (
-          SELECT *
-          FROM cluster_stats_reset_format_diff(sserver_id, start1_id, end1_id,
-            start2_id, end2_id)
-        ) LOOP
-        dataset := dataset || to_jsonb(r_result);
-      END LOOP;
-      datasets := jsonb_set(datasets, '{cluster_stats_reset}', dataset);
+      SELECT coalesce(jsonb_set(datasets, '{cluster_stats_reset}', jsonb_agg(to_jsonb(dt))), datasets)
+      INTO datasets
+      FROM cluster_stats_reset_format_diff(sserver_id, start1_id, end1_id,
+        start2_id, end2_id) dt;
     END IF;
 
     IF (report_context #>> '{report_features,wal_stats_reset}')::boolean THEN
       -- WAL stats reset dataset
-      dataset := '[]'::jsonb;
-      FOR r_result IN (
-          SELECT *
-          FROM wal_stats_reset_format_diff(sserver_id, start1_id, end1_id,
-            start2_id, end2_id)
-        ) LOOP
-        dataset := dataset || to_jsonb(r_result);
-      END LOOP;
-      datasets := jsonb_set(datasets, '{wal_stats_reset}', dataset);
+      SELECT coalesce(jsonb_set(datasets, '{wal_stats_reset}', jsonb_agg(to_jsonb(dt))), datasets)
+      INTO datasets
+      FROM wal_stats_reset_format_diff(sserver_id, start1_id, end1_id,
+        start2_id, end2_id) dt;
     END IF;
 
     IF (report_context #>> '{report_features,wal_stats}')::boolean THEN
       -- WAL stats dataset
-      dataset := '[]'::jsonb;
-      FOR r_result IN (
-          SELECT *
-          FROM wal_stats_format(sserver_id,
-            start1_id, end1_id, start2_id, end2_id,
-            (report_context #>> '{report_properties,interval1_duration_sec}')::numeric,
-            (report_context #>> '{report_properties,interval2_duration_sec}')::numeric)
-        ) LOOP
-        dataset := dataset || to_jsonb(r_result);
-      END LOOP;
-      datasets := jsonb_set(datasets, '{wal_stats}', dataset);
+      SELECT coalesce(jsonb_set(datasets, '{wal_stats}', jsonb_agg(to_jsonb(dt))), datasets)
+      INTO datasets
+      FROM wal_stats_format(sserver_id,
+        start1_id, end1_id, start2_id, end2_id,
+        (report_context #>> '{report_properties,interval1_duration_sec}')::numeric,
+        (report_context #>> '{report_properties,interval2_duration_sec}')::numeric) dt;
     END IF;
 
     -- Tablespace stats dataset
-    dataset := '[]'::jsonb;
-    FOR r_result IN (
-        SELECT *
-        FROM tablespace_stats_format_diff(sserver_id, start1_id, end1_id, start2_id, end2_id)
-      ) LOOP
-      dataset := dataset || to_jsonb(r_result);
-    END LOOP;
-    datasets := jsonb_set(datasets, '{tablespace_stats}', dataset);
+    SELECT coalesce(jsonb_set(datasets, '{tablespace_stats}', jsonb_agg(to_jsonb(dt))), datasets)
+    INTO datasets
+    FROM tablespace_stats_format_diff(sserver_id, start1_id, end1_id, start2_id, end2_id)  dt;
 
     IF (report_context #>> '{report_features,wait_sampling_tot}')::boolean THEN
       -- Wait totals dataset
-      dataset := '[]'::jsonb;
-      FOR r_result IN (
-          SELECT *
-          FROM wait_sampling_total_stats_format_diff(sserver_id, start1_id, end1_id,
-            start2_id, end2_id)
-        ) LOOP
-        dataset := dataset || to_jsonb(r_result);
-      END LOOP;
-      datasets := jsonb_set(datasets, '{wait_sampling_total_stats}', dataset);
+      SELECT coalesce(jsonb_set(datasets, '{wait_sampling_total_stats}', jsonb_agg(to_jsonb(dt))), datasets)
+      INTO datasets
+      FROM wait_sampling_total_stats_format_diff(sserver_id, start1_id, end1_id,
+        start2_id, end2_id) dt;
       -- Wait events dataset
-      dataset := '[]'::jsonb;
-      FOR r_result IN (
-          SELECT *
-          FROM top_wait_sampling_events_format_diff(sserver_id, start1_id, end1_id,
-            start2_id, end2_id)
-        ) LOOP
-        dataset := dataset || to_jsonb(r_result);
-      END LOOP;
-      datasets := jsonb_set(datasets, '{wait_sampling_events}', dataset);
+      SELECT coalesce(jsonb_set(datasets, '{wait_sampling_events}', jsonb_agg(to_jsonb(dt))), datasets)
+      INTO datasets
+      FROM top_wait_sampling_events_format_diff(sserver_id, start1_id, end1_id,
+        start2_id, end2_id) dt;
     END IF;
 
     IF (report_context #>> '{report_features,statstatements}')::boolean THEN
       -- Statement stats dataset
-      dataset := '[]'::jsonb;
-      FOR r_result IN (
-          SELECT *
-          FROM top_statements_format_diff(sserver_id, start1_id, end1_id,
-            start2_id, end2_id)
-          WHERE least(
-              ord_total_time,
-              ord_plan_time,
-              ord_exec_time,
-              ord_calls,
-              ord_io_time,
-              ord_shared_blocks_fetched,
-              ord_shared_blocks_read,
-              ord_shared_blocks_dirt,
-              ord_shared_blocks_written,
-              ord_wal,
-              ord_temp,
-              ord_jit
-            ) <= (report_context #>> '{report_properties,topn}')::numeric
-        ) LOOP
-        dataset := dataset || to_jsonb(r_result);
-      END LOOP;
-      datasets := jsonb_set(datasets, '{top_statements}', dataset);
+      SELECT coalesce(jsonb_set(datasets, '{top_statements}', jsonb_agg(to_jsonb(dt))), datasets)
+      INTO datasets
+      FROM top_statements_format_diff(sserver_id, start1_id, end1_id,
+        start2_id, end2_id) dt
+      WHERE least(
+          ord_total_time,
+          ord_plan_time,
+          ord_exec_time,
+          ord_calls,
+          ord_io_time,
+          ord_shared_blocks_fetched,
+          ord_shared_blocks_read,
+          ord_shared_blocks_dirt,
+          ord_shared_blocks_written,
+          ord_wal,
+          ord_temp,
+          ord_jit
+        ) <= (report_context #>> '{report_properties,topn}')::numeric;
     END IF;
 
     IF (report_context #>> '{report_features,kcachestatements}')::boolean THEN
       -- Statement rusage stats dataset
-      dataset := '[]'::jsonb;
-      FOR r_result IN (
-          SELECT *
-          FROM top_rusage_statements_format_diff(sserver_id, start1_id, end1_id,
-            start2_id, end2_id)
-          WHERE least(
-              ord_cpu_time,
-              ord_io_bytes
-            ) <= (report_context #>> '{report_properties,topn}')::numeric
-        ) LOOP
-        dataset := dataset || to_jsonb(r_result);
-      END LOOP;
-      datasets := jsonb_set(datasets, '{top_rusage_statements}', dataset);
+      SELECT coalesce(jsonb_set(datasets, '{top_rusage_statements}', jsonb_agg(to_jsonb(dt))), datasets)
+      INTO datasets
+      FROM top_rusage_statements_format_diff(sserver_id, start1_id, end1_id,
+        start2_id, end2_id) dt
+      WHERE least(
+          ord_cpu_time,
+          ord_io_bytes
+        ) <= (report_context #>> '{report_properties,topn}')::numeric;
     END IF;
 
     IF (report_context #>> '{report_features,act_backend}')::boolean THEN
       -- Session states and queries cartured by subsamples
       -- Database aggregated data
-      dataset := '[]'::jsonb;
-      FOR r_result IN (
-          SELECT *
-          FROM stat_activity_agg_format(sserver_id, start1_id, end1_id,
-            start2_id, end2_id)
-        ) LOOP
-        dataset := dataset || to_jsonb(r_result);
-      END LOOP;
-      datasets := jsonb_set(datasets, '{db_activity_agg}', dataset);
+      SELECT coalesce(jsonb_set(datasets, '{db_activity_agg}', jsonb_agg(to_jsonb(dt))), datasets)
+      INTO datasets
+      FROM stat_activity_agg_format(sserver_id, start1_id, end1_id,
+        start2_id, end2_id) dt;
       -- Top states dataset
-      dataset := '[]'::jsonb;
-      FOR r_result IN (
-          SELECT *
-          FROM stat_activity_states_format(sserver_id, start1_id, end1_id,
-            start2_id, end2_id)
-          WHERE least(
-              ord_dur,
-              ord_age
-            ) <= (report_context #>> '{report_properties,topn}')::numeric
-        ) LOOP
-        dataset := dataset || to_jsonb(r_result);
-      END LOOP;
-      datasets := jsonb_set(datasets, '{act_top_states}', dataset);
+      SELECT coalesce(jsonb_set(datasets, '{act_top_states}', jsonb_agg(to_jsonb(dt))), datasets)
+      INTO datasets
+      FROM stat_activity_states_format(sserver_id, start1_id, end1_id,
+        start2_id, end2_id) dt
+      WHERE least(
+          ord_dur,
+          ord_age
+        ) <= (report_context #>> '{report_properties,topn}')::numeric;
     END IF;
 
-    dataset := '[]'::jsonb;
-    FOR r_result IN (
-        SELECT *
-        FROM top_tables_format_diff(sserver_id, start1_id, end1_id, start2_id, end2_id)
-        WHERE least(
-          ord_dml,
-          ord_seq_scan,
-          ord_upd,
-          ord_growth,
-          ord_vac,
-          ord_anl
-        ) <= (report_context #>> '{report_properties,topn}')::numeric
-      ) LOOP
-      dataset := dataset || to_jsonb(r_result);
-    END LOOP;
-    datasets := jsonb_set(datasets, '{top_tables}', dataset);
+    SELECT coalesce(jsonb_set(datasets, '{top_tables}', jsonb_agg(to_jsonb(dt))), datasets)
+    INTO datasets
+    FROM top_tables_format_diff(sserver_id, start1_id, end1_id, start2_id, end2_id) dt
+    WHERE least(
+        ord_dml,
+        ord_seq_scan,
+        ord_upd,
+        ord_growth,
+        ord_vac,
+        ord_anl
+      ) <= (report_context #>> '{report_properties,topn}')::numeric;
 
-    dataset := '[]'::jsonb;
-    FOR r_result IN (
-        SELECT *
-        FROM top_io_tables_format_diff(sserver_id, start1_id, end1_id, start2_id, end2_id)
-        WHERE least(
-          ord_read,
-          ord_fetch
-        ) <= (report_context #>> '{report_properties,topn}')::numeric
-      ) LOOP
-      dataset := dataset || to_jsonb(r_result);
-    END LOOP;
-    datasets := jsonb_set(datasets, '{top_io_tables}', dataset);
+    SELECT coalesce(jsonb_set(datasets, '{top_io_tables}', jsonb_agg(to_jsonb(dt))), datasets)
+    INTO datasets
+    FROM top_io_tables_format_diff(sserver_id, start1_id, end1_id, start2_id, end2_id) dt
+    WHERE least(
+        ord_read,
+        ord_fetch
+      ) <= (report_context #>> '{report_properties,topn}')::numeric;
 
-    dataset := '[]'::jsonb;
-    FOR r_result IN (
-        SELECT *
-        FROM top_io_indexes_format_diff(sserver_id, start1_id, end1_id, start2_id, end2_id)
-        WHERE least(
-          ord_read,
-          ord_fetch
-        ) <= (report_context #>> '{report_properties,topn}')::numeric
-      ) LOOP
-      dataset := dataset || to_jsonb(r_result);
-    END LOOP;
-    datasets := jsonb_set(datasets, '{top_io_indexes}', dataset);
+    SELECT coalesce(jsonb_set(datasets, '{top_io_indexes}', jsonb_agg(to_jsonb(dt))), datasets)
+    INTO datasets
+    FROM top_io_indexes_format_diff(sserver_id, start1_id, end1_id, start2_id, end2_id) dt
+    WHERE least(
+        ord_read,
+        ord_fetch
+      ) <= (report_context #>> '{report_properties,topn}')::numeric;
 
-    dataset := '[]'::jsonb;
-    FOR r_result IN (
-        SELECT *
-        FROM top_indexes_format_diff(sserver_id,
-          start1_id, end1_id, start2_id, end2_id)
-        WHERE least(
-          ord_growth,
-          ord_vac
-        ) <= (report_context #>> '{report_properties,topn}')::numeric
-      ) LOOP
-      dataset := dataset || to_jsonb(r_result);
-    END LOOP;
-    datasets := jsonb_set(datasets, '{top_indexes}', dataset);
+    SELECT coalesce(jsonb_set(datasets, '{top_indexes}', jsonb_agg(to_jsonb(dt))), datasets)
+    INTO datasets
+    FROM top_indexes_format_diff(sserver_id,
+      start1_id, end1_id, start2_id, end2_id) dt
+    WHERE least(
+        ord_growth,
+        ord_vac
+      ) <= (report_context #>> '{report_properties,topn}')::numeric;
 
-    dataset := '[]'::jsonb;
-    FOR r_result IN (
-        SELECT *
-        FROM top_functions_format_diff(sserver_id,
-          start1_id, end1_id, start2_id, end2_id)
-        WHERE least(
-          ord_time,
-          ord_calls,
-          ord_trgtime
-        ) <= (report_context #>> '{report_properties,topn}')::numeric
-      ) LOOP
-      dataset := dataset || to_jsonb(r_result);
-    END LOOP;
-    datasets := jsonb_set(datasets, '{top_functions}', dataset);
+    SELECT coalesce(jsonb_set(datasets, '{top_functions}', jsonb_agg(to_jsonb(dt))), datasets)
+    INTO datasets
+    FROM top_functions_format_diff(sserver_id,
+      start1_id, end1_id, start2_id, end2_id) dt
+    WHERE least(
+        ord_time,
+        ord_calls,
+        ord_trgtime
+      ) <= (report_context #>> '{report_properties,topn}')::numeric;
 
-    dataset := '[]'::jsonb;
-    FOR r_result IN (
-        SELECT *
-        FROM settings_format_diff(sserver_id,
-          start1_id, end1_id, start2_id, end2_id)
-      ) LOOP
-      dataset := dataset || to_jsonb(r_result);
-    END LOOP;
-    datasets := jsonb_set(datasets, '{settings}', dataset);
+    SELECT coalesce(jsonb_set(datasets, '{settings}', jsonb_agg(to_jsonb(dt))), datasets)
+    INTO datasets
+    FROM settings_format_diff(sserver_id,
+      start1_id, end1_id, start2_id, end2_id) dt;
 
     -- Now we need to collect queries over datasets
     FOR r_dataset IN (SELECT jsonb_object_keys(datasets)) LOOP
       -- skip datasets without queries
       CONTINUE WHEN NOT
         (datasets #> ARRAY[r_dataset, '0']) ?| ARRAY['queryid'];
-      FOR r_result IN (
+      SELECT queries_set || coalesce(jsonb_agg(to_jsonb(dt)),'[]'::jsonb)
+      INTO queries_set
+      FROM (
         SELECT
           userid,
           datid,
@@ -1485,27 +1353,16 @@ BEGIN
     END LOOP; -- over datasets
 
     -- Query texts dataset should be formed the last
-    dataset := '[]'::jsonb;
-    FOR r_result IN (
-        SELECT *
-        FROM report_queries_format(report_context, sserver_id, queries_set,
-          start1_id, end1_id, start2_id, end2_id
-        )
-      ) LOOP
-      dataset := dataset || to_jsonb(r_result);
-    END LOOP;
-    datasets := jsonb_set(datasets, '{queries}', dataset);
+    SELECT coalesce(jsonb_set(datasets, '{queries}', jsonb_agg(to_jsonb(dt))), datasets)
+    INTO datasets
+    FROM report_queries_format(report_context, sserver_id, queries_set,
+      start1_id, end1_id, start2_id, end2_id) dt;
 
     -- stat_activity queries list construction
     IF (report_context #>> '{report_features,act_backend}')::boolean THEN
-      dataset := '[]'::jsonb;
-      FOR r_result IN (
-          SELECT *
-          FROM report_active_queries_format(report_context, sserver_id, act_queries_set)
-        ) LOOP
-        dataset := dataset || to_jsonb(r_result);
-      END LOOP;
-      datasets := jsonb_set(datasets, '{act_queries}', dataset);
+      SELECT coalesce(jsonb_set(datasets, '{act_queries}', jsonb_agg(to_jsonb(dt))), datasets)
+      INTO datasets
+      FROM report_active_queries_format(report_context, sserver_id, act_queries_set) dt;
     END IF;
 
     -- extension versions
