@@ -65,6 +65,7 @@ CREATE VIEW v_sample_stat_indexes AS
         indexrelid,
         tl.schemaname,
         tl.relname,
+        tl.relkind,
         il.indexrelname,
         idx_scan,
         idx_tup_read,
@@ -105,7 +106,8 @@ CREATE TABLE last_stat_indexes (
     in_sample           boolean NOT NULL DEFAULT false,
     relpages_bytes      bigint,
     relpages_bytes_diff bigint,
-    last_idx_scan       timestamp with time zone
+    last_idx_scan       timestamp with time zone,
+    reloptions          jsonb
 )
 PARTITION BY LIST (server_id);
 COMMENT ON TABLE last_stat_indexes IS 'Last sample data for calculating diffs in next sample';

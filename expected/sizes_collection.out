@@ -14,18 +14,18 @@ array_to_string(array
   FROM   generate_series(1, 8000)), ''
 )
 FROM generate_series(1,5);
-/* Test rare relation sizes collection */
-SELECT profile.set_server_size_sampling('local',current_time - interval '10 minute',interval '30 minute',interval '2 minute');
+/* Enable scheduled relation sizes collection at server*/
+SELECT profile.set_server_size_sampling('local',current_time - interval '10 minute',interval '30 minute',interval '2 minute','schedule');
  set_server_size_sampling 
 --------------------------
                         1
 (1 row)
 
 -- check show_servers_size_sampling()
-SELECT server_name,window_duration,sample_interval FROM profile.show_servers_size_sampling();
- server_name | window_duration | sample_interval 
--------------+-----------------+-----------------
- local       | @ 30 mins       | @ 2 mins
+SELECT server_name,window_duration,sample_interval,collect_mode FROM profile.show_servers_size_sampling();
+ server_name | window_duration | sample_interval | collect_mode 
+-------------+-----------------+-----------------+--------------
+ local       | @ 30 mins       | @ 2 mins        | schedule
 (1 row)
 
 -- (sample 4)
@@ -35,8 +35,11 @@ SELECT server,result FROM profile.take_sample();
  local  | OK
 (1 row)
 
--- Disable rare sizes collection
-SELECT profile.set_server_size_sampling('local',null,null,null);
+-- Disable relation sizes collection at server
+SELECT profile.set_server_size_sampling('local',null,null,null,'failure');
+ERROR:  collect_mode can only be 'on', 'off' or 'schedule'
+CONTEXT:  PL/pgSQL function set_server_size_sampling(name,time with time zone,interval,interval,text) line 8 at RAISE
+SELECT profile.set_server_size_sampling('local',null,null,null,'off');
  set_server_size_sampling 
 --------------------------
                         1
@@ -49,12 +52,57 @@ SELECT server,result FROM profile.take_sample();
  local  | OK
 (1 row)
 
+-- Enable relation sizes collection at server
+SELECT profile.set_server_size_sampling('local',null,null,null,'on');
+ set_server_size_sampling 
+--------------------------
+                        1
+(1 row)
+
+-- (sample 6)
+SELECT server,result FROM profile.take_sample();
+ server | result 
+--------+--------
+ local  | OK
+(1 row)
+
+-- Reset relation sizes collection mode at server
+SELECT profile.set_server_size_sampling('local',null,null,null,null);
+ set_server_size_sampling 
+--------------------------
+                        1
+(1 row)
+
+-- Enable relation sizes collection configuration parameter
+SET pg_profile.relsize_collect_mode = 'on';
+-- (sample 7)
+SELECT server,result FROM profile.take_sample();
+ server | result 
+--------+--------
+ local  | OK
+(1 row)
+
+-- Disable relation sizes collection configuration parameter
+SET pg_profile.relsize_collect_mode = 'off';
+-- (sample 8)
+SELECT server,result FROM profile.take_sample();
+ server | result 
+--------+--------
+ local  | OK
+(1 row)
+
+-- Reset relation sizes collection configuration parameter
+RESET pg_profile.relsize_collect_mode;
 -- check show_samples()
 SELECT sample, sizes_collected FROM profile.show_samples() WHERE NOT sizes_collected;
  sample | sizes_collected 
 --------+-----------------
-      4 | f
-(1 row)
+      1 | f
+      2 | f
+      3 | f
+      5 | f
+      8 | f
+(5 rows)
 
 -- check tables sizes collection
 SELECT
@@ -67,12 +115,15 @@ FROM profile.sample_stat_tables GROUP BY sample_id
 ORDER BY sample_id;
  sample_id | relsize | relsize_diff | relpages | relpages_diff 
 -----------+---------+--------------+----------+---------------
-         1 | t       | t            | t        | t
-         2 | t       | t            | t        | t
-         3 | t       | t            | t        | t
-         4 | f       | f            | t        | t
-         5 | t       | t            | t        | t
-(5 rows)
+         1 | f       | f            | t        | t
+         2 | f       | f            | t        | t
+         3 | f       | f            | t        | t
+         4 | t       | t            | t        | t
+         5 | f       | f            | t        | t
+         6 | t       | t            | t        | t
+         7 | t       | t            | t        | t
+         8 | f       | f            | t        | t
+(8 rows)
 
 -- check indexes sizes collection
 SELECT
@@ -85,10 +136,13 @@ FROM profile.sample_stat_indexes GROUP BY sample_id
 ORDER BY sample_id;
  sample_id | relsize | relsize_diff | relpages | relpages_diff 
 -----------+---------+--------------+----------+---------------
-         1 | t       | t            | t        | t
-         2 | t       | t            | t        | t
-         3 | t       | t            | t        | t
-         4 | f       | f            | t        | t
-         5 | t       | t            | t        | t
-(5 rows)
+         1 | f       | f            | t        | t
+         2 | f       | f            | t        | t
+         3 | f       | f            | t        | t
+         4 | t       | t            | t        | t
+         5 | f       | f            | t        | t
+         6 | t       | t            | t        | t
+         7 | t       | t            | t        | t
+         8 | f       | f            | t        | t
+(8 rows)
 

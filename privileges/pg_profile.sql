@@ -26,7 +26,7 @@ GRANT SELECT ON sample_kcache_total TO public;
 GRANT SELECT ON roles_list TO public;
 GRANT SELECT ON wait_sampling_total TO public;
 GRANT SELECT (server_id, server_name, server_description, server_created, db_exclude,
-  enabled, max_sample_age, last_sample_id, size_smp_wnd_start, size_smp_wnd_dur, size_smp_interval)
+  enabled, max_sample_age, last_sample_id, size_smp_wnd_start, size_smp_wnd_dur, size_smp_interval, srv_settings)
   ON servers TO public;
 GRANT SELECT ON samples TO public;
 GRANT SELECT ON baselines TO public;

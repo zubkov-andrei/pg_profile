@@ -143,12 +143,13 @@ Any postgres user can build a *pg_profile* report. The minimal privileges needed
 
 ## Using pg_profile
 ### Setting extension parameters
-You can define extension parameters in _postgresql.conf_. Default values:
+You can define extension parameters in *postgresql.conf*. Default values:
 * _pg_profile.topn = 20_ - Number of top objects (statements, relations, etc.), to be reported in each sorted report table. Also, this parameter affects size of a sample - the more objects you want to appear in your report, the more objects we need to keep in a sample.
 * _pg_profile.max_sample_age = 7_ - Retention time of samples in days. Samples, aged _pg_profile.max_sample_age_ days and more will be automatically deleted on next _take_sample()_ call.
 * _pg_profile.track_sample_timings = off_ - when this parameter is on, _pg_profile_ will track detailed sample taking timings.
 * _pg_profile.max_query_length = 20000_ - query length limit for reports. All queries in a report will be truncated to this length. This setting does not affect query text collection - during a sample full query texts are collected, thus can be obtained.
 * _pg_profile.statements_reset = on_ - this setting controls *pg_stat_statements* reset during a sample. When disabled *pg_profile* will track statements evictions using the value of the *calls* field. However this method doesn't prevents statistics loss completly. *pg_stat_statements* v 1.11 contains time tracking abilities that could reduce the possible data loss. When this setting is disabled you can temporrary enable it in a session if you want to perform a reset of *pg_stat_statements* sometimes.
+* _pg_profile.relsize_collect_mode = off_ - when this parameter is _on_, _pg_profile_ will collect relation size in every sample, when this parameter is _schedule_, _pg_profile_ will collect relation size in the defined size-collection window defined for each server.
 ### Managing servers
 Once installed, extension will create one enabled *local* server - this is for cluster, where extension is installed.
 
@@ -199,6 +200,20 @@ Function arguments:
   * *min_xact_age* - transaction age threshold
   * *min_idle_xact_dur* - idle transaction threshold
 
+* **set_server_setting(server name,
+    setting text,
+    value jsonb)**
+  This finction is used to fine tune server settings since 4.9. Available settings are:
+  * Collection settings controls which statistics should be collected. *value* for those settings accepts bollean values. The defauls value is *true*.
+    * *collect_pg_stat_statements* statement statistics using *pg_stat_statements* and *pg_stat_kcache* extension
+    * *collect_pg_wait_sampling* wait event statistics using *pg_wait_sampling* extension
+    * *collect_objects* all schema object statistics: tables, indexes and functions from *pg_stat_*
+    * *collect_relations* tables and indexes statistics from *pg_stat_*
+    * *collect_functions* user functions statistics from *pg_user_functions*
+
+* **show_server_settings(server name)**
+  This functions returns a server settings for a specific server
+
 * **show_servers()**
 Display existing servers.
 
@@ -210,15 +225,15 @@ SELECT profile.create_server('omega','host=name_or_ip dbname=postgres port=5432'
 ### Rare relation sizes collection
 Postgres relation size functions may take considerable amount of time to collect sizes of all relations in a database. Also those functions require *AccessExclusiveLock* on a relation. However daily relation sizes collection may be quite enough for you. *pg_profile* is able to skip relation sizes collection while taking samples guided by server _size collection policy_. Policy is defined as a daily window when relation size collection is permitted, and a minimal gap between two samples with relation sizes collected. Thus when size collection policy is defined sample taking function will collect relation sizes only when sample is taken in a window and the previous sample with sizes is older then gap. Top growing tables/indexes report sections will be available in a report only if it bounded by samples with sizes collected. See _with_growth_ parameter of a _get_report_ function description for further reference.
 Function *set_server_size_sampling* defines the _size collection policy_:
-* *set_server_size_sampling(server name, window_start time with time zone = NULL, window_duration interval hour to second = NULL, sample_interval interval day to minute = NULL)*
+* *set_server_size_sampling(server name, window_start time with time zone = NULL, window_duration interval hour to second = NULL, sample_interval interval day to minute = NULL, collect_mode text = NULL)*
   * *server* - server name
   * *window_start* - size collection window start time
   * *window_duration* - size collection window duration
   * *sample_interval* - minimum time gap between two samples with relation sizes collected
-
+  * *collect_mode* - when this parameter is *off* (default for new installations) relation sizes will be collected form *pg_class*, when _on_ *pg_profile* will collect relation size using *pg_relation_size()* function in every sample, when this parameter is _schedule_, _pg_profile_ will collect relation size in size-collection window. This value overwrite extension parameter *relsize_collect_mode*. Upgrading from previous version will set the value of this setting to *on* or *schedule* so that previous behaviour won't change.
 Example:
 ```
-SELECT set_server_size_sampling('local','23:00+03',interval '2 hour',interval '8 hour');
+SELECT set_server_size_sampling('local','23:00+03',interval '2 hour',interval '8 hour', 'schedule');
 ```
 
 Function *show_servers_size_sampling* show defined sizes collection policy for all servers:

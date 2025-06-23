@@ -12,7 +12,8 @@ CREATE TABLE servers (
     last_sample_id      integer DEFAULT 0 NOT NULL,
     size_smp_wnd_start  time with time zone,
     size_smp_wnd_dur    interval hour to second,
-    size_smp_interval   interval day to minute
+    size_smp_interval   interval day to minute,
+    srv_settings        jsonb
 );
 COMMENT ON TABLE servers IS 'Monitored servers (Postgres clusters) list';
 

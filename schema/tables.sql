@@ -175,7 +175,8 @@ CREATE TABLE last_stat_tables(
     relpages_bytes_diff bigint,
     last_seq_scan       timestamp with time zone,
     last_idx_scan       timestamp with time zone,
-    n_tup_newpage_upd   bigint
+    n_tup_newpage_upd   bigint,
+    reloptions          jsonb
 )
 PARTITION BY LIST (server_id);
 COMMENT ON TABLE last_stat_tables IS 'Last sample data for calculating diffs in next sample';

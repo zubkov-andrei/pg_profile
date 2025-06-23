@@ -394,6 +394,69 @@ COMMENT ON FUNCTION set_server_subsampling(IN name, IN boolean,
   IN interval hour to second)
 IS 'Setup subsampling for a server';
 
+CREATE FUNCTION set_server_setting(IN server name,
+  IN setting text,
+  IN value   text = NULL)
+RETURNS integer SET search_path=@extschema@ AS $$
+DECLARE
+    upd_rows integer;
+    etext    text := '';
+    edetail  text := '';
+    econtext text := '';
+    settings_template CONSTANT jsonb := '{"collect": {}}'::jsonb;
+BEGIN
+    IF set_server_setting.setting IN (
+        'collect_pg_stat_statements',
+        'collect_pg_wait_sampling',
+        'collect_objects',
+        'collect_vacuum_stats',
+        'collect_relations',
+        'collect_functions'
+      )
+    THEN
+        BEGIN
+            PERFORM set_server_setting.value::boolean;
+        EXCEPTION
+            WHEN OTHERS THEN
+                BEGIN
+                    GET STACKED DIAGNOSTICS etext = MESSAGE_TEXT,
+                        edetail = PG_EXCEPTION_DETAIL,
+                        econtext = PG_EXCEPTION_CONTEXT;
+                    RAISE 'Value for collection conditions should be boolean: %',
+                        etext
+                        USING DETAIL = edetail;
+                END;
+        END;
+        UPDATE servers SET srv_settings =
+          jsonb_strip_nulls(jsonb_set(
+            COALESCE(srv_settings, settings_template),
+            ARRAY['collect', substr(set_server_setting.setting, 9)],
+            to_jsonb(set_server_setting.value::boolean)
+          ))
+          WHERE server_name = server;
+        GET DIAGNOSTICS upd_rows = ROW_COUNT;
+        RETURN upd_rows;
+    ELSE
+        RAISE 'Unsupported setting';
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE FUNCTION show_server_settings(IN server name)
+RETURNS TABLE(scope text, setting text, value text)
+SET search_path=@extschema@ AS $$
+  SELECT
+    scope.key AS scope,
+    val.key::text AS setting,
+    val.value::text AS value
+  FROM
+    servers s,
+    jsonb_each(s.srv_settings) scope,
+    jsonb_each(scope.value) val
+  WHERE
+    server_name = show_server_settings.server
+$$ LANGUAGE sql;
+
 CREATE FUNCTION disable_server(IN server name) RETURNS integer SET search_path=@extschema@ AS $$
 DECLARE
     upd_rows integer;
@@ -418,16 +481,61 @@ $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION set_server_db_exclude(IN server name, IN exclude_db name[]) IS 'Exclude databases from object stats collection. Useful in RDS.';
 
-CREATE FUNCTION set_server_size_sampling(IN server name, IN window_start time with time zone = NULL,
-  IN window_duration interval hour to second = NULL, IN sample_interval interval day to minute = NULL)
+CREATE FUNCTION set_server_size_sampling(IN server name,
+  IN window_start time with time zone = NULL,
+  IN window_duration interval hour to second = NULL,
+  IN sample_interval interval day to minute = NULL,
+  IN collect_mode text = NULL)
 RETURNS integer SET search_path=@extschema@ AS $$
 DECLARE
     upd_rows integer;
+    relsizes jsonb;
 BEGIN
+    -- We should validate collect_mode value
+    IF COALESCE(LOWER(collect_mode), 'off') NOT IN ('on', 'off', 'schedule') THEN
+      RAISE 'collect_mode can only be ''on'', ''off'' or ''schedule''';
+    END IF;
+
+    SELECT
+      COALESCE(srv_settings #> ARRAY['relsizes'], '{}'::jsonb)
+        INTO relsizes
+    FROM servers
+    WHERE server_name = server;
+
+    IF (window_start IS NOT NULL) THEN
+      relsizes := jsonb_set(
+        relsizes,
+        ARRAY['window_start'],
+        to_jsonb(window_start)
+      );
+    END IF;
+    IF (window_duration IS NOT NULL) THEN
+      relsizes := jsonb_set(
+        relsizes,
+        ARRAY['window_duration'],
+        to_jsonb(window_duration)
+      );
+    END IF;
+    IF (sample_interval IS NOT NULL) THEN
+      relsizes := jsonb_set(
+        relsizes,
+        ARRAY['sample_interval'],
+        to_jsonb(sample_interval)
+      );
+    END IF;
+    -- collect_mode can be set to null
+    relsizes := jsonb_set(
+      relsizes,
+      ARRAY['collect_mode'],
+      to_jsonb(LOWER(collect_mode))
+    );
+
     UPDATE servers
     SET
-      (size_smp_wnd_start, size_smp_wnd_dur, size_smp_interval) =
-      (window_start, window_duration, sample_interval)
+      srv_settings = jsonb_set(
+        COALESCE(srv_settings, '{}'::jsonb),
+        ARRAY['relsizes'],
+        relsizes)
     WHERE
       server_name = server;
     GET DIAGNOSTICS upd_rows = ROW_COUNT;
@@ -435,7 +543,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 COMMENT ON FUNCTION set_server_size_sampling(IN server name, IN window_start time with time zone,
-  IN window_duration interval hour to second, IN sample_interval interval day to minute)
+  IN window_duration interval hour to second, IN sample_interval interval day to minute, IN collect_mode text)
 IS 'Set relation sizes sampling settings for a server';
 
 CREATE FUNCTION show_servers()
@@ -468,17 +576,25 @@ RETURNS TABLE (
   window_start time with time zone,
   window_end time with time zone,
   window_duration interval hour to second,
-  sample_interval interval day to minute
+  sample_interval interval day to minute,
+  collect_mode text
 )
 SET search_path=@extschema@ AS $$
   SELECT
     server_name,
-    size_smp_wnd_start,
-    size_smp_wnd_start + size_smp_wnd_dur,
-    size_smp_wnd_dur,
-    size_smp_interval
+    window_start,
+    window_start + window_duration,
+    window_duration,
+    sample_interval,
+    collect_mode
   FROM
-    servers
+    servers,
+    jsonb_to_record(srv_settings #> '{relsizes}') AS (
+      window_start    time with time zone,
+      window_duration interval hour to second,
+      sample_interval interval day to minute,
+      collect_mode    text
+    )
 $$ LANGUAGE sql;
 COMMENT ON FUNCTION show_servers_size_sampling() IS
   'Displays relation sizes sampling settings for all servers';

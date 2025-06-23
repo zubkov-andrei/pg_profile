@@ -43,6 +43,44 @@ SELECT profile.set_server_max_sample_age('srvtestrenamed',3);
                          1
 (1 row)
 
+-- settings validation test
+SELECT profile.set_server_setting('srvtestrenamed','name_failure','test');
+ERROR:  Unsupported setting
+CONTEXT:  PL/pgSQL function set_server_setting(name,text,text) line 41 at RAISE
+SELECT profile.set_server_setting('srvtestrenamed','collect_vacuum_stats','value_failure');
+ERROR:  Value for collection conditions should be boolean: invalid input syntax for type boolean: "value_failure"
+DETAIL:  
+CONTEXT:  PL/pgSQL function set_server_setting(name,text,text) line 26 at RAISE
+SELECT profile.set_server_setting('srvtestrenamed','collect_vacuum_stats','on');
+ set_server_setting 
+--------------------
+                  1
+(1 row)
+
+SELECT srv_settings::text FROM profile.servers ORDER BY server_id;
+            srv_settings             
+-------------------------------------
+ 
+ {"collect": {"vacuum_stats": true}}
+(2 rows)
+
+SELECT * FROM profile.show_server_settings('srvtestrenamed');
+  scope  |   setting    | value 
+---------+--------------+-------
+ collect | vacuum_stats | true
+(1 row)
+
+SELECT profile.set_server_setting('srvtestrenamed','collect_vacuum_stats');
+ set_server_setting 
+--------------------
+                  1
+(1 row)
+
+SELECT * FROM profile.show_server_settings('srvtestrenamed');
+ scope | setting | value 
+-------+---------+-------
+(0 rows)
+
 SELECT server_id, server_name, server_description, db_exclude,
   enabled, connstr, max_sample_age, last_sample_id
 FROM profile.servers WHERE server_name != 'local';

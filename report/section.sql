@@ -1510,14 +1510,11 @@ BEGIN
 
     -- extension versions
     IF (report_context #>> '{report_features,extension_versions}')::boolean THEN
-      dataset := '[]'::jsonb;
-      FOR r_result IN (
-          SELECT *
-          FROM extension_versions_format(sserver_id, start1_id, end1_id, start2_id, end2_id)
-        ) LOOP
-        dataset := dataset || to_jsonb(r_result);
-      END LOOP;
-      datasets := jsonb_set(datasets, '{extension_versions}', dataset);
+      SELECT coalesce(jsonb_set(datasets, '{extension_versions}', jsonb_agg(to_jsonb(dt))), datasets)
+      INTO datasets
+      FROM extension_versions_format(sserver_id, start1_id, end1_id, start2_id, end2_id) dt;
+    END IF;
+
     IF (report_context #>> '{report_features,table_storage_parameters}')::boolean THEN
       SELECT coalesce(jsonb_set(datasets, '{table_storage_parameters}', jsonb_agg(to_jsonb(dt))), datasets)
       INTO datasets
