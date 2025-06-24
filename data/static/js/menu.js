@@ -61,7 +61,7 @@ class Menu {
                     navigator.appendChild(div);
 
                     /** A header click handler for switching the visibility of nested sections */
-                    title.addEventListener('click', () => {
+                    arrowSvg.addEventListener('click', () => {
                         nestedDiv.classList.toggle('hidden');
                         arrowSvg.classList.toggle('up');
                     });
@@ -222,7 +222,7 @@ class Menu {
             document.body.insertBefore(container, document.body.firstChild);
         }
 
-        /** Add Event on change input Field */
+        /** Add Search Feature */
         let rowsForSearch = document.querySelectorAll('tr:not(.header, .previewRow)');
         input.addEventListener("keyup", event => {
             if (event.key === "Escape") {

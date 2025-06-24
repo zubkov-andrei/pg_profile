@@ -149,11 +149,6 @@ title {
     vertical-align: middle;
 }
 
-#searchButton svg {
-    width: 2vh;
-    height: 2vh;
-}
-
 #searchWrap {
     border-radius: 50px;
     outline: none;
