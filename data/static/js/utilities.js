@@ -57,7 +57,6 @@ class Utilities {
         rowsForSearch.forEach(row => {
             row.style.display = '';
         })
-        this.getInputField().value = '';
     }
 
     static searchQueryWithStatistics(rowsForSearch, keyword) {

@@ -83,15 +83,15 @@ tr {
 }
 
 #logo {
-  width: 11vw;
-  height: 3vw;
-  min-width: 105px;
-  min-height: 50px;
+    width: 11vw;
+    height: 3vw;
+    min-width: 105px;
+    min-height: 50px;
 }
 
 #logoMini {
-  width: 40px;
-  height: 40px;
+    width: 40px;
+    height: 40px;
 }
 
 #logo.hidden, #logoMini.hidden {
@@ -131,9 +131,8 @@ title {
     border: none;
     outline: none;
     background: none;
-    padding: 8px;
     font-family: var(--main-font-family);
-    font-size: 2vh;
+    font-size: clamp(10px, 1vw, 13px);
 }
 
 #searchButton {
@@ -160,10 +159,19 @@ title {
     outline: none;
     border: 1px solid #8898AE;
     font-family: var(--main-font-family);
+    height: 35px;
+	box-sizing: border-box;
+	padding: 0 0 0 8px;
+	line-height: 35px;
+	display: flex;
 }
 
 #searchDropdownContainer.hidden {
     display: none;
+}
+
+option:first-child {
+    font-style: italic;
 }
 
 #dropdownSelect {
@@ -172,7 +180,13 @@ title {
     outline: none;
     border: 1px solid #8898AE;
     font-family: var(--main-font-family);
-    font-size: 2vh;
+    font-size: clamp(10px, 1vw, 13px);
+    height: 35px;
+    box-sizing: border-box;
+    padding: 0 0 0 9px;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
 }
 
 #pageContent.hidden {
@@ -199,13 +213,11 @@ title {
 
 #pageContent.hidden div.level1 {
     display: none;
-
 }
 
 #pageContent div.level1 {
     font-weight: 600;
     cursor: pointer;
-
 }
 
 #sections {
@@ -370,6 +382,7 @@ div.notice {
 a svg:hover {
     cursor: pointer;
 }
+
 svg:not(#logo, #logoMini) rect:hover, svg circle:hover, svg:not(#logo, #logoMini) path:hover, a.copyButton svg:hover > rect {
     stroke: #059FF5;
     fill: #D9FFCC;
