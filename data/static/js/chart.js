@@ -33,13 +33,13 @@ class PipeChart extends BaseChart {
                     <text x="0.3em" y="70%">${elem.objname}: ${elem[key]}</text>
                 </svg>
             `;
-            
+
             x += width;
         })
 
         let svg = `
-            <svg 
-                height="2em" 
+            <svg
+                height="2em"
                 width="100%">
                 ${nestedSvg}
             </svg>
@@ -66,16 +66,16 @@ class SessionChart extends BaseChart {
         let startPoint = Math.ceil(proportion * (dataObj.start_ut - reportStartUT));
 
         return `
-            <rect 
+            <rect
                 class="${klass}"
                 data-target="${target}"
-                x="${startPoint}px" 
-                y="${num * 20}px" 
+                x="${startPoint}px"
+                y="${num * 20}px"
                 height="10px"
                 width="${Math.ceil(proportion * (dataObj.duration))}"
                 stroke="${strokeColour}"
                 fill="${fillColour}">
-                <title>${title}</title>    
+                <title>${title}</title>
             </rect>
         `;
     }
@@ -114,7 +114,7 @@ class SessionChart extends BaseChart {
 
         return div;
     }
-    
+
     static initTreshold(newBlock) {
          /** Create main HTML node*/
         let div = document.createElement('div');
@@ -130,7 +130,7 @@ class SessionChart extends BaseChart {
         inputFieldsRanges.style.flexDirection = 'row';
         inputFieldsRanges.style.fontStyle = 'italic';
         inputFieldsRanges.style.fontSize = '15px';
-        
+
         /** Getting max durations */
         let maxBackendDuration = 0;
         let maxXactDuration = 0;
@@ -156,51 +156,51 @@ class SessionChart extends BaseChart {
         /** Backend duration treshold */
         let thresholdBackendField = document.createElement('div');
         thresholdBackendField.id = 'thresholdBackendField';
-        
+
         let thresholdBackendInput = document.createElement('input');
         thresholdBackendInput.type = 'range';
         thresholdBackendInput.min = 0;
         thresholdBackendInput.max = Math.floor(maxBackendDuration);
         thresholdBackendInput.defaultValue = 0;
         thresholdBackendInput.style.width = '200px';
-        
+
         let thresholdBackendName = document.createElement('span');
         thresholdBackendName.innerHTML = `Backend: ${thresholdBackendInput.value}`;
         thresholdBackendField.appendChild(thresholdBackendInput);
         thresholdBackendField.appendChild(thresholdBackendName);
-                
+
         /** Xact duration treshold */
         let thresholdXactField = document.createElement('div');
         thresholdXactField.id = 'thresholdXactField';
-        
+
         let thresholdXactInput = document.createElement('input');
         thresholdXactInput.type = 'range';
         thresholdXactInput.min = 0;
         thresholdXactInput.max = Math.floor(maxXactDuration);
         thresholdXactInput.defaultValue = 0;
         thresholdXactInput.style.width = '200px';
-        
+
         let thresholdXactName = document.createElement('span');
         thresholdXactName.innerHTML = `Xact: ${thresholdXactInput.value}`;
         thresholdXactField.appendChild(thresholdXactInput);
         thresholdXactField.appendChild(thresholdXactName);
-        
+
         /** State duration treshold */
         let thresholdStateField = document.createElement('div');
         thresholdStateField.id = 'thresholdStateField';
-        
+
         let thresholdStateInput = document.createElement('input');
         thresholdStateInput.type = 'range';
         thresholdStateInput.min = 0;
         thresholdStateInput.max = Math.floor(maxStateDuration);
         thresholdStateInput.defaultValue = 0;
         thresholdStateInput.style.width = '200px';
-        
+
         let thresholdStateName = document.createElement('span');
         thresholdStateName.innerHTML = `State: ${thresholdStateInput.value}`;
         thresholdStateField.appendChild(thresholdStateInput);
         thresholdStateField.appendChild(thresholdStateName);
-        
+
         thresholdBackendField.style.display = 'flex';
         thresholdXactField.style.display = 'flex';
         thresholdStateField.style.display = 'flex';
@@ -210,7 +210,7 @@ class SessionChart extends BaseChart {
                 let thresholdBackendValue = document.getElementById('thresholdBackendField').firstChild.value;
                 let thresholdXactValue = document.getElementById('thresholdXactField').firstChild.value;
                 let thresholdStateValue = document.getElementById('thresholdStateField').firstChild.value;
-                
+
                 document.getElementById('thresholdBackendField').childNodes[1].innerHTML = `Backend: ${thresholdBackendValue}`;
                 document.getElementById('thresholdXactField').childNodes[1].innerHTML = `Xact: ${thresholdXactValue}`;
                 document.getElementById('thresholdStateField').childNodes[1].innerHTML = `State: ${thresholdStateValue}`;
@@ -222,7 +222,7 @@ class SessionChart extends BaseChart {
         inputFieldsRanges.appendChild(thresholdBackendField);
         inputFieldsRanges.appendChild(thresholdXactField);
         inputFieldsRanges.appendChild(thresholdStateField);
-        
+
         inputFields.appendChild(inputFieldsHeader);
         inputFields.appendChild(inputFieldsRanges);
 
@@ -277,7 +277,7 @@ class SessionChart extends BaseChart {
                 'start': elem.state_change,
                 'duration': elem.state_duration_ut,
                 'state_code': elem.state_code,
-                'query_id': elem.query_id
+                'queryid': elem.queryid
             };
             if (stateChanging[`${elem.pid}_${elem.backend_start_ut}`] === undefined) {
                 // Backend statistics
@@ -320,7 +320,7 @@ class SessionChart extends BaseChart {
         /** Compute backend's Best position in chart */
 
         let backends = Object.keys(stateChanging).map((key) => stateChanging[key]);
-        
+
         let statesByStart = structuredClone(backends.sort((a,b) => a.start_ut - b.start_ut));
         let statesByEnd = structuredClone(backends.sort((a,b) => (a.start_ut + a.duration) - (b.start_ut + b.duration)));
 
@@ -352,7 +352,7 @@ class SessionChart extends BaseChart {
         Object.keys(stateChanging).forEach(backend => {
             let colour;
             let backendObj = stateChanging[backend];
-            // Drawing rectangle with backend 
+            // Drawing rectangle with backend
             let title = '';
             title += `PID: ${backendObj.pid}\n`;
             title += `Backend start: ${new Date(backendObj.start_ut * 1000)}\n`;
@@ -373,9 +373,9 @@ class SessionChart extends BaseChart {
                 title += `Xact duration: ${Math.round(xactObj.duration * 100) / 100} sec \n`;
                 title += `Backend start: ${new Date(backendObj.start_ut * 1000)} \n`;
                 title += `Backend duration: ${Math.round(backendObj.duration * 100) / 100} sec`;
-                    
+
                 let xactSVG = this.drawRect(xactObj, reportStartUT, proportion, backendObj['chart_line'], this.colours[2], this.colours[17], title, 'xact');
-                
+
                 StateChangeSVGNested += xactSVG;
 
                 Object.keys(xactObj.state_changes).forEach(state_change => {
@@ -390,27 +390,27 @@ class SessionChart extends BaseChart {
                     let title = '';
                     title += `PID: ${stateChangeObj.pid} \n`;
                     title += `State: ${stateChangeObj.state} \n`;
-                    title += `Query ID: ${stateChangeObj.query_id}\n`;
+                    title += `Query ID: ${stateChangeObj.queryid}\n`;
                     title += `State start: ${new Date(stateChangeObj.start_ut * 1000)} \n`;
                     title += `State duration: ${Math.round(stateChangeObj.duration * 100) / 100} sec \n`;
                     title += `Xact start: ${new Date(xactObj.start_ut * 1000)} \n`;
                     title += `Xact duration: ${Math.round(xactObj.duration * 100) / 100} sec \n`;
                     title += `Backend start: ${new Date(backendObj.start_ut * 1000)} \n`;
                     title += `Backend duration: ${Math.round(backendObj.duration * 100) / 100} sec`;
-                        
+
                     // dataObj, reportStartUT, proportion, num, strokeColour, fillColour, title, klass
                     let stateChangeSVG = this.drawRect(
-                        stateChangeObj, 
-                        reportStartUT, 
-                        proportion, 
+                        stateChangeObj,
+                        reportStartUT,
+                        proportion,
                         backendObj['chart_line'],
-                        colour, 
-                        colour, 
-                        title, 
+                        colour,
+                        colour,
+                        title,
                         'stateChange',
                         `${backendObj.pid}_${xactObj.start_ut}_${stateChangeObj.start_ut}`
                     );
-                    
+
                     StateChangeSVGNested += stateChangeSVG;
                 })
             })
@@ -424,15 +424,15 @@ class SessionChart extends BaseChart {
             let pointTime = new Date((i * timeLineWidth / proportion + reportStartUT) * 1000);
 
             let timeLineSVG = `
-                <path 
-                    id="line${i}" 
+                <path
+                    id="line${i}"
                     d="M ${i * timeLineWidth} 0 L ${i * timeLineWidth} ${(s + 1) * 20 }"
-                    stroke="lightgrey" 
+                    stroke="lightgrey"
                     stroke-dasharray="1">
                 </path>
             `;
             let hiddenLineSVG = `
-                <path 
+                <path
                     d="M ${i * timeLineWidth} 0 L ${i * timeLineWidth} ${(s + 1) * 20}"
                     stroke="white"
                     stroke-width="${timeLineWidth}"
@@ -440,16 +440,16 @@ class SessionChart extends BaseChart {
                     <title>${pointTime}</title>
                 </path>
             `;
-            
+
             timeGridNestedSVG += hiddenLineSVG;
             timeGridNestedSVG += timeLineSVG;
         }
-        
+
         let StateChangeSVG = `<svg>${StateChangeSVGNested}</svg>`
         let timeGridSVG = `<svg>${timeGridNestedSVG}</svg>`;
-        
+
         let svg = `
-            <svg 
+            <svg
                 width="${totalSVGWidth}px"
                 height="${(s * 20) + 20}px"
             >
@@ -485,7 +485,7 @@ class SessionChart extends BaseChart {
         legend.appendChild(this.drawLegend(this.colours[6], 'idle in transaction'));
         legend.appendChild(this.drawLegend(this.colours[9], 'active'));
         legend.appendChild(this.drawLegend(this.colours[2], 'backend with pid'));
-        
+
         return legend;
     }
 }

@@ -76,6 +76,22 @@ class Utilities {
         })
     }
 
+    static preprocessQueryString(queryString, limit) {
+        let etc = '';
+        queryString = queryString.split(',').join(', ');
+        queryString = queryString.split('+').join(' + ');
+        queryString = queryString.split('/').join(' / ');
+
+        if (limit) {
+            if (queryString.length > limit) {
+                queryString = queryString.substring(0, limit);
+                etc = ' ...'
+            }
+        }
+
+        return `${queryString}${etc}`
+    }
+
     static searchQueryText(keyword) {
         let foundQueries = {};
         data.datasets.queries.forEach(query => {

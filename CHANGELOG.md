@@ -1,5 +1,7 @@
 # pg_profile changelog
 
+## 4.9
+- Report design refactored (@Djoongaar)
 ## 4.8
 - Added database extension version section
 - Add possibility to exclude some databases from report

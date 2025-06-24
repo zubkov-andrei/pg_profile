@@ -5,14 +5,16 @@
  * @param parentNode node in html-page
  * @returns {*}
  */
-function buildReport(data, parentNode) {
+function buildReport(data, parentNode, deep) {
     data.sections.forEach(section => {
         let sectionHasNestedSections = ('sections' in section);
-        let newSection = new BaseSection(section).init();
+        let newSection = new BaseSection(section, deep).init();
 
         /** Recursive call for building nested sections if exists */
         if (sectionHasNestedSections) {
-            buildReport(section, newSection);
+            deep++;
+            buildReport(section, newSection, deep);
+            deep--;
         }
 
         parentNode.appendChild(newSection);
@@ -21,11 +23,28 @@ function buildReport(data, parentNode) {
     return parentNode;
 }
 
-function main() {
+function addDescription(data, parentNode) {
+    if (data.properties.description) {
+        let description = `
+            <h3>Description:</h3>
+            <p>${data.properties.description}</p>
+        `;
+        parentNode.insertAdjacentHTML('beforeend', description);
+    }
+    if (data.properties.server_description) {
+        let server_description = `
+            <h3>Server description:</h3>
+            <p>${data.properties.server_description}</p>
+        `;
+        parentNode.insertAdjacentHTML('beforeend', server_description);
+    }
+}
 
+function main() {
     /** Build report sections */
     const CONTAINER = document.getElementById('container');
-    buildReport(data, CONTAINER);
+    addDescription(data, CONTAINER);
+    buildReport(data, CONTAINER, 1);
 
     /** Add highlight feature */
     Highlighter.init();

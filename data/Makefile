@@ -11,7 +11,9 @@ includes = \
 	static/js/menu.js \
 	static/js/preview.js \
 	static/js/main.js \
-	static/css/style.css
+	static/css/style.css \
+	static/svg/logo.svg \
+	static/svg/logo_mini.svg
 
 report_templates.sql: $(data_files) $(includes)
 	sed -f filter.sed \

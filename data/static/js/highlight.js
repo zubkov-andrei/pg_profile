@@ -172,7 +172,7 @@ class Highlighter {
     }
 
     static smartHover(eventType, event, transition) {
-        let hoverColor = '#D9FFCC';
+        let hoverColor = '#14B0FF1A';
         let tr = Highlighter.getClosestTag(event.target, 0, 'tr');
 
         if (tr && !tr.classList.contains('active') && eventType === 'mouseover') {
