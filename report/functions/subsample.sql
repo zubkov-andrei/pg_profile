@@ -288,7 +288,7 @@ RETURNS TABLE(
     backend_duration_format interval,
     xmin_age                bigint,
 
-    query_id              bigint,
+    queryid               text,
     act_query_md5         char(32),
 
     ord_dur               integer,
@@ -334,7 +334,7 @@ RETURNS TABLE(
       date_trunc('second',backend_duration) AS backend_duration_format,
       backend_xmin_age,
 
-      query_id,
+      query_id::text AS queryid,
       act_query_md5,
 
       row_number() OVER (PARTITION BY state_code ORDER BY state_duration DESC)::integer AS ord_dur,
@@ -382,7 +382,7 @@ RETURNS TABLE(
     xact_duration_format  interval,
     xmin_age              bigint,
 
-    query_id              bigint,
+    queryid               text,
     act_query_md5         char(32),
 
     ord_dur               integer,
@@ -438,7 +438,7 @@ RETURNS TABLE(
       ) AS xact_duration_format,
       backend_xmin_age,
 
-      query_id,
+      query_id::text AS queryid,
       act_query_md5,
 
       row_number() OVER (PARTITION BY state_code ORDER BY state_duration DESC)::integer AS ord_dur,

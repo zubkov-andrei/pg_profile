@@ -211,28 +211,26 @@ RETURNS TABLE(
     stats_reset   timestamp with time zone
 )
 SET search_path=@extschema@ AS $$
-    WITH first_val AS (
-      SELECT backend_type, object, context, stats_reset
-      FROM sample_stat_io st JOIN (
-         SELECT backend_type, object, context, MIN(sample_id) AS sample_id
-         FROM sample_stat_io
-         WHERE server_id = sserver_id AND
-           sample_id BETWEEN start_id AND end_id
-         GROUP BY backend_type, object, context
-       ) f USING (backend_type, object, context, sample_id)
-     WHERE st.server_id = sserver_id
-    )
+  SELECT
+    server_id,
+    min(sample_id) AS sample_id,
+    backend_type,
+    object,
+    context,
+    stats_reset
+  FROM (
     SELECT
       server_id,
-      min(sample_id),
       backend_type,
       object,
       context,
-      st.stats_reset
-    FROM sample_stat_io st JOIN first_val USING (backend_type, object, context)
-    WHERE st.server_id = sserver_id AND st.sample_id BETWEEN start_id + 1 AND end_id
-      AND st.stats_reset IS DISTINCT FROM first_val.stats_reset
-    GROUP BY server_id, backend_type, object, context, st.stats_reset
+      sample_id,
+      stats_reset,
+      stats_reset IS DISTINCT FROM first_value(stats_reset) OVER (PARTITION BY server_id, backend_type, object, context ORDER BY sample_id) AS stats_reset_changed
+    FROM sample_stat_io
+    WHERE server_id = sserver_id AND sample_id BETWEEN start_id AND end_id) st
+  WHERE stats_reset_changed
+  GROUP BY server_id, backend_type, object, context, stats_reset;
 $$ LANGUAGE sql;
 
 CREATE FUNCTION cluster_stat_io_reset_format(IN sserver_id integer,

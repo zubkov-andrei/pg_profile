@@ -755,13 +755,15 @@ BEGIN
         ev.first_seen,
         max(s.sample_id) as last_sample_id
       FROM extension_versions ev
-      JOIN samples s ON
-        s.server_id = ev.server_id AND
-        s.sample_id < start_id AND
-        s.sample_time >= ev.first_seen
+      JOIN samples s ON (s.server_id = ev.server_id AND
+        s.sample_time >= ev.first_seen AND s.sample_id <= ev.last_sample_id)
+      LEFT JOIN bl_samples bl ON
+          (bl.server_id, bl.sample_id) = (s.server_id, s.sample_id)
+          AND bl.sample_id BETWEEN start_id AND end_id
       WHERE
-        ev.server_id = delete_samples.server_id AND
-        ev.last_sample_id BETWEEN start_id AND end_id
+        ev.server_id = delete_samples.server_id
+        AND ev.last_sample_id BETWEEN start_id AND end_id
+        AND (s.sample_id < start_id OR bl.sample_id IS NOT NULL)
       GROUP BY ev.server_id, ev.datid, ev.extname, ev.first_seen
       ) new_lastids
     WHERE

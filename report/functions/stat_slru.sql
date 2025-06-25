@@ -125,26 +125,22 @@ RETURNS TABLE(
     stats_reset   timestamp with time zone
 )
 SET search_path=@extschema@ AS $$
-    WITH first_val AS (
-      SELECT name, stats_reset
-      FROM sample_stat_slru st JOIN (
-         SELECT name, MIN(sample_id) AS sample_id
-         FROM sample_stat_slru
-         WHERE server_id = sserver_id AND
-           sample_id BETWEEN start_id AND end_id
-         GROUP BY name
-       ) f USING (name,sample_id)
-     WHERE st.server_id = sserver_id
-    )
+  SELECT
+    server_id,
+    min(sample_id) AS sample_id,
+    name,
+    stats_reset
+  FROM (
     SELECT
       server_id,
-      min(sample_id),
       name,
-      st.stats_reset
-    FROM sample_stat_slru st JOIN first_val USING (name)
-    WHERE st.server_id = sserver_id AND st.sample_id BETWEEN start_id + 1 AND end_id
-      AND st.stats_reset IS DISTINCT FROM first_val.stats_reset
-    GROUP BY server_id, name, st.stats_reset
+      sample_id,
+      stats_reset,
+      stats_reset IS DISTINCT FROM first_value(stats_reset) OVER (PARTITION BY server_id, name ORDER BY sample_id) AS stats_reset_changed
+    FROM sample_stat_slru
+    WHERE server_id = sserver_id AND sample_id BETWEEN start_id AND end_id) st
+  WHERE st.stats_reset_changed
+  GROUP BY server_id, name, stats_reset;
 $$ LANGUAGE sql;
 
 CREATE FUNCTION cluster_stat_slru_reset_format(IN sserver_id integer,

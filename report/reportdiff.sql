@@ -118,7 +118,7 @@ IS 'Statistics differential report generation function for local server. Takes r
 
 CREATE FUNCTION get_diffreport(IN server name, IN start1_id integer, IN end1_id integer,
   IN baseline varchar(25), IN description text = NULL, IN with_growth boolean = false,
-	IN db_exclude name[] = NULL)
+  IN db_exclude name[] = NULL)
 RETURNS text SET search_path=@extschema@ AS $$
   SELECT get_diffreport(get_server_by_name(server),start1_id,end1_id,
     bl2.start_id,bl2.end_id,description,with_growth,db_exclude)
@@ -130,7 +130,7 @@ IS 'Statistics differential report generation function. Takes server name, start
 
 CREATE FUNCTION get_diffreport(IN start1_id integer, IN end1_id integer,
   IN baseline varchar(25), IN description text = NULL, IN with_growth boolean = false,
-	IN db_exclude name[] = NULL)
+  IN db_exclude name[] = NULL)
 RETURNS text SET search_path=@extschema@ AS $$
   SELECT get_diffreport('local',start1_id,end1_id,
     baseline,description,with_growth,db_exclude);

@@ -3,6 +3,13 @@
 ## 4.9
 - Added table and index storage parameter sections (@blackstranger, @Djoongaar)
 - Report design refactored (@Djoongaar)
+- Fixed left 'idle in transaction' sesssion after take_sample() call
+- objects, functions and statements statistics can be excluded from
+  sample using *set_server_setting()* function
+- Accurate relation sizes collection is disabled for the new
+  installations (@blackstranger)
+- Minor optimizations
+
 ## 4.8
 - Added database extension version section
 - Add possibility to exclude some databases from report

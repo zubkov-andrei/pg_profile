@@ -132,8 +132,8 @@ BEGIN
     IF (SELECT pgpro_fxs = 3
         FROM dblink('server_connection',
           'select count(1) as pgpro_fxs '
-          'from pg_catalog.pg_proc '
-          'where proname IN (''pgpro_build'',''pgpro_edition'',''pgpro_version'')'
+          'from pg_catalog.pg_settings '
+          'where name IN (''pgpro_build'',''pgpro_edition'',''pgpro_version'')'
         ) AS pgpro (pgpro_fxs integer))
     THEN
       server_properties := jsonb_set(server_properties,'{properties,pgpro}',to_jsonb(true));
@@ -448,15 +448,6 @@ BEGIN
       'UNION ALL SELECT 2 as setting_scope,''system_identifier'','
       'system_identifier::text,system_identifier::text,system_identifier::text,'
       'NULL,NULL,NULL,False FROM pg_catalog.pg_control_system()';
-
-    -- Is it PostgresPro?
-    IF (server_properties #>> '{properties,pgpro}')::boolean THEN
-      server_query := concat_ws(' ',server_query,
-          'UNION ALL SELECT 2 as setting_scope,''pgpro_build'',pgpro_build(),pgpro_build(),NULL,NULL,NULL,NULL,False '
-          'UNION ALL SELECT 2 as setting_scope,''pgpro_edition'',pgpro_edition(),pgpro_edition(),NULL,NULL,NULL,NULL,False '
-          'UNION ALL SELECT 2 as setting_scope,''pgpro_version'',pgpro_version(),pgpro_version(),NULL,NULL,NULL,NULL,False '
-      );
-    END IF;
 
     INSERT INTO sample_settings(
       server_id,
@@ -954,7 +945,7 @@ BEGIN
         SELECT count(*) = 1
         FROM jsonb_to_recordset(server_properties #> '{extensions}') AS ext(extname text)
         WHERE extname = 'pg_stat_statements'
-      ) THEN
+      ) AND COALESCE((server_properties #> '{collect,pg_stat_statements}')::boolean, true) THEN
         PERFORM collect_pg_stat_statements_stats(server_properties, sserver_id, s_id, topn);
       ELSE
         NULL;
@@ -972,7 +963,7 @@ BEGIN
         SELECT count(*) = 1
         FROM jsonb_to_recordset(server_properties #> '{extensions}') AS ext(extname text)
         WHERE extname = 'pg_wait_sampling'
-      ) THEN
+      ) AND COALESCE((server_properties #> '{collect,pg_wait_sampling}')::boolean, true)THEN
         PERFORM collect_pg_wait_sampling_stats(server_properties, sserver_id, s_id, topn);
       ELSE
         NULL;
@@ -1475,8 +1466,10 @@ BEGIN
     END IF;
 
     -- Collecting stat info for objects of all databases
-    server_properties := collect_obj_stats(server_properties, sserver_id, s_id, skip_sizes);
-    ASSERT server_properties IS NOT NULL, 'lost properties';
+    IF COALESCE((server_properties #> '{collect,objects}')::boolean, true) THEN
+      server_properties := collect_obj_stats(server_properties, sserver_id, s_id, skip_sizes);
+      ASSERT server_properties IS NOT NULL, 'lost properties';
+    END IF;
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
       server_properties := jsonb_set(server_properties,'{timings,collect object stats,end}',to_jsonb(clock_timestamp()));
@@ -1606,8 +1599,10 @@ BEGIN
     END IF;
 
     -- collect databases objects stats
-    server_properties := sample_dbobj_delta(server_properties,sserver_id,s_id,topn,skip_sizes);
-    ASSERT server_properties IS NOT NULL, 'lost properties';
+    IF COALESCE((server_properties #> '{collect,objects}')::boolean, true) THEN
+      server_properties := sample_dbobj_delta(server_properties,sserver_id,s_id,topn,skip_sizes);
+      ASSERT server_properties IS NOT NULL, 'lost properties';
+    END IF;
 
     DELETE FROM last_stat_tablespaces WHERE server_id = sserver_id AND sample_id != s_id;
 
@@ -2000,12 +1995,24 @@ DECLARE
     etext               text := '';
     edetail             text := '';
     econtext            text := '';
+
+    qres                record;
+    conname             text;
     start_clock         timestamp (2) with time zone;
 BEGIN
     SELECT server_id INTO sserver_id FROM servers WHERE server_name = take_sample.server;
     IF sserver_id IS NULL THEN
         RAISE 'Server not found';
     ELSE
+        /*
+        * We should include dblink schema to perform disconnections
+        * on exception conditions
+        */
+        SELECT extnamespace::regnamespace AS dblink_schema INTO STRICT qres FROM pg_catalog.pg_extension WHERE extname = 'dblink';
+        IF NOT string_to_array(current_setting('search_path'),', ') @> ARRAY[qres.dblink_schema::text] THEN
+          EXECUTE 'SET LOCAL search_path TO ' || current_setting('search_path')||','|| qres.dblink_schema;
+        END IF;
+
         BEGIN
             start_clock := clock_timestamp()::timestamp (2) with time zone;
             server_sampleres := take_sample(sserver_id, take_sample.skip_sizes);
@@ -2026,6 +2033,15 @@ BEGIN
                     result := format (E'%s\n%s\n%s', etext, econtext, edetail);
                     elapsed := clock_timestamp()::timestamp (2) with time zone - start_clock;
                     RETURN NEXT;
+                    /*
+                      Cleanup dblink connections
+                    */
+                    FOREACH conname IN ARRAY dblink_get_connections()
+                    LOOP
+                        IF conname IN ('server_connection', 'server_db_connection') THEN
+                            PERFORM dblink_disconnect(conname);
+                        END IF;
+                    END LOOP;
                 END;
         END;
     END IF;
@@ -2055,6 +2071,7 @@ DECLARE
     econtext            text := '';
 
     qres          RECORD;
+    conname       text;
     start_clock   timestamp (2) with time zone;
 BEGIN
     IF sets_cnt IS NULL OR sets_cnt < 1 THEN
@@ -2063,6 +2080,15 @@ BEGIN
     IF current_set IS NULL OR current_set < 0 OR current_set > sets_cnt - 1 THEN
       RAISE 'current_cnt value is invalid. Must be between 0 and sets_cnt - 1';
     END IF;
+    /*
+    * We should include dblink schema to perform disconnections
+    * on exception conditions
+    */
+    SELECT extnamespace::regnamespace AS dblink_schema INTO STRICT qres FROM pg_catalog.pg_extension WHERE extname = 'dblink';
+    IF NOT string_to_array(current_setting('search_path'),', ') @> ARRAY[qres.dblink_schema::text] THEN
+      EXECUTE 'SET LOCAL search_path TO ' || current_setting('search_path')||','|| qres.dblink_schema;
+    END IF;
+
     FOR qres IN c_servers LOOP
         BEGIN
             start_clock := clock_timestamp()::timestamp (2) with time zone;
@@ -2085,6 +2111,15 @@ BEGIN
                     result := format (E'%s\n%s\n%s', etext, econtext, edetail);
                     elapsed := clock_timestamp()::timestamp (2) with time zone - start_clock;
                     RETURN NEXT;
+                    /*
+                      Cleanup dblink connections
+                    */
+                    FOREACH conname IN ARRAY dblink_get_connections()
+                    LOOP
+                        IF conname IN ('server_connection', 'server_db_connection') THEN
+                            PERFORM dblink_disconnect(conname);
+                        END IF;
+                    END LOOP;
                 END;
         END;
     END LOOP;
@@ -2587,7 +2622,8 @@ BEGIN
             'JOIN pg_catalog.pg_statio_all_indexes stio USING (relid, indexrelid, schemaname, relname, indexrelname) '
             'JOIN pg_catalog.pg_index ix ON (ix.indexrelid = st.indexrelid) '
             'JOIN pg_catalog.pg_class ON (pg_class.oid = st.indexrelid) '
-            'LEFT OUTER JOIN pg_catalog.pg_constraint con ON (con.conindid = ix.indexrelid AND con.contype in (''p'',''u'')) '
+            'LEFT OUTER JOIN pg_catalog.pg_constraint con ON '
+              '(con.conrelid, con.conindid) = (ix.indrelid, ix.indexrelid) AND con.contype in (''p'',''u'') '
             '{lock_join}'
             ;
         WHEN (
@@ -2620,7 +2656,8 @@ BEGIN
             'JOIN pg_catalog.pg_statio_all_indexes stio USING (relid, indexrelid, schemaname, relname, indexrelname) '
             'JOIN pg_catalog.pg_index ix ON (ix.indexrelid = st.indexrelid) '
             'JOIN pg_catalog.pg_class ON (pg_class.oid = st.indexrelid) '
-            'LEFT OUTER JOIN pg_catalog.pg_constraint con ON (con.conindid = ix.indexrelid AND con.contype in (''p'',''u'')) '
+            'LEFT OUTER JOIN pg_catalog.pg_constraint con ON '
+              '(con.conrelid, con.conindid) = (ix.indrelid, ix.indexrelid) AND con.contype in (''p'',''u'') '
             '{lock_join}'
             ;
         ELSE
@@ -2736,47 +2773,49 @@ BEGIN
         'JOIN pg_catalog.pg_proc p ON (f.funcid = p.oid) '
       'WHERE pg_get_function_arguments(f.funcid) IS NOT NULL';
 
-      INSERT INTO last_stat_user_functions(
-        server_id,
-        sample_id,
-        datid,
-        funcid,
-        schemaname,
-        funcname,
-        funcargs,
-        calls,
-        total_time,
-        self_time,
-        trg_fn
-      )
-      SELECT
-        sserver_id,
-        s_id,
-        qres.datid,
-        funcid,
-        schemaname,
-        funcname,
-        funcargs,
-        dbl.calls AS calls,
-        dbl.total_time AS total_time,
-        dbl.self_time AS self_time,
-        dbl.trg_fn
-      FROM dblink('server_db_connection', t_query)
-      AS dbl (
-         funcid       oid,
-         schemaname   name,
-         funcname     name,
-         funcargs     text,
-         calls        bigint,
-         total_time   double precision,
-         self_time    double precision,
-         trg_fn       boolean
-      );
+      IF COALESCE((properties #> '{collect,functions}')::boolean, true) THEN
+        INSERT INTO last_stat_user_functions(
+          server_id,
+          sample_id,
+          datid,
+          funcid,
+          schemaname,
+          funcname,
+          funcargs,
+          calls,
+          total_time,
+          self_time,
+          trg_fn
+        )
+        SELECT
+          sserver_id,
+          s_id,
+          qres.datid,
+          funcid,
+          schemaname,
+          funcname,
+          funcargs,
+          dbl.calls AS calls,
+          dbl.total_time AS total_time,
+          dbl.self_time AS self_time,
+          dbl.trg_fn
+        FROM dblink('server_db_connection', t_query)
+        AS dbl (
+           funcid       oid,
+           schemaname   name,
+           funcname     name,
+           funcargs     text,
+           calls        bigint,
+           total_time   double precision,
+           self_time    double precision,
+           trg_fn       boolean
+        );
 
-      IF NOT analyze_list @> ARRAY[format('last_stat_user_functions_srv%1$s', sserver_id)] THEN
-        analyze_list := analyze_list ||
-          format('last_stat_user_functions_srv%1$s', sserver_id);
-      END IF;
+        IF NOT analyze_list @> ARRAY[format('last_stat_user_functions_srv%1$s', sserver_id)] THEN
+          analyze_list := analyze_list ||
+            format('last_stat_user_functions_srv%1$s', sserver_id);
+        END IF;
+      END IF; -- functions collection condition
 
       PERFORM dblink('server_db_connection', 'COMMIT');
       PERFORM dblink_disconnect('server_db_connection');

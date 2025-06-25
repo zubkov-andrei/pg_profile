@@ -152,6 +152,7 @@ BEGIN
                 CASE $5
                   WHEN TRUE THEN
                     encode(sha224(convert_to(rows.query, 'UTF8')), 'base64')
+                    || ', Query length: '|| length(rows.query)::text
                   ELSE rows.query
                 END AS query,
                 last_sample_id
@@ -175,6 +176,7 @@ BEGIN
                 CASE $5
                   WHEN TRUE THEN
                     encode(sha224(convert_to(rows.act_query, 'UTF8')), 'base64')
+                    || ', Query length: '|| length(rows.act_query)::text
                   ELSE rows.act_query
                 END AS act_query,
                 last_sample_id
@@ -488,6 +490,11 @@ BEGIN
           RAISE 'No import method for table %', r_result.relname;
         END IF;
 
+        IF func_processed > 0 THEN
+          RAISE NOTICE 'Analyzing table %', r_result.relname;
+          EXECUTE format('ANALYZE %I', r_result.relname);
+        END IF;
+
         RAISE NOTICE 'Finished processing %',
           format('table %s (%s rows)',r_result.relname, func_processed);
         tot_processed := tot_processed + func_processed;
@@ -596,7 +603,7 @@ COMMENT ON FUNCTION import_data(regclass, text) IS
 CREATE FUNCTION import_section_data_profile(IN data refcursor, IN imp_table_name name, IN srv_map jsonb,
   IN import_meta jsonb, IN versions_array text[],
   OUT rows_processed bigint, OUT new_import_meta jsonb)
-SET search_path=profile AS $$
+SET search_path=@extschema@ AS $$
 DECLARE
   datarow          record;
   rowcnt           bigint = 0;
@@ -3778,7 +3785,7 @@ $$ LANGUAGE plpgsql;
 CREATE FUNCTION import_section_data_subsample(IN data refcursor, IN imp_table_name name, IN srv_map jsonb,
   IN import_meta jsonb, IN versions_array text[],
   OUT rows_processed bigint, OUT new_import_meta jsonb)
-SET search_path=profile AS $$
+SET search_path=@extschema@ AS $$
 DECLARE
   datarow          record;
   rowcnt           bigint = 0;

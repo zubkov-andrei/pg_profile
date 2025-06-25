@@ -23,60 +23,30 @@ RETURNS TABLE(
     restartpoints_done    bigint
 )
 SET search_path=@extschema@ AS $$
-    SELECT
-        server_id,
-        checkpoints_timed,
-        checkpoints_req,
-        checkpoint_write_time,
-        checkpoint_sync_time,
-        buffers_checkpoint,
-        buffers_clean,
-        buffers_backend,
-        buffers_backend_fsync,
-        maxwritten_clean,
-        buffers_alloc,
-        wal_size,
-        archived_count,
-        failed_count,
-        start_lsn,
-        end_lsn,
-        restartpoints_timed,
-        restartpoints_req,
-        restartpoints_done
-    FROM (
-      SELECT
-          st.server_id as server_id,
-          sum(checkpoints_timed)::bigint as checkpoints_timed,
-          sum(checkpoints_req)::bigint as checkpoints_req,
-          sum(checkpoint_write_time)::double precision as checkpoint_write_time,
-          sum(checkpoint_sync_time)::double precision as checkpoint_sync_time,
-          sum(buffers_checkpoint)::bigint as buffers_checkpoint,
-          sum(buffers_clean)::bigint as buffers_clean,
-          sum(buffers_backend)::bigint as buffers_backend,
-          sum(buffers_backend_fsync)::bigint as buffers_backend_fsync,
-          sum(maxwritten_clean)::bigint as maxwritten_clean,
-          sum(buffers_alloc)::bigint as buffers_alloc,
-          sum(wal_size)::bigint as wal_size,
-          sum(archived_count)::bigint as archived_count,
-          sum(failed_count)::bigint as failed_count,
-          sum(restartpoints_timed)::bigint as restartpoints_timed,
-          sum(restartpoints_req)::bigint as restartpoints_req,
-          sum(restartpoints_done)::bigint as restartpoints_done
-      FROM sample_stat_cluster st
-          LEFT OUTER JOIN sample_stat_archiver sa USING (server_id, sample_id)
-      WHERE st.server_id = sserver_id AND st.sample_id BETWEEN start_id + 1 AND end_id
-      GROUP BY st.server_id
-    ) clu JOIN (
-      SELECT
-        server_id,
-        s.wal_lsn as start_lsn,
-        e.wal_lsn as end_lsn
-      FROM
-        sample_stat_cluster s
-        JOIN sample_stat_cluster e USING (server_id)
-      WHERE
-        (s.sample_id, e.sample_id, server_id) = (start_id, end_id, sserver_id)
-    ) lsn USING (server_id)
+  SELECT
+    st.server_id AS server_id,
+    sum(checkpoints_timed) FILTER (WHERE st.sample_id > start_id)::bigint  AS checkpoints_timed,
+    sum(checkpoints_req) FILTER (WHERE st.sample_id > start_id)::bigint AS checkpoints_req,
+    sum(checkpoint_write_time) FILTER (WHERE st.sample_id > start_id)::double precision AS checkpoint_write_time,
+    sum(checkpoint_sync_time) FILTER (WHERE st.sample_id > start_id)::double precision AS checkpoint_sync_time,
+    sum(buffers_checkpoint) FILTER (WHERE st.sample_id > start_id)::bigint AS buffers_checkpoint,
+    sum(buffers_clean) FILTER (WHERE st.sample_id > start_id)::bigint AS buffers_clean,
+    sum(buffers_backend) FILTER (WHERE st.sample_id > start_id)::bigint AS buffers_backend,
+    sum(buffers_backend_fsync) FILTER (WHERE st.sample_id > start_id)::bigint AS buffers_backend_fsync,
+    sum(maxwritten_clean) FILTER (WHERE st.sample_id > start_id)::bigint AS maxwritten_clean,
+    sum(buffers_alloc) FILTER (WHERE st.sample_id > start_id)::bigint AS buffers_alloc,
+    sum(wal_size) FILTER (WHERE st.sample_id > start_id)::bigint AS wal_size,
+    sum(sa.archived_count) FILTER (WHERE st.sample_id > start_id)::bigint AS archived_count,
+    sum(sa.failed_count) FILTER (WHERE sa.sample_id > start_id)::bigint AS failed_count,
+    max(st.wal_lsn::text) FILTER (WHERE st.sample_id = start_id)::pg_lsn AS start_lsn,
+    max(st.wal_lsn::text) FILTER (WHERE st.sample_id = end_id)::pg_lsn AS end_lsn,
+    sum(restartpoints_timed) FILTER (WHERE sa.sample_id > start_id)::bigint AS restartpoints_timed,
+    sum(restartpoints_req) FILTER (WHERE st.sample_id > start_id)::bigint AS restartpoints_req,
+    sum(restartpoints_done) FILTER (WHERE st.sample_id > start_id)::bigint AS restartpoints_done
+  FROM sample_stat_cluster st
+    LEFT OUTER JOIN sample_stat_archiver sa USING (server_id, sample_id)
+  WHERE st.server_id = sserver_id AND st.sample_id BETWEEN start_id AND end_id
+  GROUP BY st.server_id
 $$ LANGUAGE sql;
 
 CREATE FUNCTION cluster_stats_format(IN sserver_id integer, IN start_id integer, IN end_id integer)
@@ -219,19 +189,28 @@ RETURNS TABLE(
 )
 SET search_path=@extschema@ AS $$
   SELECT
-      clu1.sample_id as sample_id,
-      nullif(clu1.stats_reset, clu0.stats_reset),
-      nullif(sta1.stats_reset, sta0.stats_reset),
-      nullif(clu1.checkpoint_stats_reset, clu0.checkpoint_stats_reset)
-  FROM sample_stat_cluster clu1
-      LEFT OUTER JOIN sample_stat_archiver sta1 USING (server_id,sample_id)
-      JOIN sample_stat_cluster clu0 ON (clu1.server_id = clu0.server_id AND clu1.sample_id = clu0.sample_id + 1)
-      LEFT OUTER JOIN sample_stat_archiver sta0 ON (sta1.server_id = sta0.server_id AND sta1.sample_id = sta0.sample_id + 1)
-  WHERE clu1.server_id = sserver_id AND clu1.sample_id BETWEEN start_id + 1 AND end_id
-    AND
-      (clu0.stats_reset, clu0.checkpoint_stats_reset, sta0.stats_reset) IS DISTINCT FROM
-      (clu1.stats_reset, clu1.checkpoint_stats_reset, sta1.stats_reset)
-  ORDER BY clu1.sample_id ASC
+    st.next_sample_id AS sample_id,
+    NULLIF(st.next_bgwriter_stats_reset, st.bgwriter_stats_reset) AS bgwriter_stats_reset,
+    NULLIF(st.next_archiver_stats_reset, st.archiver_stats_reset) AS archiver_stats_reset,
+    NULLIF(st.next_checkpoint_stats_reset, st.checkpoint_stats_reset) AS checkpoint_stats_reset
+  FROM (
+    SELECT
+      clu.sample_id,
+      lead(clu.sample_id) OVER w as next_sample_id,
+      clu.stats_reset as bgwriter_stats_reset,
+      lead(clu.stats_reset) OVER w as next_bgwriter_stats_reset,
+      sta.stats_reset as archiver_stats_reset,
+      lead(sta.stats_reset) OVER w as next_archiver_stats_reset,
+      clu.checkpoint_stats_reset as checkpoint_stats_reset,
+      lead(clu.checkpoint_stats_reset) OVER w as next_checkpoint_stats_reset
+    FROM sample_stat_cluster clu
+      LEFT OUTER JOIN sample_stat_archiver sta USING (server_id,sample_id)
+    WHERE clu.server_id = sserver_id AND clu.sample_id BETWEEN start_id AND end_id
+    WINDOW w AS (ORDER BY clu.sample_id ASC)) st
+    WHERE st.next_sample_id IS NOT NULL AND
+      (st.bgwriter_stats_reset, st.archiver_stats_reset, st.checkpoint_stats_reset) IS DISTINCT FROM
+      (st.next_bgwriter_stats_reset, st.next_archiver_stats_reset, st.next_checkpoint_stats_reset)
+  ORDER BY st.sample_id ASC;
 $$ LANGUAGE sql;
 
 CREATE FUNCTION profile_checkavail_cluster_stats_reset(IN sserver_id integer, IN start_id integer, IN end_id integer)

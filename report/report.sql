@@ -2,7 +2,7 @@
 
 CREATE FUNCTION get_report(IN sserver_id integer, IN start_id integer, IN end_id integer,
   IN description text = NULL, IN with_growth boolean = false,
-	IN db_exclude name[] = NULL) RETURNS text SET search_path=@extschema@ AS $$
+  IN db_exclude name[] = NULL) RETURNS text SET search_path=@extschema@ AS $$
 DECLARE
     report          text;
     report_data     jsonb;
@@ -41,7 +41,7 @@ IS 'Statistics report generation function. Takes server_id and IDs of start and 
 
 CREATE FUNCTION get_report(IN server name, IN start_id integer, IN end_id integer,
   IN description text = NULL, IN with_growth boolean = false,
-	IN db_exclude name[] = NULL)
+  IN db_exclude name[] = NULL)
 RETURNS text SET search_path=@extschema@ AS $$
   SELECT get_report(get_server_by_name(server), start_id, end_id,
     description, with_growth, db_exclude);
@@ -52,7 +52,7 @@ IS 'Statistics report generation function. Takes server name and IDs of start an
 
 CREATE FUNCTION get_report(IN start_id integer, IN end_id integer,
   IN description text = NULL, IN with_growth boolean = false,
-	IN db_exclude name[] = NULL)
+  IN db_exclude name[] = NULL)
 RETURNS text SET search_path=@extschema@ AS $$
   SELECT get_report('local',start_id,end_id,description,with_growth,db_exclude);
 $$ LANGUAGE sql;
@@ -62,7 +62,7 @@ IS 'Statistics report generation function for local server. Takes IDs of start a
 
 CREATE FUNCTION get_report(IN sserver_id integer, IN time_range tstzrange,
   IN description text = NULL, IN with_growth boolean = false,
-	IN db_exclude name[] = NULL)
+  IN db_exclude name[] = NULL)
 RETURNS text SET search_path=@extschema@ AS $$
   SELECT get_report(sserver_id, start_id, end_id, description, with_growth, db_exclude)
   FROM get_sampleids_by_timerange(sserver_id, time_range)
@@ -73,7 +73,7 @@ IS 'Statistics report generation function. Takes server ID and time interval.';
 
 CREATE FUNCTION get_report(IN server name, IN time_range tstzrange,
   IN description text = NULL, IN with_growth boolean = false,
-	IN db_exclude name[] = NULL)
+  IN db_exclude name[] = NULL)
 RETURNS text SET search_path=@extschema@ AS $$
   SELECT get_report(get_server_by_name(server), start_id, end_id, description, with_growth, db_exclude)
   FROM get_sampleids_by_timerange(get_server_by_name(server), time_range)
@@ -84,7 +84,7 @@ IS 'Statistics report generation function. Takes server name and time interval.'
 
 CREATE FUNCTION get_report(IN time_range tstzrange, IN description text = NULL,
   IN with_growth boolean = false,
-	IN db_exclude name[] = NULL)
+  IN db_exclude name[] = NULL)
 RETURNS text SET search_path=@extschema@ AS $$
   SELECT get_report(get_server_by_name('local'), start_id, end_id, description, with_growth, db_exclude)
   FROM get_sampleids_by_timerange(get_server_by_name('local'), time_range)
@@ -95,7 +95,7 @@ IS 'Statistics report generation function for local server. Takes time interval.
 
 CREATE FUNCTION get_report(IN server name, IN baseline varchar(25),
   IN description text = NULL, IN with_growth boolean = false,
-	IN db_exclude name[] = NULL)
+  IN db_exclude name[] = NULL)
 RETURNS text SET search_path=@extschema@ AS $$
   SELECT get_report(get_server_by_name(server), start_id, end_id, description, with_growth, db_exclude)
   FROM get_baseline_samples(get_server_by_name(server), baseline)
@@ -106,7 +106,7 @@ IS 'Statistics report generation function for server baseline. Takes server name
 
 CREATE FUNCTION get_report(IN baseline varchar(25), IN description text = NULL,
   IN with_growth boolean = false,
-	IN db_exclude name[] = NULL)
+  IN db_exclude name[] = NULL)
 RETURNS text SET search_path=@extschema@ AS $$
 BEGIN
     RETURN get_report('local',baseline,description,with_growth,db_exclude);
@@ -117,7 +117,7 @@ COMMENT ON FUNCTION get_report(IN baseline varchar(25),
 IS 'Statistics report generation function for local server baseline. Takes baseline name.';
 
 CREATE FUNCTION get_report_latest(IN server name = NULL,
-	IN db_exclude name[] = NULL)
+  IN db_exclude name[] = NULL)
 RETURNS text SET search_path=@extschema@ AS $$
   SELECT get_report(srv.server_id, s.sample_id, e.sample_id, NULL, false, db_exclude)
   FROM samples s JOIN samples e ON (s.server_id = e.server_id AND s.sample_id = e.sample_id - 1)

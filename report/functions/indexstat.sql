@@ -103,11 +103,11 @@ SET search_path=@extschema@ AS $$
         JOIN tablespaces_list ON (st.server_id, st.tablespaceid) = (tablespaces_list.server_id, tablespaces_list.tablespaceid)
         -- join main table for indexes on toast
         LEFT OUTER JOIN sample_stat_tables mtbl ON
-          (mtbl.server_id, mtbl.sample_id, mtbl.datid, mtbl.reltoastrelid) =
-          (st.server_id, st.sample_id, st.datid, st.relid)
+          (mtbl.server_id, mtbl.sample_id, mtbl.datid, mtbl.reltoastrelid, 't') =
+          (st.server_id, st.sample_id, st.datid, st.relid, st.relkind)
         LEFT OUTER JOIN tables_list mtl ON
-          (mtl.server_id, mtl.datid, mtl.relid) =
-          (mtbl.server_id, mtbl.datid, mtbl.relid)
+          (mtl.server_id, mtl.datid, mtl.relid, 't') =
+          (mtbl.server_id, mtbl.datid, mtbl.relid, st.relkind)
     WHERE st.server_id=sserver_id AND NOT sample_db.datistemplate AND st.sample_id BETWEEN start_id + 1 AND end_id
     GROUP BY st.datid,st.relid,st.indexrelid,st.indisunique,sample_db.datname,
       COALESCE(mtl.schemaname,st.schemaname),COALESCE(mtl.relname||'(TOAST)',st.relname), tablespaces_list.tablespacename,st.indexrelname

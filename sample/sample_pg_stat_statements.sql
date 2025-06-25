@@ -490,6 +490,11 @@ BEGIN
         stats_since         timestamp with time zone,
         minmax_stats_since  timestamp with time zone
       );
+    -- Whe should skip the following when no statements are available
+    IF NOT FOUND THEN
+      RETURN;
+    END IF;
+
     EXECUTE format('ANALYZE last_stat_statements_srv%1$s',
       sserver_id);
 

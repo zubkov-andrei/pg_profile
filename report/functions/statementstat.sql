@@ -204,7 +204,10 @@ RETURNS TABLE(
         sum(st.shared_blks_read)::bigint as shared_blks_read,
         (sum(st.shared_blks_read) * 100 / NULLIF(min(tot.shared_blks_read), 0))::float as read_pct,
         (sum(st.shared_blks_hit) + sum(st.shared_blks_read))::bigint as shared_blks_fetched,
-        ((sum(st.shared_blks_hit) + sum(st.shared_blks_read)) * 100 / NULLIF(min(tot.shared_blks_hit) + min(tot.shared_blks_read), 0))::float as shared_blks_fetched_pct,
+        ((sum(st.shared_blks_hit) + sum(st.shared_blks_read)) * 100 /
+          NULLIF(coalesce(min(tot.shared_blks_hit), 0) +
+            coalesce(min(tot.shared_blks_read), 0), 0))::float
+            as shared_blks_fetched_pct,
         sum(st.shared_blks_dirtied)::bigint as shared_blks_dirtied,
         (sum(st.shared_blks_dirtied) * 100 / NULLIF(min(tot.shared_blks_dirtied), 0))::float as dirtied_pct,
         sum(st.shared_blks_written)::bigint as shared_blks_written,
@@ -224,17 +227,24 @@ RETURNS TABLE(
         sum(st.local_blk_write_time)/1000::double precision as local_blk_write_time,
         sum(st.temp_blk_read_time)/1000::double precision as temp_blk_read_time,
         sum(st.temp_blk_write_time)/1000::double precision as temp_blk_write_time,
-        (sum(st.shared_blk_read_time) + sum(st.shared_blk_write_time) +
-          sum(st.local_blk_read_time) + sum(st.local_blk_write_time)
+        (coalesce(sum(st.shared_blk_read_time), 0) +
+          coalesce(sum(st.shared_blk_write_time), 0) +
+          coalesce(sum(st.local_blk_read_time), 0) +
+          coalesce(sum(st.local_blk_write_time), 0)
           )/1000::double precision as io_time,
-        (sum(st.shared_blk_read_time) + sum(st.shared_blk_write_time) +
-          sum(st.local_blk_read_time) + sum(st.local_blk_write_time)) * 100 /
-          NULLIF(min(tot.shared_blk_read_time) + min(tot.shared_blk_write_time) +
-            min(tot.local_blk_read_time) + min(tot.local_blk_write_time), 0) as io_time_pct,
+        (coalesce(sum(st.shared_blk_read_time), 0) +
+          coalesce(sum(st.shared_blk_write_time), 0) +
+          coalesce(sum(st.local_blk_read_time), 0) +
+          coalesce(sum(st.local_blk_write_time), 0)) * 100 /
+          NULLIF(coalesce(min(tot.shared_blk_read_time), 0) +
+            coalesce(min(tot.shared_blk_write_time), 0) +
+            coalesce(min(tot.local_blk_read_time), 0) +
+            coalesce(min(tot.local_blk_write_time), 0), 0) as io_time_pct,
         (sum(st.temp_blks_read) * 100 / NULLIF(min(tot.temp_blks_read), 0))::float as temp_read_total_pct,
         (sum(st.temp_blks_written) * 100 / NULLIF(min(tot.temp_blks_written), 0))::float as temp_write_total_pct,
         (sum(st.temp_blk_read_time) + sum(st.temp_blk_write_time)) * 100 /
-          NULLIF(min(tot.temp_blk_read_time) + min(tot.temp_blk_write_time),0) as temp_io_time_pct,
+          NULLIF(coalesce(min(tot.temp_blk_read_time), 0) +
+            coalesce(min(tot.temp_blk_write_time), 0), 0) as temp_io_time_pct,
         (sum(st.local_blks_read) * 100 / NULLIF(min(tot.local_blks_read), 0))::float as local_read_total_pct,
         (sum(st.local_blks_written) * 100 / NULLIF(min(tot.local_blks_written), 0))::float as local_write_total_pct,
         sum(st.wal_records)::bigint as wal_records,
@@ -292,7 +302,7 @@ RETURNS TABLE(
     dbname                  name,
     userid                  oid,
     username                name,
-    queryid                 bigint,
+    queryid                 text,
     hexqueryid              text,
     toplevel                boolean,
     hashed_ids              text,
@@ -392,7 +402,7 @@ SET search_path=@extschema@ AS $$
     st.dbname,
     st.userid,
     st.username,
-    st.queryid,
+    st.queryid::text,
     to_hex(st.queryid) AS hexqueryid,
     st.toplevel,
     left(encode(sha224(convert_to(
@@ -605,7 +615,7 @@ RETURNS TABLE(
     dbname                   name,
     userid                   oid,
     username                 name,
-    queryid                  bigint,
+    queryid                  text,
     hexqueryid               text,
     toplevel                 boolean,
     hashed_ids               text,
@@ -781,7 +791,7 @@ SET search_path=@extschema@ AS $$
     COALESCE(st1.dbname,st2.dbname) as dbname,
     COALESCE(st1.userid,st2.userid) as userid,
     COALESCE(st1.username,st2.username) as username,
-    COALESCE(st1.queryid,st2.queryid) AS queryid,
+    COALESCE(st1.queryid,st2.queryid)::text AS queryid,
     to_hex(COALESCE(st1.queryid,st2.queryid)) as hexqueryid,
     COALESCE(st1.toplevel,st2.toplevel) as toplevel,
     left(encode(sha224(convert_to(
