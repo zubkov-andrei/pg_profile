@@ -173,7 +173,46 @@ BEGIN
           FROM v_index_storage_parameters
           WHERE server_id = sserver_id AND
             sample_id BETWEEN start1_id AND end1_id
-          )
+          ),
+        'statements_workers_stats', (
+          SELECT count(*) > 0
+          FROM sample_statements
+          WHERE server_id = sserver_id AND greatest(parallel_workers_to_launch,parallel_workers_launched) > 0 AND
+            sample_id BETWEEN start1_id + 1 AND end1_id
+          ),
+        'wal_buffers_full', (
+          SELECT count(*) > 0
+          FROM sample_statements
+          WHERE server_id = sserver_id AND wal_buffers_full > 0 AND
+            sample_id BETWEEN start1_id + 1 AND end1_id
+          ),
+        'vacuum_time', (
+          SELECT count(*) > 0
+          FROM sample_stat_tables_total
+          WHERE server_id = sserver_id AND
+            total_vacuum_time + total_autovacuum_time > 0  AND
+            sample_id BETWEEN start1_id + 1 AND end1_id
+          ),
+        'analyze_time', (
+          SELECT count(*) > 0
+          FROM sample_stat_tables_total
+          WHERE server_id = sserver_id AND
+            total_analyze_time + total_autoanalyze_time > 0  AND
+            sample_id BETWEEN start1_id + 1 AND end1_id
+          ),
+        'db_parallel_workers', (
+          SELECT count(*) > 0
+          FROM sample_stat_database
+          WHERE server_id = sserver_id AND greatest(parallel_workers_to_launch, parallel_workers_launched) > 0 AND
+          sample_id BETWEEN start1_id + 1 AND end1_id
+          ),
+        'checkpoints_done_and_slru', (
+          SELECT COUNT(*) > 0
+          FROM sample_stat_cluster
+          WHERE server_id = sserver_id AND
+            slru_checkpoint + checkpoints_done > 0 AND
+            sample_id BETWEEN start1_id AND end1_id
+        )
       ),
       'report_properties',jsonb_build_object(
         'interval_duration_sec',
@@ -426,7 +465,54 @@ BEGIN
           FROM v_index_storage_parameters
           WHERE server_id = sserver_id AND
             sample_id BETWEEN start1_id AND end1_id
-          )
+          ),
+        'statements_workers_stats', (
+          SELECT count(*) > 0
+          FROM sample_statements
+          WHERE server_id = sserver_id AND
+            greatest(parallel_workers_to_launch, parallel_workers_launched) > 0 AND
+            (sample_id BETWEEN start1_id + 1 AND end1_id OR
+            sample_id BETWEEN start2_id + 1 AND end2_id)
+          ),
+        'wal_buffers_full', (
+          SELECT count(*) > 0
+          FROM sample_statements
+          WHERE server_id = sserver_id AND wal_buffers_full > 0 AND
+            (sample_id BETWEEN start1_id + 1 AND end1_id OR
+            sample_id BETWEEN start2_id + 1 AND end2_id)
+          ),
+        'vacuum_time', (
+          SELECT count(*) > 0
+          FROM sample_stat_tables_total
+          WHERE server_id = sserver_id AND
+            total_vacuum_time + total_autovacuum_time > 0  AND
+            (sample_id BETWEEN start1_id + 1 AND end1_id OR
+            sample_id BETWEEN start2_id + 1 AND end2_id)
+          ),
+        'analyze_time', (
+          SELECT count(*) > 0
+          FROM sample_stat_tables_total
+          WHERE server_id = sserver_id AND
+            total_analyze_time + total_autoanalyze_time > 0  AND
+            (sample_id BETWEEN start1_id + 1 AND end1_id OR
+            sample_id BETWEEN start2_id + 1 AND end2_id)
+          ),
+        'db_parallel_workers', (
+          SELECT count(*) > 0
+          FROM sample_stat_database
+          WHERE server_id = sserver_id AND greatest(parallel_workers_to_launch, parallel_workers_launched) > 0 AND
+            (sample_id BETWEEN start1_id + 1 AND end1_id OR
+            sample_id BETWEEN start2_id + 1 AND end2_id)
+          ),
+        'checkpoints_done_and_slru', (
+          SELECT COUNT(*) > 0
+          FROM sample_stat_cluster
+          WHERE server_id = sserver_id AND
+            slru_checkpoint + checkpoints_done > 0 AND (
+              sample_id BETWEEN start1_id AND end1_id OR
+              sample_id BETWEEN start2_id AND end2_id
+            )
+        )
       ),
       'report_properties', jsonb_build_object(
         'interval1_duration_sec',
@@ -747,7 +833,8 @@ BEGIN
           ord_shared_blocks_written,
           ord_wal,
           ord_temp,
-          ord_jit
+          ord_jit,
+          ord_wrkrs_cnt
         ) <= (report_context #>> '{report_properties,topn}')::numeric;
     END IF;
 
@@ -786,8 +873,10 @@ BEGIN
         ord_seq_scan,
         ord_upd,
         ord_growth,
-        ord_vac,
-        ord_anl
+        ord_vac_cnt,
+        ord_anl_cnt,
+        ord_vac_time,
+        ord_anl_time
       ) <= (report_context #>> '{report_properties,topn}')::numeric;
 
     SELECT coalesce(jsonb_set(datasets, '{top_io_tables}', jsonb_agg(to_jsonb(dt))), datasets)
@@ -1047,7 +1136,8 @@ BEGIN
           ord_shared_blocks_written,
           ord_wal,
           ord_temp,
-          ord_jit
+          ord_jit,
+          ord_wrkrs_cnt
         ) <= (report_context #>> '{report_properties,topn}')::numeric;
     END IF;
 
@@ -1089,8 +1179,10 @@ BEGIN
         ord_seq_scan,
         ord_upd,
         ord_growth,
-        ord_vac,
-        ord_anl
+        ord_vac_cnt,
+        ord_anl_cnt,
+        ord_vac_time,
+        ord_anl_time
       ) <= (report_context #>> '{report_properties,topn}')::numeric;
 
     SELECT coalesce(jsonb_set(datasets, '{top_io_tables}', jsonb_agg(to_jsonb(dt))), datasets)

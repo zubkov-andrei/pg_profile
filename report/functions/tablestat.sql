@@ -23,6 +23,10 @@ RETURNS TABLE(
     autovacuum_count    bigint,
     analyze_count       bigint,
     autoanalyze_count   bigint,
+    total_vacuum_time       double precision,
+    total_autovacuum_time   double precision,
+    total_analyze_time      double precision,
+    total_autoanalyze_time  double precision,
     growth              bigint,
     relpagegrowth_bytes bigint,
     seqscan_bytes_relsize bigint,
@@ -51,6 +55,10 @@ RETURNS TABLE(
         sum(st.autovacuum_count)::bigint AS autovacuum_count,
         sum(st.analyze_count)::bigint AS analyze_count,
         sum(st.autoanalyze_count)::bigint AS autoanalyze_count,
+        sum(total_vacuum_time)::double precision AS total_vacuum_time,
+        sum(total_autovacuum_time)::double precision AS total_autovacuum_time,
+        sum(total_analyze_time)::double precision AS total_analyze_time,
+        sum(total_autoanalyze_time)::double precision AS total_autoanalyze_time,
         sum(st.relsize_diff)::bigint AS growth,
         sum(st.relpages_bytes_diff)::bigint AS relpagegrowth_bytes,
         CASE WHEN bool_and(COALESCE(st.seq_scan, 0) = 0 OR st.relsize IS NOT NULL) THEN
@@ -90,6 +98,10 @@ RETURNS TABLE(
     autovacuum_count    bigint,
     analyze_count       bigint,
     autoanalyze_count   bigint,
+    total_vacuum_time       double precision,
+    total_autovacuum_time   double precision,
+    total_analyze_time      double precision,
+    total_autoanalyze_time  double precision,
     growth              bigint,
     relpagegrowth_bytes bigint,
     seqscan_bytes_relsize bigint,
@@ -117,6 +129,10 @@ RETURNS TABLE(
         sum(st.autovacuum_count)::bigint AS autovacuum_count,
         sum(st.analyze_count)::bigint AS analyze_count,
         sum(st.autoanalyze_count)::bigint AS autoanalyze_count,
+        sum(total_vacuum_time)::double precision AS total_vacuum_time,
+        sum(total_autovacuum_time)::double precision AS total_autovacuum_time,
+        sum(total_analyze_time)::double precision AS total_analyze_time,
+        sum(total_autoanalyze_time)::double precision AS total_autoanalyze_time,
         sum(st.relsize_diff)::bigint AS growth,
         sum(st.relpages_bytes_diff)::bigint AS relpagegrowth_bytes,
         CASE WHEN bool_and(COALESCE(st.seq_scan, 0) = 0 OR st.relsize IS NOT NULL) THEN
@@ -159,6 +175,10 @@ RETURNS TABLE(
     autovacuum_count          bigint,
     analyze_count             bigint,
     autoanalyze_count         bigint,
+    total_vacuum_time         double precision,
+    total_autovacuum_time     double precision,
+    total_analyze_time        double precision,
+    total_autoanalyze_time    double precision,
 
     toastseq_scan             bigint,
     toastseq_tup_read         bigint,
@@ -174,6 +194,10 @@ RETURNS TABLE(
     toastautovacuum_count     bigint,
     toastanalyze_count        bigint,
     toastautoanalyze_count    bigint,
+    toasttotal_vacuum_time       double precision,
+    toasttotal_autovacuum_time   double precision,
+    toasttotal_analyze_time      double precision,
+    toasttotal_autoanalyze_time  double precision,
 
     growth_pretty             text,
     toastgrowth_pretty        text,
@@ -187,8 +211,10 @@ RETURNS TABLE(
     ord_upd                   integer,
     ord_upd_np                integer,
     ord_growth                integer,
-    ord_vac                   integer,
-    ord_anl                   integer
+    ord_vac_cnt               integer,
+    ord_vac_time              integer,
+    ord_anl_cnt               integer,
+    ord_anl_time              integer
   )
 SET search_path=@extschema@ AS $$
   WITH rsa AS (
@@ -245,6 +271,10 @@ SET search_path=@extschema@ AS $$
     NULLIF(rel.autovacuum_count, 0) AS autovacuum_count,
     NULLIF(rel.analyze_count, 0) AS analyze_count,
     NULLIF(rel.autoanalyze_count, 0) AS autoanalyze_count,
+    NULLIF(rel.total_vacuum_time, 0) AS total_vacuum_time,
+    NULLIF(rel.total_autovacuum_time, 0) AS total_autovacuum_time,
+    NULLIF(rel.total_analyze_time, 0) AS total_analyze_time,
+    NULLIF(rel.total_autoanalyze_time, 0) AS total_autoanalyze_time,
     
     NULLIF(toast.seq_scan, 0) AS toastseq_scan,
     NULLIF(toast.seq_tup_read, 0) AS toastseq_tup_read,
@@ -260,6 +290,10 @@ SET search_path=@extschema@ AS $$
     NULLIF(toast.autovacuum_count, 0) AS toastautovacuum_count,
     NULLIF(toast.analyze_count, 0) AS toastanalyze_count,
     NULLIF(toast.autoanalyze_count, 0) AS toastautoanalyze_count,
+    NULLIF(toast.total_vacuum_time, 0) AS toasttotal_vacuum_time,
+    NULLIF(toast.total_autovacuum_time, 0) AS toasttotal_autovacuum_time,
+    NULLIF(toast.total_analyze_time, 0) AS toasttotal_analyze_time,
+    NULLIF(toast.total_autoanalyze_time, 0) AS toasttotal_autoanalyze_time,
     
     CASE WHEN relrs.growth_avail THEN
       pg_size_pretty(NULLIF(rel.growth, 0))
@@ -361,7 +395,17 @@ SET search_path=@extschema@ AS $$
         DESC NULLS LAST,
         rel.datid,
         rel.relid)::integer
-    ELSE NULL END AS ord_vac,
+    ELSE NULL END AS ord_vac_cnt,
+
+    CASE WHEN
+      COALESCE(rel.total_vacuum_time, 0) + COALESCE(rel.total_autovacuum_time, 0) > 0
+    THEN
+      row_number() OVER (ORDER BY
+        COALESCE(rel.total_vacuum_time, 0) + COALESCE(rel.total_autovacuum_time, 0)
+        DESC NULLS LAST,
+        rel.datid,
+        rel.relid)::integer
+    ELSE NULL END AS ord_vac_time,
 
     CASE WHEN
       COALESCE(rel.analyze_count, 0) + COALESCE(rel.autoanalyze_count, 0) > 0
@@ -371,7 +415,17 @@ SET search_path=@extschema@ AS $$
         DESC NULLS LAST,
         rel.datid,
         rel.relid)::integer
-    ELSE NULL END AS ord_anl
+    ELSE NULL END AS ord_anl_cnt,
+
+    CASE WHEN
+      COALESCE(rel.total_analyze_time, 0) + COALESCE(rel.total_autoanalyze_time, 0) > 0
+    THEN
+      row_number() OVER (ORDER BY
+        COALESCE(rel.total_analyze_time, 0) + COALESCE(rel.total_autoanalyze_time, 0)
+        DESC NULLS LAST,
+        rel.datid,
+        rel.relid)::integer
+    ELSE NULL END AS ord_anl_time
   FROM (
       top_tables(sserver_id, start_id, end_id) AS rel
       JOIN rsa AS relrs USING (datid, relid)
@@ -409,6 +463,10 @@ RETURNS TABLE(
     autovacuum_count1         bigint,
     analyze_count1            bigint,
     autoanalyze_count1        bigint,
+    total_vacuum_time1        double precision,
+    total_autovacuum_time1    double precision,
+    total_analyze_time1       double precision,
+    total_autoanalyze_time1   double precision,
 
     toastseq_scan1            bigint,
     toastseq_tup_read1        bigint,
@@ -424,6 +482,10 @@ RETURNS TABLE(
     toastautovacuum_count1    bigint,
     toastanalyze_count1       bigint,
     toastautoanalyze_count1   bigint,
+    toasttotal_vacuum_time1        double precision,
+    toasttotal_autovacuum_time1    double precision,
+    toasttotal_analyze_time1       double precision,
+    toasttotal_autoanalyze_time1   double precision,
 
     growth_pretty1            text,
     toastgrowth_pretty1       text,
@@ -446,6 +508,10 @@ RETURNS TABLE(
     autovacuum_count2         bigint,
     analyze_count2            bigint,
     autoanalyze_count2        bigint,
+    total_vacuum_time2        double precision,
+    total_autovacuum_time2    double precision,
+    total_analyze_time2       double precision,
+    total_autoanalyze_time2   double precision,
 
     toastseq_scan2            bigint,
     toastseq_tup_read2        bigint,
@@ -461,6 +527,10 @@ RETURNS TABLE(
     toastautovacuum_count2    bigint,
     toastanalyze_count2       bigint,
     toastautoanalyze_count2   bigint,
+    toasttotal_vacuum_time2        double precision,
+    toasttotal_autovacuum_time2    double precision,
+    toasttotal_analyze_time2       double precision,
+    toasttotal_autoanalyze_time2   double precision,
 
     growth_pretty2            text,
     toastgrowth_pretty2       text,
@@ -474,8 +544,10 @@ RETURNS TABLE(
     ord_upd                   integer,
     ord_upd_np                integer,
     ord_growth                integer,
-    ord_vac                   integer,
-    ord_anl                   integer
+    ord_vac_cnt               integer,
+    ord_vac_time              integer,
+    ord_anl_cnt               integer,
+    ord_anl_time              integer
   )
 SET search_path=@extschema@ AS $$
   WITH rsa1 AS (
@@ -560,6 +632,10 @@ SET search_path=@extschema@ AS $$
     NULLIF(rel1.autovacuum_count, 0) AS autovacuum_count1,
     NULLIF(rel1.analyze_count, 0) AS analyze_count1,
     NULLIF(rel1.autoanalyze_count, 0) AS autoanalyze_count1,
+    NULLIF(rel1.total_vacuum_time, 0) AS total_vacuum_time1,
+    NULLIF(rel1.total_autovacuum_time, 0) AS total_autovacuum_time1,
+    NULLIF(rel1.total_analyze_time, 0) AS total_analyze_time1,
+    NULLIF(rel1.total_autoanalyze_time, 0) AS total_autoanalyze_time1,
     
     NULLIF(toast1.seq_scan, 0) AS toastseq_scan1,
     NULLIF(toast1.seq_tup_read, 0) AS toastseq_tup_read1,
@@ -575,6 +651,10 @@ SET search_path=@extschema@ AS $$
     NULLIF(toast1.autovacuum_count, 0) AS toastautovacuum_count1,
     NULLIF(toast1.analyze_count, 0) AS toastanalyze_count1,
     NULLIF(toast1.autoanalyze_count, 0) AS toastautoanalyze_count1,
+    NULLIF(toast1.total_vacuum_time, 0) AS toasttotal_vacuum_time1,
+    NULLIF(toast1.total_autovacuum_time, 0) AS toasttotal_autovacuum_time_count1,
+    NULLIF(toast1.total_analyze_time, 0) AS toasttotal_analyze_time1,
+    NULLIF(toast1.total_autoanalyze_time, 0) AS toasttotal_autoanalyze_time1,
     
     CASE WHEN relrs1.growth_avail THEN
       pg_size_pretty(NULLIF(rel1.growth, 0))
@@ -622,6 +702,10 @@ SET search_path=@extschema@ AS $$
     NULLIF(rel2.autovacuum_count, 0) AS autovacuum_count2,
     NULLIF(rel2.analyze_count, 0) AS analyze_count2,
     NULLIF(rel2.autoanalyze_count, 0) AS autoanalyze_count2,
+    NULLIF(rel2.total_vacuum_time, 0) AS total_vacuum_time2,
+    NULLIF(rel2.total_autovacuum_time, 0) AS total_autovacuum_time2,
+    NULLIF(rel2.total_analyze_time, 0) AS total_analyze_time2,
+    NULLIF(rel2.total_autoanalyze_time, 0) AS total_autoanalyze_time2,
     
     NULLIF(toast2.seq_scan, 0) AS toastseq_scan2,
     NULLIF(toast2.seq_tup_read, 0) AS toastseq_tup_read2,
@@ -637,6 +721,10 @@ SET search_path=@extschema@ AS $$
     NULLIF(toast2.autovacuum_count, 0) AS toastautovacuum_count2,
     NULLIF(toast2.analyze_count, 0) AS toastanalyze_count2,
     NULLIF(toast2.autoanalyze_count, 0) AS toastautoanalyze_count2,
+    NULLIF(toast2.total_vacuum_time, 0) AS toasttotal_vacuum_time2,
+    NULLIF(toast2.total_autovacuum_time, 0) AS toasttotal_autovacuum_time_count2,
+    NULLIF(toast2.total_analyze_time, 0) AS toasttotal_analyze_time2,
+    NULLIF(toast2.total_autoanalyze_time, 0) AS toasttotal_autoanalyze_time2,
     
     CASE WHEN relrs2.growth_avail THEN
       pg_size_pretty(NULLIF(rel2.growth, 0))
@@ -760,7 +848,19 @@ SET search_path=@extschema@ AS $$
         DESC NULLS LAST,
         COALESCE(rel1.datid, rel2.datid),
         COALESCE(rel1.relid, rel2.relid))::integer
-    ELSE NULL END AS ord_vac,
+    ELSE NULL END AS ord_vac_cnt,
+
+    CASE WHEN
+      COALESCE(rel1.total_vacuum_time, 0) + COALESCE(rel1.total_autovacuum_time, 0) +
+      COALESCE(rel2.total_vacuum_time, 0) + COALESCE(rel2.total_autovacuum_time, 0)> 0
+    THEN
+      row_number() OVER (ORDER BY
+        COALESCE(rel1.total_vacuum_time, 0) + COALESCE(rel1.total_autovacuum_time, 0) +
+        COALESCE(rel2.total_vacuum_time, 0) + COALESCE(rel2.total_autovacuum_time, 0)
+        DESC NULLS LAST,
+        COALESCE(rel1.datid, rel2.datid),
+        COALESCE(rel1.relid, rel2.relid))::integer
+    ELSE NULL END AS ord_vac_time,
 
     CASE WHEN
       COALESCE(rel1.analyze_count, 0) + COALESCE(rel1.autoanalyze_count, 0) +
@@ -772,7 +872,19 @@ SET search_path=@extschema@ AS $$
         DESC NULLS LAST,
         COALESCE(rel1.datid, rel2.datid),
         COALESCE(rel1.relid, rel2.relid))::integer
-    ELSE NULL END AS ord_anl
+    ELSE NULL END AS ord_anl_cnt,
+
+    CASE WHEN
+      COALESCE(rel1.total_analyze_time, 0) + COALESCE(rel1.total_autoanalyze_time, 0) +
+      COALESCE(rel2.total_analyze_time, 0) + COALESCE(rel2.total_autoanalyze_time, 0)> 0
+    THEN
+      row_number() OVER (ORDER BY
+        COALESCE(rel1.total_analyze_time, 0) + COALESCE(rel1.total_autoanalyze_time, 0) +
+        COALESCE(rel2.total_analyze_time, 0) + COALESCE(rel2.total_autoanalyze_time, 0)
+        DESC NULLS LAST,
+        COALESCE(rel1.datid, rel2.datid),
+        COALESCE(rel1.relid, rel2.relid))::integer
+    ELSE NULL END AS ord_anl_time
   FROM (
     -- Interval 1
       (

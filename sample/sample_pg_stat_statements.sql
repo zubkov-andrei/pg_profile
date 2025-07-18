@@ -112,6 +112,7 @@ BEGIN
           'NULL as wal_records,'
           'NULL as wal_fpi,'
           'NULL as wal_bytes, '
+          'NULL as wal_buffers_full, '
           'NULL as jit_functions, '
           'NULL as jit_generation_time, '
           'NULL as jit_inlining_count, '
@@ -126,6 +127,8 @@ BEGIN
           'NULL as local_blk_write_time, '
           'NULL as jit_deform_count, '
           'NULL as jit_deform_time, '
+          'NULL as parallel_workers_to_launch, '
+          'NULL as parallel_workers_launched, '
           'NULL as stats_since, '
           'NULL as minmax_stats_since '
         );
@@ -161,6 +164,7 @@ BEGIN
           'st.wal_records,'
           'st.wal_fpi,'
           'st.wal_bytes, '
+          'NULL as wal_buffers_full, '
           'NULL as jit_functions, '
           'NULL as jit_generation_time, '
           'NULL as jit_inlining_count, '
@@ -175,6 +179,8 @@ BEGIN
           'NULL as local_blk_write_time, '
           'NULL as jit_deform_count, '
           'NULL as jit_deform_time, '
+          'NULL as parallel_workers_to_launch, '
+          'NULL as parallel_workers_launched, '
           'NULL as stats_since, '
           'NULL as minmax_stats_since '
         );
@@ -210,6 +216,7 @@ BEGIN
           'st.wal_records,'
           'st.wal_fpi,'
           'st.wal_bytes, '
+          'NULL as wal_buffers_full, '
           'NULL as jit_functions, '
           'NULL as jit_generation_time, '
           'NULL as jit_inlining_count, '
@@ -224,6 +231,8 @@ BEGIN
           'NULL as local_blk_write_time, '
           'NULL as jit_deform_count, '
           'NULL as jit_deform_time, '
+          'NULL as parallel_workers_to_launch, '
+          'NULL as parallel_workers_launched, '
           'NULL as stats_since, '
           'NULL as minmax_stats_since '
         );
@@ -259,6 +268,7 @@ BEGIN
           'st.wal_records,'
           'st.wal_fpi,'
           'st.wal_bytes, '
+          'NULL as wal_buffers_full, '
           'st.jit_functions, '
           'st.jit_generation_time, '
           'st.jit_inlining_count, '
@@ -273,6 +283,8 @@ BEGIN
           'NULL as local_blk_write_time, '
           'NULL as jit_deform_count, '
           'NULL as jit_deform_time, '
+          'NULL as parallel_workers_to_launch, '
+          'NULL as parallel_workers_launched, '
           'NULL as stats_since, '
           'NULL as minmax_stats_since '
         );
@@ -308,6 +320,7 @@ BEGIN
           'st.wal_records,'
           'st.wal_fpi,'
           'st.wal_bytes, '
+          'NULL as wal_buffers_full, '
           'st.jit_functions, '
           'st.jit_generation_time, '
           'st.jit_inlining_count, '
@@ -322,6 +335,60 @@ BEGIN
           'st.local_blk_write_time, '
           'st.jit_deform_count, '
           'st.jit_deform_time, '
+          'NULL as parallel_workers_to_launch, '
+          'NULL as parallel_workers_launched, '
+          'st.stats_since, '
+          'st.minmax_stats_since '
+        );
+      WHEN '1.12'
+      THEN
+        st_query := replace(st_query, '{statements_fields}',
+          'st.toplevel,'
+          'st.plans,'
+          'st.total_plan_time,'
+          'st.min_plan_time,'
+          'st.max_plan_time,'
+          'st.mean_plan_time,'
+          'st.stddev_plan_time,'
+          'st.calls,'
+          'st.total_exec_time,'
+          'st.min_exec_time,'
+          'st.max_exec_time,'
+          'st.mean_exec_time,'
+          'st.stddev_exec_time,'
+          'st.rows,'
+          'st.shared_blks_hit,'
+          'st.shared_blks_read,'
+          'st.shared_blks_dirtied,'
+          'st.shared_blks_written,'
+          'st.local_blks_hit,'
+          'st.local_blks_read,'
+          'st.local_blks_dirtied,'
+          'st.local_blks_written,'
+          'st.temp_blks_read,'
+          'st.temp_blks_written,'
+          'st.shared_blk_read_time,'
+          'st.shared_blk_write_time,'
+          'st.wal_records,'
+          'st.wal_fpi,'
+          'st.wal_bytes, '
+          'st.wal_buffers_full, '
+          'st.jit_functions, '
+          'st.jit_generation_time, '
+          'st.jit_inlining_count, '
+          'st.jit_inlining_time, '
+          'st.jit_optimization_count, '
+          'st.jit_optimization_time, '
+          'st.jit_emission_count, '
+          'st.jit_emission_time, '
+          'st.temp_blk_read_time, '
+          'st.temp_blk_write_time, '
+          'st.local_blk_read_time, '
+          'st.local_blk_write_time, '
+          'st.jit_deform_count, '
+          'st.jit_deform_time, '
+          'st.parallel_workers_to_launch, '
+          'st.parallel_workers_launched, '
           'st.stats_since, '
           'st.minmax_stats_since '
         );
@@ -365,6 +432,7 @@ BEGIN
         wal_records,
         wal_fpi,
         wal_bytes,
+        wal_buffers_full,
         toplevel,
         in_sample,
         jit_functions,
@@ -381,6 +449,8 @@ BEGIN
         local_blk_write_time,
         jit_deform_count,
         jit_deform_time,
+        parallel_workers_to_launch,
+        parallel_workers_launched,
         stats_since,
         minmax_stats_since
       )
@@ -419,6 +489,7 @@ BEGIN
       dbl.wal_records,
       dbl.wal_fpi,
       dbl.wal_bytes,
+      dbl.wal_buffers_full,
       dbl.toplevel,
       false,
       dbl.jit_functions,
@@ -435,6 +506,8 @@ BEGIN
       dbl.local_blk_write_time,
       dbl.jit_deform_count,
       dbl.jit_deform_time,
+      dbl.parallel_workers_to_launch,
+      dbl.parallel_workers_launched,
       dbl.stats_since,
       dbl.minmax_stats_since
     FROM dblink('server_connection',st_query)
@@ -473,6 +546,7 @@ BEGIN
         wal_records         bigint,
         wal_fpi             bigint,
         wal_bytes           numeric,
+        wal_buffers_full    bigint,
         jit_functions       bigint,
         jit_generation_time double precision,
         jit_inlining_count  bigint,
@@ -487,6 +561,8 @@ BEGIN
         local_blk_write_time  double precision,
         jit_deform_count    bigint,
         jit_deform_time     double precision,
+        parallel_workers_to_launch  bigint,
+        parallel_workers_launched   bigint,
         stats_since         timestamp with time zone,
         minmax_stats_since  timestamp with time zone
       );
@@ -752,7 +828,7 @@ BEGIN
           $o$regexp_replace(query,$i$\s+$i$,$i$ $i$,$i$g$i$) AS query $o$ ||
           'FROM %1$I.pg_stat_statements(true) '
           'WHERE queryid IN (%s)';
-      WHEN '1.9', '1.10', '1.11'
+      WHEN '1.9', '1.10', '1.11', '1.12'
       THEN
         st_query :=
           'SELECT userid, dbid, toplevel, queryid, '||
@@ -926,7 +1002,7 @@ BEGIN
         IF (properties #> '{properties,statements_reset}') = to_jsonb(true) THEN
           st_query := 'SELECT %1$I.pg_stat_statements_reset() IS NULL';
         END IF;
-      WHEN '1.11'
+      WHEN '1.11','1.12'
       THEN
         IF (properties #> '{properties,statements_reset}')::boolean THEN
           st_query := 'SELECT %1$I.pg_stat_statements_reset() IS NULL';
@@ -1026,7 +1102,12 @@ SET search_path=@extschema@ AS $$
 
       CASE WHEN cur.wal_bytes - COALESCE(lst.wal_bytes, 0) > 0 THEN
         row_number() over (ORDER BY cur.wal_bytes - COALESCE(lst.wal_bytes, 0) DESC NULLS LAST)
-      ELSE NULL END AS wal_rank
+      ELSE NULL END AS wal_rank,
+      CASE WHEN cur.parallel_workers_to_launch + cur.parallel_workers_launched -
+      COALESCE(lst.parallel_workers_to_launch, 0) - COALESCE(lst.parallel_workers_launched, 0) > 0 THEN
+        row_number() over (ORDER BY cur.parallel_workers_to_launch + cur.parallel_workers_launched -
+          COALESCE(lst.parallel_workers_to_launch, 0) - COALESCE(lst.parallel_workers_launched, 0) DESC NULLS LAST)
+      ELSE NULL END AS wrkrs_rank
     FROM
       last_stat_statements cur
       -- In case of statements in already dropped database
@@ -1060,7 +1141,8 @@ SET search_path=@extschema@ AS $$
         written_rank,
         io_temp_rank,
         tempw_rank,
-        tempr_rank
+        tempr_rank,
+        wrkrs_rank
       ) <= topn
     )
     AND
@@ -1202,6 +1284,7 @@ SET search_path=@extschema@ AS $$
     wal_records,
     wal_fpi,
     wal_bytes,
+    wal_buffers_full,
     jit_functions,
     jit_generation_time,
     jit_inlining_count,
@@ -1216,6 +1299,8 @@ SET search_path=@extschema@ AS $$
     local_blk_write_time,
     jit_deform_count,
     jit_deform_time,
+    parallel_workers_to_launch,
+    parallel_workers_launched,
     stats_since,
     minmax_stats_since
   )
@@ -1279,6 +1364,7 @@ SET search_path=@extschema@ AS $$
     cur.wal_records - COALESCE(lst.wal_records, 0),
     cur.wal_fpi - COALESCE(lst.wal_fpi, 0),
     cur.wal_bytes - COALESCE(lst.wal_bytes, 0),
+    cur.wal_buffers_full - COALESCE(lst.wal_buffers_full, 0),
     cur.jit_functions - COALESCE(lst.jit_functions, 0),
     cur.jit_generation_time - COALESCE(lst.jit_generation_time, 0),
     cur.jit_inlining_count - COALESCE(lst.jit_inlining_count, 0),
@@ -1293,6 +1379,8 @@ SET search_path=@extschema@ AS $$
     cur.local_blk_write_time - COALESCE(lst.local_blk_write_time, 0),
     cur.jit_deform_count - COALESCE(lst.jit_deform_count, 0),
     cur.jit_deform_time - COALESCE(lst.jit_deform_time, 0),
+    cur.parallel_workers_to_launch - COALESCE(lst.parallel_workers_to_launch, 0),
+    cur.parallel_workers_launched - COALESCE(lst.parallel_workers_launched, 0),
     cur.stats_since,
     cur.minmax_stats_since
   FROM
@@ -1337,6 +1425,7 @@ SET search_path=@extschema@ AS $$
     wal_records,
     wal_fpi,
     wal_bytes,
+    wal_buffers_full,
     statements,
     jit_functions,
     jit_generation_time,
@@ -1381,6 +1470,7 @@ SET search_path=@extschema@ AS $$
     sum(cur.wal_records - COALESCE(lst.wal_records, 0)),
     sum(cur.wal_fpi - COALESCE(lst.wal_fpi, 0)),
     sum(cur.wal_bytes - COALESCE(lst.wal_bytes, 0)),
+    sum(cur.wal_buffers_full - COALESCE(lst.wal_buffers_full, 0)),
     count(nullif(cur.calls - COALESCE(lst.calls, 0), 0)),
     sum(cur.jit_functions - COALESCE(lst.jit_functions, 0)),
     sum(cur.jit_generation_time - COALESCE(lst.jit_generation_time, 0)),

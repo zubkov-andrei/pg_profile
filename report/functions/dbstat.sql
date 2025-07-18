@@ -57,6 +57,8 @@ RETURNS TABLE(
     sessions_abandoned    bigint,
     sessions_fatal        bigint,
     sessions_killed       bigint,
+    parallel_workers_to_launch  bigint,
+    parallel_workers_launched   bigint,
     last_datsize          bigint
   )
 SET search_path=@extschema@ AS $$
@@ -88,6 +90,8 @@ SET search_path=@extschema@ AS $$
         sum(sessions_abandoned)::bigint AS sessions_abandoned,
         sum(sessions_fatal)::bigint AS sessions_fatal,
         sum(sessions_killed)::bigint AS sessions_killed,
+        sum(parallel_workers_to_launch)::bigint AS parallel_workers_to_launch,
+        sum(parallel_workers_launched)::bigint AS parallel_workers_launched,
         max(datsize) FILTER (WHERE sample_id = end_id) AS last_datsize
     FROM sample_stat_database st
     WHERE st.server_id = sserver_id AND NOT datistemplate AND st.sample_id BETWEEN start_id + 1 AND end_id
@@ -124,6 +128,8 @@ RETURNS TABLE(
     sessions_abandoned    numeric,
     sessions_fatal        numeric,
     sessions_killed       numeric,
+    parallel_workers_to_launch  numeric,
+    parallel_workers_launched   numeric,
     -- ordering fields
     ord_db                integer
 ) AS $$
@@ -156,6 +162,8 @@ RETURNS TABLE(
         NULLIF(sum(st.sessions_abandoned), 0) AS sessions_abandoned,
         NULLIF(sum(st.sessions_fatal), 0) AS sessions_fatal,
         NULLIF(sum(st.sessions_killed), 0) AS sessions_killed,
+        NULLIF(sum(st.parallel_workers_to_launch), 0) AS parallel_workers_to_launch,
+        NULLIF(sum(st.parallel_workers_launched), 0) AS parallel_workers_launched,
         -- ordering fields
         row_number() OVER (ORDER BY st.dbname NULLS LAST)::integer AS ord_db
     FROM dbstats(sserver_id, start_id, end_id) st
@@ -193,6 +201,8 @@ RETURNS TABLE(
     sessions_abandoned1     numeric,
     sessions_fatal1         numeric,
     sessions_killed1        numeric,
+    parallel_workers_to_launch1 numeric,
+    parallel_workers_launched1  numeric,
     xact_commit2            numeric,
     xact_rollback2          numeric,
     blks_read2              numeric,
@@ -219,6 +229,8 @@ RETURNS TABLE(
     sessions_abandoned2     numeric,
     sessions_fatal2         numeric,
     sessions_killed2        numeric,
+    parallel_workers_to_launch2 numeric,
+    parallel_workers_launched2  numeric,
     -- ordering fields
     ord_db                  integer
 ) AS $$
@@ -251,6 +263,8 @@ RETURNS TABLE(
         NULLIF(sum(dbs1.sessions_abandoned), 0) AS sessions_abandoned1,
         NULLIF(sum(dbs1.sessions_fatal), 0) AS sessions_fatal1,
         NULLIF(sum(dbs1.sessions_killed), 0) AS sessions_killed1,
+        NULLIF(sum(dbs1.parallel_workers_to_launch), 0) AS parallel_workers_to_launch1,
+        NULLIF(sum(dbs1.parallel_workers_launched), 0) AS parallel_workers_launched1,
         NULLIF(sum(dbs2.xact_commit), 0) AS xact_commit2,
         NULLIF(sum(dbs2.xact_rollback), 0) AS xact_rollback2,
         NULLIF(sum(dbs2.blks_read), 0) AS blks_read2,
@@ -277,6 +291,8 @@ RETURNS TABLE(
         NULLIF(sum(dbs2.sessions_abandoned), 0) AS sessions_abandoned2,
         NULLIF(sum(dbs2.sessions_fatal), 0) AS sessions_fatal2,
         NULLIF(sum(dbs2.sessions_killed), 0) AS sessions_killed2,
+        NULLIF(sum(dbs2.parallel_workers_to_launch), 0) AS parallel_workers_to_launch2,
+        NULLIF(sum(dbs2.parallel_workers_launched), 0) AS parallel_workers_launched2,
         -- ordering fields
         row_number() OVER (ORDER BY COALESCE(dbs1.dbname,dbs2.dbname) NULLS LAST)::integer AS ord_db
     FROM dbstats(sserver_id,start1_id,end1_id) dbs1

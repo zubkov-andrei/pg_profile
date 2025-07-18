@@ -740,17 +740,19 @@ BEGIN
         FETCH data INTO datarow;
         EXIT WHEN NOT FOUND;
         INSERT INTO sample_stat_cluster(server_id,sample_id,checkpoints_timed,
-          checkpoints_req,checkpoint_write_time,checkpoint_sync_time,buffers_checkpoint,
-          buffers_clean,maxwritten_clean,buffers_backend,buffers_backend_fsync,
+          checkpoints_req,checkpoints_done,checkpoint_write_time,checkpoint_sync_time,buffers_checkpoint,
+          slru_checkpoint,buffers_clean,maxwritten_clean,buffers_backend,buffers_backend_fsync,
           buffers_alloc,stats_reset,wal_size,wal_lsn,in_recovery)
         SELECT
           (srv_map ->> dr.server_id::text)::integer,
           dr.sample_id,
           dr.checkpoints_timed,
           dr.checkpoints_req,
+          dr.checkpoints_done,
           dr.checkpoint_write_time,
           dr.checkpoint_sync_time,
           dr.buffers_checkpoint,
+          dr.slru_checkpoint,
           dr.buffers_clean,
           dr.maxwritten_clean,
           dr.buffers_backend,
@@ -765,9 +767,11 @@ BEGIN
             sample_id              integer,
             checkpoints_timed      bigint,
             checkpoints_req        bigint,
+            checkpoints_done       bigint,
             checkpoint_write_time  double precision,
             checkpoint_sync_time   double precision,
             buffers_checkpoint     bigint,
+            slru_checkpoint        bigint,
             buffers_clean          bigint,
             maxwritten_clean       bigint,
             buffers_backend        bigint,
@@ -800,7 +804,7 @@ BEGIN
           blk_write_time, stats_reset, datsize,
           datsize_delta, datistemplate, session_time, active_time,
           idle_in_transaction_time, sessions, sessions_abandoned, sessions_fatal,
-          sessions_killed)
+          sessions_killed, parallel_workers_to_launch, parallel_workers_launched)
         SELECT
           (srv_map ->> dr.server_id::text)::integer,
           dr.sample_id,
@@ -833,7 +837,9 @@ BEGIN
           dr.sessions,
           dr.sessions_abandoned,
           dr.sessions_fatal,
-          dr.sessions_killed
+          dr.sessions_killed,
+          dr.parallel_workers_to_launch,
+          dr.parallel_workers_launched
         FROM json_to_record(datarow.row_data) AS dr(
           server_id       integer,
           sample_id       integer,
@@ -865,6 +871,8 @@ BEGIN
           sessions_abandoned  bigint,
           sessions_fatal      bigint,
           sessions_killed     bigint,
+          parallel_workers_to_launch  bigint,
+          parallel_workers_launched   bigint,
           checksum_failures   bigint,
           checksum_last_failure timestamp with time zone
           )
@@ -966,8 +974,8 @@ BEGIN
         FETCH data INTO datarow;
         EXIT WHEN NOT FOUND;
         INSERT INTO sample_stat_io(server_id,sample_id,backend_type,object,context,reads,
-          read_time,writes,write_time,writebacks,writeback_time,extends,extend_time,
-          op_bytes,hits,evictions,reuses,fsyncs,fsync_time,stats_reset)
+          read_bytes,read_time,writes,write_bytes,write_time,writebacks,writeback_time,extends,
+          extend_bytes,extend_time,op_bytes,hits,evictions,reuses,fsyncs,fsync_time,stats_reset)
         SELECT
           (srv_map ->> dr.server_id::text)::integer,
           dr.sample_id,
@@ -975,12 +983,15 @@ BEGIN
           dr.object,
           dr.context,
           dr.reads,
+          dr.read_bytes,
           dr.read_time,
           dr.writes,
+          dr.write_bytes,
           dr.write_time,
           dr.writebacks,
           dr.writeback_time,
           dr.extends,
+          dr.extend_bytes,
           dr.extend_time,
           dr.op_bytes,
           dr.hits,
@@ -996,12 +1007,15 @@ BEGIN
             object                      text,
             context                     text,
             reads                       bigint,
+            read_bytes                  numeric,
             read_time                   double precision,
             writes                      bigint,
+            write_bytes                 numeric,
             write_time                  double precision,
             writebacks                  bigint,
             writeback_time              double precision,
             extends                     bigint,
+            extend_bytes                numeric,
             extend_time                 double precision,
             op_bytes                    bigint,
             hits                        bigint,
@@ -1434,11 +1448,11 @@ BEGIN
               shared_blks_dirtied, shared_blks_written, local_blks_hit, local_blks_read,
               local_blks_dirtied, local_blks_written, temp_blks_read, temp_blks_written,
               shared_blk_read_time, shared_blk_write_time, wal_records, wal_fpi, wal_bytes,
-              toplevel , jit_functions, jit_generation_time, jit_inlining_count,
+              wal_buffers_full, toplevel , jit_functions, jit_generation_time, jit_inlining_count,
               jit_inlining_time, jit_optimization_count, jit_optimization_time,
               jit_emission_count, jit_emission_time, temp_blk_read_time, temp_blk_write_time,
               local_blk_read_time, local_blk_write_time, jit_deform_count, jit_deform_time,
-              stats_since, minmax_stats_since)
+              parallel_workers_to_launch, parallel_workers_launched, stats_since, minmax_stats_since)
             SELECT
               (srv_map ->> dr.server_id::text)::integer,
               dr.sample_id,
@@ -1474,6 +1488,7 @@ BEGIN
               dr.wal_records,
               dr.wal_fpi,
               dr.wal_bytes,
+              dr.wal_buffers_full,
               COALESCE(dr.toplevel, true),
               dr.jit_functions,
               dr.jit_generation_time,
@@ -1489,6 +1504,8 @@ BEGIN
               dr.local_blk_write_time,
               dr.jit_deform_count,
               dr.jit_deform_time,
+              dr.parallel_workers_to_launch,
+              dr.parallel_workers_launched,
               dr.stats_since,
               dr.minmax_stats_since
             FROM json_to_record(datarow.row_data) AS dr(
@@ -1526,6 +1543,7 @@ BEGIN
               wal_records          bigint,
               wal_fpi              bigint,
               wal_bytes            numeric,
+              wal_buffers_full     bigint,
               toplevel             boolean,
               jit_functions        bigint,
               jit_generation_time  double precision,
@@ -1541,6 +1559,8 @@ BEGIN
               local_blk_write_time double precision,
               jit_deform_count     bigint,
               jit_deform_time      double precision,
+              parallel_workers_to_launch  bigint,
+              parallel_workers_launched   bigint,
               stats_since          timestamp with time zone,
               minmax_stats_since   timestamp with time zone
               )
@@ -1855,7 +1875,7 @@ BEGIN
               calls, total_exec_time, rows, shared_blks_hit, shared_blks_read, shared_blks_dirtied,
               shared_blks_written, local_blks_hit, local_blks_read, local_blks_dirtied,
               local_blks_written, temp_blks_read, temp_blks_written, shared_blk_read_time,
-              shared_blk_write_time, wal_records, wal_fpi, wal_bytes, statements, jit_functions,
+              shared_blk_write_time, wal_records, wal_fpi, wal_bytes, wal_buffers_full, statements, jit_functions,
               jit_generation_time, jit_inlining_count, jit_inlining_time, jit_optimization_count,
               jit_optimization_time, jit_emission_count, jit_emission_time, temp_blk_read_time,
               temp_blk_write_time, mean_max_plan_time, mean_max_exec_time, mean_min_plan_time,
@@ -1885,6 +1905,7 @@ BEGIN
               dr.wal_records,
               dr.wal_fpi,
               dr.wal_bytes,
+              dr.wal_buffers_full,
               dr.statements,
               dr.jit_functions,
               dr.jit_generation_time,
@@ -1928,6 +1949,7 @@ BEGIN
                 wal_records          bigint,
                 wal_fpi              bigint,
                 wal_bytes            numeric,
+                wal_buffers_full     bigint,
                 statements           bigint,
                 jit_functions        bigint,
                 jit_generation_time  double precision,
@@ -1967,7 +1989,7 @@ BEGIN
               calls, total_exec_time, rows, shared_blks_hit, shared_blks_read, shared_blks_dirtied,
               shared_blks_written, local_blks_hit, local_blks_read, local_blks_dirtied,
               local_blks_written, temp_blks_read, temp_blks_written, shared_blk_read_time,
-              shared_blk_write_time, wal_records, wal_fpi, wal_bytes, statements, jit_functions,
+              shared_blk_write_time, wal_records, wal_fpi, wal_bytes, wal_buffers_full, statements, jit_functions,
               jit_generation_time, jit_inlining_count, jit_inlining_time, jit_optimization_count,
               jit_optimization_time, jit_emission_count, jit_emission_time, temp_blk_read_time,
               temp_blk_write_time, mean_max_plan_time, mean_max_exec_time, mean_min_plan_time,
@@ -1996,6 +2018,7 @@ BEGIN
               dr.wal_records,
               dr.wal_fpi,
               dr.wal_bytes,
+              dr.wal_buffers_full,
               dr.statements,
               dr.jit_functions,
               dr.jit_generation_time,
@@ -2035,6 +2058,7 @@ BEGIN
                 wal_records          bigint,
                 wal_fpi              bigint,
                 wal_bytes            numeric,
+                wal_buffers_full     bigint,
                 statements           bigint,
                 jit_functions        bigint,
                 jit_generation_time  double precision,
@@ -2223,7 +2247,8 @@ BEGIN
           seq_tup_read,idx_scan,idx_tup_fetch,n_tup_ins,n_tup_upd,n_tup_del,n_tup_hot_upd,
           n_live_tup,n_dead_tup,n_mod_since_analyze,n_ins_since_vacuum,last_vacuum,
           last_autovacuum,last_analyze,last_autoanalyze,vacuum_count,autovacuum_count,
-          analyze_count,autoanalyze_count,heap_blks_read,heap_blks_hit,idx_blks_read,
+          analyze_count,autoanalyze_count,total_vacuum_time,total_autovacuum_time,
+          total_analyze_time,total_autoanalyze_time,heap_blks_read,heap_blks_hit,idx_blks_read,
           idx_blks_hit,toast_blks_read,toast_blks_hit,tidx_blks_read,tidx_blks_hit,
           relsize,relsize_diff,relpages_bytes,relpages_bytes_diff,last_seq_scan,
           last_idx_scan,n_tup_newpage_upd)
@@ -2262,6 +2287,10 @@ BEGIN
           dr.autovacuum_count,
           dr.analyze_count,
           dr.autoanalyze_count,
+          dr.total_vacuum_time,
+          dr.total_autovacuum_time,
+          dr.total_analyze_time,
+          dr.total_autoanalyze_time,
           dr.heap_blks_read,
           dr.heap_blks_hit,
           dr.idx_blks_read,
@@ -2304,6 +2333,10 @@ BEGIN
           autovacuum_count     bigint,
           analyze_count        bigint,
           autoanalyze_count    bigint,
+          total_vacuum_time       double precision,
+          total_autovacuum_time   double precision,
+          total_analyze_time      double precision,
+          total_autoanalyze_time  double precision,
           heap_blks_read       bigint,
           heap_blks_hit        bigint,
           idx_blks_read        bigint,
@@ -2357,6 +2390,7 @@ BEGIN
         INSERT INTO sample_stat_tables_total(server_id,sample_id,datid,tablespaceid,relkind,
           seq_scan,seq_tup_read,idx_scan,idx_tup_fetch,n_tup_ins,n_tup_upd,n_tup_del,
           n_tup_hot_upd,vacuum_count,autovacuum_count,analyze_count,autoanalyze_count,
+          total_vacuum_time,total_autovacuum_time,total_analyze_time,total_autoanalyze_time,
           heap_blks_read,heap_blks_hit,idx_blks_read,idx_blks_hit,toast_blks_read,
           toast_blks_hit,tidx_blks_read,tidx_blks_hit,relsize_diff,n_tup_newpage_upd)
         SELECT
@@ -2376,6 +2410,10 @@ BEGIN
           dr.vacuum_count,
           dr.autovacuum_count,
           dr.analyze_count,
+          dr.total_vacuum_time,
+          dr.total_autovacuum_time,
+          dr.total_analyze_time,
+          dr.total_autoanalyze_time,
           dr.autoanalyze_count,
           dr.heap_blks_read,
           dr.heap_blks_hit,
@@ -2405,6 +2443,10 @@ BEGIN
           autovacuum_count   bigint,
           analyze_count      bigint,
           autoanalyze_count  bigint,
+          total_vacuum_time       double precision,
+          total_autovacuum_time   double precision,
+          total_analyze_time      double precision,
+          total_autoanalyze_time  double precision,
           heap_blks_read     bigint,
           heap_blks_hit      bigint,
           idx_blks_read      bigint,
@@ -2717,7 +2759,7 @@ BEGIN
           blk_read_time,blk_write_time,stats_reset,datsize,datsize_delta,datistemplate,
           session_time,active_time,
           idle_in_transaction_time,sessions,sessions_abandoned,sessions_fatal,
-          sessions_killed)
+          sessions_killed,parallel_workers_to_launch,parallel_workers_launched)
         SELECT
           (srv_map ->> dr.server_id::text)::integer,
           dr.sample_id,
@@ -2750,7 +2792,9 @@ BEGIN
           dr.sessions,
           dr.sessions_abandoned,
           dr.sessions_fatal,
-          dr.sessions_killed
+          dr.sessions_killed,
+          dr.parallel_workers_to_launch,
+          dr.parallel_workers_launched
         FROM json_to_record(datarow.row_data) AS dr(
           server_id       integer,
           sample_id       integer,
@@ -2782,6 +2826,8 @@ BEGIN
           sessions_abandoned  bigint,
           sessions_fatal      bigint,
           sessions_killed     bigint,
+          parallel_workers_to_launch  bigint,
+          parallel_workers_launched   bigint,
           checksum_failures   bigint,
           checksum_last_failure timestamp with time zone
           )
@@ -2835,17 +2881,19 @@ BEGIN
         FETCH data INTO datarow;
         EXIT WHEN NOT FOUND;
         INSERT INTO last_stat_cluster (server_id,sample_id,checkpoints_timed,
-          checkpoints_req,checkpoint_write_time,checkpoint_sync_time,
-          buffers_checkpoint,buffers_clean,maxwritten_clean,buffers_backend,
+          checkpoints_req,checkpoints_done,checkpoint_write_time,checkpoint_sync_time,
+          buffers_checkpoint,slru_checkpoint,buffers_clean,maxwritten_clean,buffers_backend,
           buffers_backend_fsync,buffers_alloc,stats_reset,wal_size)
         SELECT
           (srv_map ->> dr.server_id::text)::integer,
           dr.sample_id,
           dr.checkpoints_timed,
           dr.checkpoints_req,
+          dr.checkpoints_done,
           dr.checkpoint_write_time,
           dr.checkpoint_sync_time,
           dr.buffers_checkpoint,
+          dr.slru_checkpoint,
           dr.buffers_clean,
           dr.maxwritten_clean,
           dr.buffers_backend,
@@ -2858,9 +2906,11 @@ BEGIN
           sample_id              integer,
           checkpoints_timed      bigint,
           checkpoints_req        bigint,
+          checkpoints_done       bigint,
           checkpoint_write_time  double precision,
           checkpoint_sync_time   double precision,
           buffers_checkpoint     bigint,
+          slru_checkpoint        bigint,
           buffers_clean          bigint,
           maxwritten_clean       bigint,
           buffers_backend        bigint,
@@ -2926,7 +2976,8 @@ BEGIN
           seq_scan,seq_tup_read,idx_scan,idx_tup_fetch,n_tup_ins,n_tup_upd,n_tup_del,
           n_tup_hot_upd,n_live_tup,n_dead_tup,n_mod_since_analyze,n_ins_since_vacuum,
           last_vacuum,last_autovacuum,last_analyze,last_autoanalyze,vacuum_count,
-          autovacuum_count,analyze_count,autoanalyze_count,heap_blks_read,heap_blks_hit,
+          autovacuum_count,analyze_count,autoanalyze_count,total_vacuum_time,total_autovacuum_time,
+          total_analyze_time,total_autoanalyze_time,heap_blks_read,heap_blks_hit,
           idx_blks_read,idx_blks_hit,toast_blks_read,toast_blks_hit,tidx_blks_read,
           tidx_blks_hit,relsize,relsize_diff,tablespaceid,reltoastrelid,relkind,in_sample,
           relpages_bytes,relpages_bytes_diff,last_seq_scan,last_idx_scan,n_tup_newpage_upd,
@@ -2958,6 +3009,10 @@ BEGIN
           dr.autovacuum_count,
           dr.analyze_count,
           dr.autoanalyze_count,
+          dr.total_vacuum_time,
+          dr.total_autovacuum_time,
+          dr.total_analyze_time,
+          dr.total_autoanalyze_time,
           dr.heap_blks_read,
           dr.heap_blks_hit,
           dr.idx_blks_read,
@@ -3001,6 +3056,10 @@ BEGIN
           last_autovacuum      timestamp with time zone,
           last_analyze         timestamp with time zone,
           last_autoanalyze     timestamp with time zone,
+          total_vacuum_time       double precision,
+          total_autovacuum_time   double precision,
+          total_analyze_time      double precision,
+          total_autoanalyze_time  double precision,
           vacuum_count         bigint,
           autovacuum_count     bigint,
           analyze_count        bigint,
@@ -3289,12 +3348,12 @@ BEGIN
               mean_exec_time, stddev_exec_time, rows, shared_blks_hit, shared_blks_read,
               shared_blks_dirtied, shared_blks_written, local_blks_hit, local_blks_read,
               local_blks_dirtied, local_blks_written, temp_blks_read, temp_blks_written,
-              shared_blk_read_time, shared_blk_write_time, wal_records, wal_fpi, wal_bytes,
+              shared_blk_read_time, shared_blk_write_time, wal_records, wal_fpi, wal_bytes, wal_buffers_full,
               toplevel, in_sample, jit_functions, jit_generation_time, jit_inlining_count,
               jit_inlining_time, jit_optimization_count, jit_optimization_time,
               jit_emission_count, jit_emission_time, temp_blk_read_time, temp_blk_write_time,
               local_blk_read_time, local_blk_write_time, jit_deform_count, jit_deform_time,
-              stats_since, minmax_stats_since
+              parallel_workers_to_launch, parallel_workers_launched, stats_since, minmax_stats_since
               )
             SELECT
               (srv_map ->> dr.server_id::text)::integer,
@@ -3332,6 +3391,7 @@ BEGIN
               dr.wal_records,
               dr.wal_fpi,
               dr.wal_bytes,
+              dr.wal_buffers_full,
               dr.toplevel,
               dr.in_sample,
               dr.jit_functions,
@@ -3348,6 +3408,8 @@ BEGIN
               dr.local_blk_write_time,
               dr.jit_deform_count,
               dr.jit_deform_time,
+              dr.parallel_workers_to_launch,
+              dr.parallel_workers_launched,
               dr.stats_since,
               dr.minmax_stats_since
             FROM json_to_record(datarow.row_data) AS dr(
@@ -3386,6 +3448,7 @@ BEGIN
               wal_records          bigint,
               wal_fpi              bigint,
               wal_bytes            numeric,
+              wal_buffers_full     bigint,
               toplevel             boolean,
               in_sample            boolean,
               jit_functions        bigint,
@@ -3402,6 +3465,8 @@ BEGIN
               local_blk_write_time double precision,
               jit_deform_count     bigint,
               jit_deform_time      double precision,
+              parallel_workers_to_launch  bigint,
+              parallel_workers_launched   bigint,
               stats_since          timestamp with time zone,
               minmax_stats_since   timestamp with time zone
               )
@@ -3548,8 +3613,8 @@ BEGIN
         FETCH data INTO datarow;
         EXIT WHEN NOT FOUND;
         INSERT INTO last_stat_io (server_id,sample_id,backend_type,object,context,reads,
-          read_time,writes,write_time,writebacks,writeback_time,extends,extend_time,
-          op_bytes,hits,evictions,reuses,fsyncs,fsync_time,stats_reset
+          read_bytes,read_time,writes,write_bytes,write_time,writebacks,writeback_time,extends,
+          extend_bytes,extend_time,op_bytes,hits,evictions,reuses,fsyncs,fsync_time,stats_reset
           )
         SELECT
           (srv_map ->> dr.server_id::text)::integer,
@@ -3558,12 +3623,15 @@ BEGIN
           dr.object,
           dr.context,
           dr.reads,
+          dr.read_bytes,
           dr.read_time,
           dr.writes,
+          dr.write_bytes,
           dr.write_time,
           dr.writebacks,
           dr.writeback_time,
           dr.extends,
+          dr.extend_bytes,
           dr.extend_time,
           dr.op_bytes,
           dr.hits,
@@ -3579,12 +3647,15 @@ BEGIN
           object            text,
           context           text,
           reads             bigint,
+          read_bytes        numeric,
           read_time         double precision,
           writes            bigint,
+          write_bytes       numeric,
           write_time        double precision,
           writebacks        bigint,
           writeback_time    double precision,
           extends           bigint,
+          extend_bytes      numeric,
           extend_time       double precision,
           op_bytes          bigint,
           hits              bigint,

@@ -34,6 +34,8 @@ CREATE TABLE sample_stat_database
     sessions_killed     bigint,
     checksum_failures   bigint,
     checksum_last_failure timestamp with time zone,
+    parallel_workers_to_launch  bigint,
+    parallel_workers_launched   bigint,
     CONSTRAINT fk_statdb_samples FOREIGN KEY (server_id, sample_id)
       REFERENCES samples (server_id, sample_id) ON DELETE CASCADE
       DEFERRABLE INITIALLY IMMEDIATE,
@@ -41,6 +43,44 @@ CREATE TABLE sample_stat_database
 );
 COMMENT ON TABLE sample_stat_database IS 'Sample database statistics table (fields from pg_stat_database)';
 
-CREATE TABLE last_stat_database (LIKE sample_stat_database, dattablespace oid, datallowconn boolean)
-PARTITION BY LIST (server_id);
+CREATE TABLE last_stat_database
+(
+    server_id           integer NOT NULL,
+    sample_id           integer NOT NULL,
+    datid               oid NOT NULL,
+    datname             name NOT NULL,
+    xact_commit         bigint,
+    xact_rollback       bigint,
+    blks_read           bigint,
+    blks_hit            bigint,
+    tup_returned        bigint,
+    tup_fetched         bigint,
+    tup_inserted        bigint,
+    tup_updated         bigint,
+    tup_deleted         bigint,
+    conflicts           bigint,
+    temp_files          bigint,
+    temp_bytes          bigint,
+    deadlocks           bigint,
+    blk_read_time       double precision,
+    blk_write_time      double precision,
+    stats_reset         timestamp with time zone,
+    datsize             bigint,
+    datsize_delta       bigint,
+    datistemplate       boolean,
+    session_time        double precision,
+    active_time         double precision,
+    idle_in_transaction_time  double precision,
+    sessions            bigint,
+    sessions_abandoned  bigint,
+    sessions_fatal      bigint,
+    sessions_killed     bigint,
+    checksum_failures   bigint,
+    checksum_last_failure timestamp with time zone,
+    dattablespace       oid,
+    datallowconn        boolean,
+    parallel_workers_to_launch  bigint,
+    parallel_workers_launched   bigint
+) PARTITION BY LIST (server_id);
+
 COMMENT ON TABLE last_stat_database IS 'Last sample data for calculating diffs in next sample';

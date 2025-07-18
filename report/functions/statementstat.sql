@@ -77,6 +77,7 @@ RETURNS TABLE(
     wal_fpi                 bigint,
     wal_bytes               numeric,
     wal_bytes_pct           float,
+    wal_buffers_full        numeric,
     user_time               double precision,
     system_time             double precision,
     reads                   bigint,
@@ -91,6 +92,8 @@ RETURNS TABLE(
     jit_emission_time       double precision,
     jit_deform_count        bigint,
     jit_deform_time         double precision,
+    parallel_workers_to_launch  bigint,
+    parallel_workers_launched   bigint,
     stmt_cover              double precision
 ) SET search_path=@extschema@ AS $$
     WITH
@@ -117,7 +120,7 @@ RETURNS TABLE(
       ),
       totbgwr AS (
         SELECT
-          sum(buffers_checkpoint) + sum(buffers_clean) +
+          sum(buffers_checkpoint) + sum(slru_checkpoint) + sum(buffers_clean) +
             sum(coalesce(
               NULLIF(buffers_backend, 0),
               io_buffers_backend
@@ -251,6 +254,7 @@ RETURNS TABLE(
         sum(st.wal_fpi)::bigint as wal_fpi,
         sum(st.wal_bytes) as wal_bytes,
         (sum(st.wal_bytes) * 100 / NULLIF(min(totbgwr.wal_size), 0))::float wal_bytes_pct,
+        sum(st.wal_buffers_full) as wal_buffers_full,
         -- kcache stats
         COALESCE(sum(kc.exec_user_time), 0.0) + COALESCE(sum(kc.plan_user_time), 0.0) as user_time,
         COALESCE(sum(kc.exec_system_time), 0.0) + COALESCE(sum(kc.plan_system_time), 0.0) as system_time,
@@ -266,6 +270,8 @@ RETURNS TABLE(
         sum(st.jit_emission_time)/1000::double precision AS jit_emission_time,
         sum(st.jit_deform_count)::bigint AS jit_deform_count,
         sum(st.jit_deform_time)/1000::double precision AS jit_deform_time,
+        sum(st.parallel_workers_to_launch)::bigint AS parallel_workers_to_launch,
+        sum(st.parallel_workers_launched)::bigint AS parallel_workers_launched,
         100 - extract(epoch from sum(CASE
             WHEN st.stats_since <= s_prev.sample_time THEN '0'::interval
             ELSE st.stats_since - s_prev.sample_time
@@ -363,6 +369,7 @@ RETURNS TABLE(
     wal_bytes               numeric,
     wal_bytes_fmt           text,
     wal_bytes_pct           numeric,
+    wal_buffers_full        numeric,
     user_time               numeric,
     system_time             numeric,
     reads                   bigint,
@@ -378,6 +385,8 @@ RETURNS TABLE(
     jit_emission_time       numeric,
     jit_deform_count        bigint,
     jit_deform_time         numeric,
+    parallel_workers_to_launch  bigint,
+    parallel_workers_launched   bigint,
     stmt_cover              numeric,
     sum_tmp_blks            bigint,
     sum_jit_time            numeric,
@@ -394,7 +403,8 @@ RETURNS TABLE(
     ord_shared_blocks_written integer,
     ord_wal                 integer,
     ord_temp                integer,
-    ord_jit                 integer
+    ord_jit                 integer,
+    ord_wrkrs_cnt           integer
 )
 SET search_path=@extschema@ AS $$
   SELECT
@@ -466,6 +476,7 @@ SET search_path=@extschema@ AS $$
     NULLIF(st.wal_bytes, 0),
     pg_size_pretty(NULLIF(st.wal_bytes, 0)),
     round(CAST(NULLIF(st.wal_bytes_pct, 0.0) AS numeric), 2),
+    NULLIF(st.wal_buffers_full, 0),
     round(CAST(NULLIF(st.user_time, 0.0) AS numeric), 2),
     round(CAST(NULLIF(st.system_time, 0.0) AS numeric), 2),
     NULLIF(st.reads, 0),
@@ -483,6 +494,8 @@ SET search_path=@extschema@ AS $$
     round(CAST(NULLIF(st.jit_emission_time, 0.0) AS numeric), 2),
     NULLIF(st.jit_deform_count, 0),
     round(CAST(NULLIF(st.jit_deform_time, 0.0) AS numeric), 2),
+    NULLIF(st.parallel_workers_to_launch, 0),
+    NULLIF(st.parallel_workers_launched, 0),
     round(CAST(NULLIF(st.stmt_cover, 0.0) AS numeric)),
     COALESCE(st.temp_blks_read, 0) +
         COALESCE(st.temp_blks_written, 0) +
@@ -602,7 +615,16 @@ SET search_path=@extschema@ AS $$
         st.userid,
         st.queryid,
         st.toplevel)::integer
-    ELSE NULL END AS ord_jit
+    ELSE NULL END AS ord_jit,
+    CASE WHEN
+        st.parallel_workers_to_launch + st.parallel_workers_launched > 0 THEN
+      row_number() OVER (ORDER BY st.parallel_workers_to_launch +
+        st.parallel_workers_launched DESC NULLS LAST,
+        st.datid,
+        st.userid,
+        st.queryid,
+        st.toplevel)::integer
+    ELSE NULL END AS ord_wrkrs_cnt
   FROM
     top_statements(sserver_id, start_id, end_id) st
 $$ LANGUAGE sql;
@@ -677,6 +699,7 @@ RETURNS TABLE(
     wal_bytes1               numeric,
     wal_bytes_fmt1           text,
     wal_bytes_pct1           numeric,
+    wal_buffers_full1        numeric,
     user_time1               numeric,
     system_time1             numeric,
     reads1                   bigint,
@@ -692,6 +715,8 @@ RETURNS TABLE(
     jit_emission_time1       numeric,
     jit_deform_count1        bigint,
     jit_deform_time1         numeric,
+    parallel_workers_to_launch1 bigint,
+    parallel_workers_launched1  bigint,
     stmt_cover1              numeric,
     --Second Interval
     plans2                   bigint,
@@ -751,6 +776,7 @@ RETURNS TABLE(
     wal_bytes2               numeric,
     wal_bytes_fmt2           text,
     wal_bytes_pct2           numeric,
+    wal_buffers_full2        numeric,
     user_time2               numeric,
     system_time2             numeric,
     reads2                   bigint,
@@ -766,6 +792,8 @@ RETURNS TABLE(
     jit_emission_time2       numeric,
     jit_deform_count2        bigint,
     jit_deform_time2         numeric,
+    parallel_workers_to_launch2 bigint,
+    parallel_workers_launched2  bigint,
     stmt_cover2              numeric,
     -- Filter and ordering fields
     sum_tmp_blks             bigint,
@@ -783,7 +811,8 @@ RETURNS TABLE(
     ord_shared_blocks_written integer,
     ord_wal                  integer,
     ord_temp                 integer,
-    ord_jit                  integer
+    ord_jit                  integer,
+    ord_wrkrs_cnt            integer
 )
 SET search_path=@extschema@ AS $$
   SELECT
@@ -858,6 +887,7 @@ SET search_path=@extschema@ AS $$
     NULLIF(st1.wal_bytes, 0),
     pg_size_pretty(NULLIF(st1.wal_bytes, 0)),
     round(CAST(NULLIF(st1.wal_bytes_pct, 0.0) AS numeric), 2),
+    NULLIF(st1.wal_buffers_full, 0),
     round(CAST(NULLIF(st1.user_time, 0.0) AS numeric), 2),
     round(CAST(NULLIF(st1.system_time, 0.0) AS numeric), 2),
     NULLIF(st1.reads, 0),
@@ -875,6 +905,8 @@ SET search_path=@extschema@ AS $$
     round(CAST(NULLIF(st1.jit_emission_time, 0.0) AS numeric), 2),
     NULLIF(st1.jit_deform_count, 0),
     round(CAST(NULLIF(st1.jit_deform_time, 0.0) AS numeric), 2),
+    NULLIF(st1.parallel_workers_to_launch, 0),
+    NULLIF(st1.parallel_workers_launched, 0),
     round(CAST(NULLIF(st1.stmt_cover, 0.0) AS numeric)),
     -- Second Interval
     NULLIF(st2.plans, 0),
@@ -934,6 +966,7 @@ SET search_path=@extschema@ AS $$
     NULLIF(st2.wal_bytes, 0),
     pg_size_pretty(NULLIF(st2.wal_bytes, 0)),
     round(CAST(NULLIF(st2.wal_bytes_pct, 0.0) AS numeric), 2),
+    NULLIF(st2.wal_buffers_full, 0),
     round(CAST(NULLIF(st2.user_time, 0.0) AS numeric), 2),
     round(CAST(NULLIF(st2.system_time, 0.0) AS numeric), 2),
     NULLIF(st2.reads, 0),
@@ -951,6 +984,8 @@ SET search_path=@extschema@ AS $$
     round(CAST(NULLIF(st2.jit_emission_time, 0.0) AS numeric), 2),
     NULLIF(st2.jit_deform_count, 0),
     round(CAST(NULLIF(st2.jit_deform_time, 0.0) AS numeric), 2),
+    NULLIF(st2.parallel_workers_to_launch, 0),
+    NULLIF(st2.parallel_workers_launched, 0),
     round(CAST(NULLIF(st2.stmt_cover, 0.0) AS numeric)),
     -- Filter and ordering fields
     COALESCE(st1.temp_blks_read, 0) +
@@ -1129,7 +1164,17 @@ SET search_path=@extschema@ AS $$
       COALESCE(st1.userid,st2.userid),
       COALESCE(st1.queryid,st2.queryid),
       COALESCE(st1.toplevel,st2.toplevel))::integer
-    ELSE NULL END AS ord_jit
+    ELSE NULL END AS ord_jit,
+    CASE WHEN
+        st1.parallel_workers_to_launch + st1.parallel_workers_launched +
+        st2.parallel_workers_to_launch + st2.parallel_workers_launched > 0 THEN
+      row_number() OVER (ORDER BY st1.parallel_workers_to_launch + st1.parallel_workers_launched +
+        st2.parallel_workers_to_launch + st2.parallel_workers_launched DESC NULLS LAST,
+        COALESCE(st1.datid,st2.datid),
+        COALESCE(st1.userid,st2.userid),
+        COALESCE(st1.queryid,st2.queryid),
+        COALESCE(st1.toplevel,st2.toplevel))::integer
+    ELSE NULL END AS ord_wrkrs_cnt
   FROM top_statements(sserver_id, start1_id, end1_id) st1
       FULL OUTER JOIN top_statements(sserver_id, start2_id, end2_id) st2 USING
         (server_id, datid, userid, queryid, toplevel)

@@ -65,6 +65,9 @@ CREATE TABLE sample_statements (
     jit_deform_time     double precision,
     stats_since         timestamp with time zone,
     minmax_stats_since  timestamp with time zone,
+    wal_buffers_full    bigint,
+    parallel_workers_to_launch  bigint,
+    parallel_workers_launched   bigint,
     CONSTRAINT pk_sample_statements_n PRIMARY KEY (server_id, sample_id, datid, userid, queryid, toplevel),
     CONSTRAINT fk_stmt_list FOREIGN KEY (server_id,queryid_md5)
       REFERENCES stmt_list (server_id,queryid_md5)
@@ -135,7 +138,10 @@ CREATE TABLE last_stat_statements (
     jit_deform_count    bigint,
     jit_deform_time     double precision,
     stats_since         timestamp with time zone,
-    minmax_stats_since  timestamp with time zone
+    minmax_stats_since  timestamp with time zone,
+    wal_buffers_full    bigint,
+    parallel_workers_to_launch  bigint,
+    parallel_workers_launched   bigint
 )
 PARTITION BY LIST (server_id);
 
@@ -182,6 +188,7 @@ CREATE TABLE sample_statements_total (
     local_blk_write_time  double precision,
     jit_deform_count    bigint,
     jit_deform_time     double precision,
+    wal_buffers_full    bigint,
     CONSTRAINT pk_sample_statements_total PRIMARY KEY (server_id, sample_id, datid),
     CONSTRAINT fk_statments_t_dat FOREIGN KEY (server_id, sample_id, datid)
       REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE CASCADE

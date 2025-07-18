@@ -86,18 +86,40 @@ RETURNS TABLE(
 )
 SET search_path=@extschema@ AS $$
   SELECT
-    st.server_id as server_id,
-    sum(wal_records)::bigint as wal_records,
-    sum(wal_fpi)::bigint as wal_fpi,
-    sum(wal_bytes)::numeric as wal_bytes,
-    sum(wal_buffers_full)::bigint as wal_buffers_full,
-    sum(wal_write)::bigint as wal_write,
-    sum(wal_sync)::bigint as wal_sync,
-    sum(wal_write_time)::double precision as wal_write_time,
-    sum(wal_sync_time)::double precision as wal_sync_time
-  FROM sample_stat_wal st
-  WHERE st.server_id = sserver_id AND st.sample_id BETWEEN start_id + 1 AND end_id
-  GROUP BY st.server_id
+    server_id,
+    wal_records,
+    wal_fpi,
+    wal_bytes,
+    wal_buffers_full,
+    coalesce(sio.wal_write,sw.wal_write) as wal_write,
+    coalesce(sio.wal_sync,sw.wal_sync) as wal_sync,
+    coalesce(sio.wal_write_time,sw.wal_write_time) as wal_write_time,
+    coalesce(sio.wal_sync_time,sw.wal_sync_time) as wal_sync_time
+  FROM (
+    SELECT
+      st.server_id as server_id,
+      sum(wal_records)::bigint as wal_records,
+      sum(wal_fpi)::bigint as wal_fpi,
+      sum(wal_bytes)::numeric as wal_bytes,
+      sum(wal_buffers_full)::bigint as wal_buffers_full,
+      sum(wal_write)::bigint as wal_write,
+      sum(wal_sync)::bigint as wal_sync,
+      sum(wal_write_time)::double precision as wal_write_time,
+      sum(wal_sync_time)::double precision as wal_sync_time
+    FROM sample_stat_wal st
+    WHERE st.server_id = sserver_id AND st.sample_id BETWEEN start_id + 1 AND end_id
+    GROUP BY st.server_id) sw
+      CROSS JOIN (
+        SELECT
+          sum(writes)::bigint as wal_write,
+          sum(fsyncs)::bigint as wal_sync,
+          sum(write_time)::double precision as wal_write_time,
+          sum(fsync_time)::double precision as wal_sync_time
+        FROM sample_stat_io io
+        WHERE
+          io.server_id = sserver_id AND
+          io.sample_id BETWEEN start_id + 1 AND end_id AND
+          io.object = 'wal') sio;
 $$ LANGUAGE sql;
 
 CREATE FUNCTION wal_stats_format(IN sserver_id integer, IN start_id integer, IN end_id integer,

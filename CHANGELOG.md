@@ -1,7 +1,8 @@
 # pg_profile changelog
-
 ## 4.10
 - Support of *pg_stat_kcache* 2.3.1
+- Support of PostgreSQL 18 statistics
+- Support of *pg_stat_statements* 1.12
 
 ## 4.9
 - Added table and index storage parameter sections (@blackstranger, @Djoongaar)

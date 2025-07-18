@@ -57,6 +57,10 @@ CREATE TABLE sample_stat_tables (
     last_idx_scan       timestamp with time zone,
     n_tup_newpage_upd   bigint,
     reltoastrelid       oid,
+    total_vacuum_time       double precision,
+    total_autovacuum_time   double precision,
+    total_analyze_time      double precision,
+    total_autoanalyze_time  double precision,
     CONSTRAINT pk_sample_stat_tables PRIMARY KEY (server_id, sample_id, datid, relid),
     CONSTRAINT fk_st_tables_dat FOREIGN KEY (server_id, sample_id, datid)
       REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE CASCADE
@@ -124,7 +128,11 @@ CREATE VIEW v_sample_stat_tables AS
         relpages_bytes_diff,
         last_seq_scan,
         last_idx_scan,
-        n_tup_newpage_upd
+        n_tup_newpage_upd,
+        total_vacuum_time,
+        total_autovacuum_time,
+        total_analyze_time,
+        total_autoanalyze_time
     FROM sample_stat_tables
       JOIN tables_list USING (server_id, datid, relid)
       JOIN tablespaces_list tl USING (server_id, tablespaceid);
@@ -176,7 +184,11 @@ CREATE TABLE last_stat_tables(
     last_seq_scan       timestamp with time zone,
     last_idx_scan       timestamp with time zone,
     n_tup_newpage_upd   bigint,
-    reloptions          jsonb
+    reloptions          jsonb,
+    total_vacuum_time       double precision,
+    total_autovacuum_time   double precision,
+    total_analyze_time      double precision,
+    total_autoanalyze_time  double precision
 )
 PARTITION BY LIST (server_id);
 COMMENT ON TABLE last_stat_tables IS 'Last sample data for calculating diffs in next sample';
@@ -209,6 +221,10 @@ CREATE TABLE sample_stat_tables_total (
     tidx_blks_hit       bigint,
     relsize_diff        bigint,
     n_tup_newpage_upd   bigint,
+    total_vacuum_time       double precision,
+    total_autovacuum_time   double precision,
+    total_analyze_time      double precision,
+    total_autoanalyze_time  double precision,
     CONSTRAINT pk_sample_stat_tables_tot PRIMARY KEY (server_id, sample_id, datid, relkind, tablespaceid),
     CONSTRAINT fk_st_tables_tot_dat FOREIGN KEY (server_id, sample_id, datid)
       REFERENCES sample_stat_database(server_id, sample_id, datid) ON DELETE CASCADE

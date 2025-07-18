@@ -553,6 +553,51 @@ BEGIN
         SELECT count(*) = 1 FROM jsonb_to_recordset(server_properties #> '{settings}')
           AS x(name text, reset_val text)
         WHERE name = 'server_version_num'
+          AND reset_val::integer >= 180000
+      )
+      THEN
+        server_query := 'SELECT '
+            'dbs.datid, '
+            'dbs.datname, '
+            'dbs.xact_commit, '
+            'dbs.xact_rollback, '
+            'dbs.blks_read, '
+            'dbs.blks_hit, '
+            'dbs.tup_returned, '
+            'dbs.tup_fetched, '
+            'dbs.tup_inserted, '
+            'dbs.tup_updated, '
+            'dbs.tup_deleted, '
+            'dbs.conflicts, '
+            'dbs.temp_files, '
+            'dbs.temp_bytes, '
+            'dbs.deadlocks, '
+            'dbs.checksum_failures, '
+            'dbs.checksum_last_failure, '
+            'dbs.blk_read_time, '
+            'dbs.blk_write_time, '
+            'dbs.session_time, '
+            'dbs.active_time, '
+            'dbs.idle_in_transaction_time, '
+            'dbs.sessions, '
+            'dbs.sessions_abandoned, '
+            'dbs.sessions_fatal, '
+            'dbs.sessions_killed, '
+            'dbs.parallel_workers_to_launch, '
+            'dbs.parallel_workers_launched, '
+            'dbs.stats_reset, '
+            'pg_database_size(dbs.datid) as datsize, '
+            '0 as datsize_delta, '
+            'db.datistemplate, '
+            'db.dattablespace, '
+            'db.datallowconn '
+          'FROM pg_catalog.pg_stat_database dbs '
+          'JOIN pg_catalog.pg_database db ON (dbs.datid = db.oid) '
+          'WHERE dbs.datname IS NOT NULL';
+      WHEN (
+        SELECT count(*) = 1 FROM jsonb_to_recordset(server_properties #> '{settings}')
+          AS x(name text, reset_val text)
+        WHERE name = 'server_version_num'
           AND reset_val::integer >= 140000
       )
       THEN
@@ -583,6 +628,8 @@ BEGIN
             'dbs.sessions_abandoned, '
             'dbs.sessions_fatal, '
             'dbs.sessions_killed, '
+            'NULL as parallel_workers_to_launch, '
+            'NULL as parallel_workers_launched, '
             'dbs.stats_reset, '
             'pg_database_size(dbs.datid) as datsize, '
             '0 as datsize_delta, '
@@ -626,6 +673,8 @@ BEGIN
             'NULL as sessions_abandoned, '
             'NULL as sessions_fatal, '
             'NULL as sessions_killed, '
+            'NULL as parallel_workers_to_launch, '
+            'NULL as parallel_workers_launched, '
             'dbs.stats_reset, '
             'pg_database_size(dbs.datid) as datsize, '
             '0 as datsize_delta, '
@@ -669,6 +718,8 @@ BEGIN
             'NULL as sessions_abandoned, '
             'NULL as sessions_fatal, '
             'NULL as sessions_killed, '
+            'NULL as parallel_workers_to_launch, '
+            'NULL as parallel_workers_launched, '
             'dbs.stats_reset, '
             'pg_database_size(dbs.datid) as datsize, '
             '0 as datsize_delta, '
@@ -710,6 +761,8 @@ BEGIN
         sessions_abandoned,
         sessions_fatal,
         sessions_killed,
+        parallel_workers_to_launch,
+        parallel_workers_launched,
         stats_reset,
         datsize,
         datsize_delta,
@@ -745,6 +798,8 @@ BEGIN
         sessions_abandoned AS sessions_abandoned,
         sessions_fatal AS sessions_fatal,
         sessions_killed AS sessions_killed,
+        parallel_workers_to_launch as parallel_workers_to_launch,
+        parallel_workers_launched as parallel_workers_launched,
         stats_reset,
         datsize AS datsize,
         datsize_delta AS datsize_delta,
@@ -778,6 +833,8 @@ BEGIN
         sessions_abandoned bigint,
         sessions_fatal bigint,
         sessions_killed bigint,
+        parallel_workers_to_launch bigint,
+        parallel_workers_launched bigint,
         stats_reset timestamp with time zone,
         datsize bigint,
         datsize_delta bigint,
@@ -823,6 +880,8 @@ BEGIN
       sessions_abandoned,
       sessions_fatal,
       sessions_killed,
+      parallel_workers_to_launch,
+      parallel_workers_launched,
       stats_reset,
       datsize,
       datsize_delta,
@@ -857,6 +916,8 @@ BEGIN
         cur.sessions_abandoned - COALESCE(lst.sessions_abandoned,0),
         cur.sessions_fatal - COALESCE(lst.sessions_fatal,0),
         cur.sessions_killed - COALESCE(lst.sessions_killed,0),
+        cur.parallel_workers_to_launch - COALESCE(lst.parallel_workers_to_launch,0),
+        cur.parallel_workers_launched - COALESCE(lst.parallel_workers_launched,0),
         cur.stats_reset,
         cur.datsize as datsize,
         cur.datsize - COALESCE(lst.datsize,0) as datsize_delta,
@@ -986,9 +1047,11 @@ BEGIN
         server_query := 'SELECT '
           'checkpoints_timed,'
           'checkpoints_req,'
+          'NULL as checkpoints_done,'
           'checkpoint_write_time,'
           'checkpoint_sync_time,'
           'buffers_checkpoint,'
+          'NULL as slru_checkpoint,'
           'buffers_clean,'
           'maxwritten_clean,'
           'buffers_backend,'
@@ -1019,9 +1082,11 @@ BEGIN
         server_query := 'SELECT '
           'checkpoints_timed,'
           'checkpoints_req,'
+          'NULL as checkpoints_done,'
           'checkpoint_write_time,'
           'checkpoint_sync_time,'
           'buffers_checkpoint,'
+          'NULL as slru_checkpoint,'
           'buffers_clean,'
           'maxwritten_clean,'
           'buffers_backend,'
@@ -1046,15 +1111,54 @@ BEGIN
         SELECT count(*) = 1 FROM jsonb_to_recordset(server_properties #> '{settings}')
           AS x(name text, reset_val text)
         WHERE name = 'server_version_num'
-          AND reset_val::integer >= 170000
+          AND reset_val::integer < 180000
       )
       THEN
         server_query := 'SELECT '
           'c.num_timed as checkpoints_timed,'
           'c.num_requested as checkpoints_req,'
+          'NULL as checkpoints_done,'
           'c.write_time as checkpoint_write_time,'
           'c.sync_time as checkpoint_sync_time,'
           'c.buffers_written as buffers_checkpoint,'
+          'NULL as slru_checkpoint,'
+          'b.buffers_clean as buffers_clean,'
+          'b.maxwritten_clean as maxwritten_clean,'
+          'NULL as buffers_backend,'
+          'NULL as buffers_backend_fsync,'
+          'b.buffers_alloc,'
+          'b.stats_reset as stats_reset,'
+          'CASE WHEN pg_catalog.pg_is_in_recovery() '
+            'THEN pg_catalog.pg_wal_lsn_diff(pg_catalog.pg_last_wal_replay_lsn(),''0/00000000'') '
+            'ELSE pg_catalog.pg_wal_lsn_diff(pg_catalog.pg_current_wal_lsn(),''0/00000000'') '
+          'END AS wal_size,'
+          'CASE WHEN pg_catalog.pg_is_in_recovery()'
+            'THEN pg_catalog.pg_last_wal_replay_lsn()'
+            'ELSE pg_catalog.pg_current_wal_lsn()'
+          'END AS wal_lsn,'
+          'pg_catalog.pg_is_in_recovery() as in_recovery,'
+          'c.restartpoints_timed,'
+          'c.restartpoints_req,'
+          'c.restartpoints_done,'
+          'c.stats_reset as checkpoint_stats_reset '
+        'FROM '
+          'pg_catalog.pg_stat_checkpointer c CROSS JOIN '
+          'pg_catalog.pg_stat_bgwriter b';
+      WHEN (
+        SELECT count(*) = 1 FROM jsonb_to_recordset(server_properties #> '{settings}')
+          AS x(name text, reset_val text)
+        WHERE name = 'server_version_num'
+          AND reset_val::integer >= 180000
+      )
+      THEN
+        server_query := 'SELECT '
+          'c.num_timed as checkpoints_timed,'
+          'c.num_requested as checkpoints_req,'
+          'c.num_done as checkpoints_done,'
+          'c.write_time as checkpoint_write_time,'
+          'c.sync_time as checkpoint_sync_time,'
+          'c.buffers_written as buffers_checkpoint,'
+          'c.slru_written as slru_checkpoint,'
           'b.buffers_clean as buffers_clean,'
           'b.maxwritten_clean as maxwritten_clean,'
           'NULL as buffers_backend,'
@@ -1085,9 +1189,11 @@ BEGIN
         sample_id,
         checkpoints_timed,
         checkpoints_req,
+        checkpoints_done,
         checkpoint_write_time,
         checkpoint_sync_time,
         buffers_checkpoint,
+        slru_checkpoint,
         buffers_clean,
         maxwritten_clean,
         buffers_backend,
@@ -1106,9 +1212,11 @@ BEGIN
         s_id,
         checkpoints_timed,
         checkpoints_req,
+        checkpoints_done,
         checkpoint_write_time,
         checkpoint_sync_time,
         buffers_checkpoint,
+        slru_checkpoint,
         buffers_clean,
         maxwritten_clean,
         buffers_backend,
@@ -1125,9 +1233,11 @@ BEGIN
       FROM dblink('server_connection',server_query) AS rs (
         checkpoints_timed bigint,
         checkpoints_req bigint,
+        checkpoints_done bigint,
         checkpoint_write_time double precision,
         checkpoint_sync_time double precision,
         buffers_checkpoint bigint,
+        slru_checkpoint bigint,
         buffers_clean bigint,
         maxwritten_clean bigint,
         buffers_backend bigint,
@@ -1150,6 +1260,24 @@ BEGIN
 
     -- pg_stat_wal data
     CASE
+      WHEN (
+        SELECT count(*) = 1 FROM jsonb_to_recordset(server_properties #> '{settings}')
+          AS x(name text, reset_val text)
+        WHERE name = 'server_version_num'
+          AND reset_val::integer >= 180000
+      )
+      THEN
+        server_query := 'SELECT '
+          'wal.wal_records,'
+          'wal.wal_fpi,'
+          'wal.wal_bytes,'
+          'wal.wal_buffers_full,'
+          'NULL as wal_write,'
+          'NULL as wal_sync,'
+          'NULL as wal_write_time,'
+          'NULL as wal_sync_time,'
+          'wal.stats_reset '
+          'FROM pg_catalog.pg_stat_wal wal';
       WHEN (
         SELECT count(*) = 1 FROM jsonb_to_recordset(server_properties #> '{settings}')
           AS x(name text, reset_val text)
@@ -1221,6 +1349,48 @@ BEGIN
         SELECT count(*) = 1 FROM jsonb_to_recordset(server_properties #> '{settings}')
           AS x(name text, reset_val text)
         WHERE name = 'server_version_num'
+          AND reset_val::integer >= 180000
+      )
+      THEN
+        server_query := 'SELECT '
+          'backend_type,'
+          'object,'
+          'pg_stat_io.context,'
+          'reads,'
+          'read_bytes,'
+          'read_time,'
+          'writes,'
+          'write_bytes,'
+          'write_time,'
+          'writebacks,'
+          'writeback_time,'
+          'extends,'
+          'extend_bytes,'
+          'extend_time,'
+          'ps.setting::integer AS op_bytes,'
+          'hits,'
+          'evictions,'
+          'reuses,'
+          'fsyncs,'
+          'fsync_time,'
+          'stats_reset '
+          'FROM pg_catalog.pg_stat_io '
+          'JOIN pg_catalog.pg_settings ps ON name = ''block_size'' '
+          'WHERE greatest('
+              'reads,'
+              'writes,'
+              'writebacks,'
+              'extends,'
+              'hits,'
+              'evictions,'
+              'reuses,'
+              'fsyncs'
+            ') > 0'
+          ;
+      WHEN (
+        SELECT count(*) = 1 FROM jsonb_to_recordset(server_properties #> '{settings}')
+          AS x(name text, reset_val text)
+        WHERE name = 'server_version_num'
           AND reset_val::integer >= 160000
       )
       THEN
@@ -1229,12 +1399,15 @@ BEGIN
           'object,'
           'context,'
           'reads,'
+          'NULL as read_bytes,'
           'read_time,'
           'writes,'
+          'NULL as write_bytes,'
           'write_time,'
           'writebacks,'
           'writeback_time,'
           'extends,'
+          'NULL as extend_bytes,'
           'extend_time,'
           'op_bytes,'
           'hits,'
@@ -1267,12 +1440,15 @@ BEGIN
         object,
         context,
         reads,
+        read_bytes,
         read_time,
         writes,
+        write_bytes,
         write_time,
         writebacks,
         writeback_time,
         extends,
+        extend_bytes,
         extend_time,
         op_bytes,
         hits,
@@ -1289,12 +1465,15 @@ BEGIN
         object,
         context,
         reads,
+        read_bytes,
         read_time,
         writes,
+        write_bytes,
         write_time,
         writebacks,
         writeback_time,
         extends,
+        extend_bytes,
         extend_time,
         op_bytes,
         hits,
@@ -1308,12 +1487,15 @@ BEGIN
         object            text,
         context           text,
         reads             bigint,
+        read_bytes        numeric,
         read_time         double precision,
         writes            bigint,
+        write_bytes       numeric,
         write_time        double precision,
         writebacks        bigint,
         writeback_time    double precision,
         extends           bigint,
+        extend_bytes      numeric,
         extend_time       double precision,
         op_bytes          bigint,
         hits              bigint,
@@ -1619,9 +1801,11 @@ BEGIN
       sample_id,
       checkpoints_timed,
       checkpoints_req,
+      checkpoints_done,
       checkpoint_write_time,
       checkpoint_sync_time,
       buffers_checkpoint,
+      slru_checkpoint,
       buffers_clean,
       maxwritten_clean,
       buffers_backend,
@@ -1641,9 +1825,11 @@ BEGIN
         cur.sample_id,
         cur.checkpoints_timed - COALESCE(lstc.checkpoints_timed,0),
         cur.checkpoints_req - COALESCE(lstc.checkpoints_req,0),
+        cur.checkpoints_done - COALESCE(lstc.checkpoints_done,0),
         cur.checkpoint_write_time - COALESCE(lstc.checkpoint_write_time,0),
         cur.checkpoint_sync_time - COALESCE(lstc.checkpoint_sync_time,0),
         cur.buffers_checkpoint - COALESCE(lstc.buffers_checkpoint,0),
+        cur.slru_checkpoint - COALESCE(lstc.slru_checkpoint,0),
         cur.buffers_clean - COALESCE(lstb.buffers_clean,0),
         cur.maxwritten_clean - COALESCE(lstb.maxwritten_clean,0),
         cur.buffers_backend - COALESCE(lstb.buffers_backend,0),
@@ -1701,12 +1887,15 @@ BEGIN
         object,
         context,
         reads,
+        read_bytes,
         read_time,
         writes,
+        write_bytes,
         write_time,
         writebacks,
         writeback_time,
         extends,
+        extend_bytes,
         extend_time,
         op_bytes,
         hits,
@@ -1723,12 +1912,15 @@ BEGIN
         cur.object,
         cur.context,
         cur.reads - COALESCE(lst.reads, 0),
+        cur.read_bytes - COALESCE(lst.read_bytes, 0),
         cur.read_time - COALESCE(lst.read_time, 0),
         cur.writes - COALESCE(lst.writes, 0),
+        cur.write_bytes - COALESCE(lst.write_bytes, 0),
         cur.write_time - COALESCE(lst.write_time, 0),
         cur.writebacks - COALESCE(lst.writebacks, 0),
         cur.writeback_time - COALESCE(lst.writeback_time, 0),
         cur.extends - COALESCE(lst.extends, 0),
+        cur.extend_bytes - COALESCE(lst.extend_bytes, 0),
         cur.extend_time - COALESCE(lst.extend_time, 0),
         cur.op_bytes,
         cur.hits - COALESCE(lst.hits, 0),
@@ -2273,6 +2465,10 @@ BEGIN
             'st.autovacuum_count,'
             'st.analyze_count,'
             'st.autoanalyze_count,'
+            'NULL as total_vacuum_time,'
+            'NULL as total_autovacuum_time,'
+            'NULL as total_analyze_time,'
+            'NULL as total_autoanalyze_time,'
             'stio.heap_blks_read,'
             'stio.heap_blks_hit,'
             'stio.idx_blks_read,'
@@ -2331,6 +2527,10 @@ BEGIN
             'st.autovacuum_count,'
             'st.analyze_count,'
             'st.autoanalyze_count,'
+            'NULL as total_vacuum_time,'
+            'NULL as total_autovacuum_time,'
+            'NULL as total_analyze_time,'
+            'NULL as total_autoanalyze_time,'
             'stio.heap_blks_read,'
             'stio.heap_blks_hit,'
             'stio.idx_blks_read,'
@@ -2362,7 +2562,7 @@ BEGIN
           SELECT count(*) = 1 FROM jsonb_to_recordset(properties #> '{settings}')
             AS x(name text, reset_val text)
           WHERE name = 'server_version_num'
-            AND reset_val::integer >= 160000
+            AND reset_val::integer < 180000
         )
         THEN
           t_query := 'SELECT '
@@ -2389,6 +2589,72 @@ BEGIN
             'st.autovacuum_count,'
             'st.analyze_count,'
             'st.autoanalyze_count,'
+            'NULL as total_vacuum_time,'
+            'NULL as total_autovacuum_time,'
+            'NULL as total_analyze_time,'
+            'NULL as total_autoanalyze_time,'
+            'stio.heap_blks_read,'
+            'stio.heap_blks_hit,'
+            'stio.idx_blks_read,'
+            'stio.idx_blks_hit,'
+            'stio.toast_blks_read,'
+            'stio.toast_blks_hit,'
+            'stio.tidx_blks_read,'
+            'stio.tidx_blks_hit,'
+            -- Size of all forks without TOAST
+            '{relation_size} relsize,'
+            '0 relsize_diff,'
+            'class.reltablespace AS tablespaceid,'
+            'class.reltoastrelid,'
+            'class.relkind,'
+            'class.relpages::bigint * current_setting(''block_size'')::bigint AS relpages_bytes,'
+            '0 AS relpages_bytes_diff,'
+            'st.last_seq_scan,'
+            'st.last_idx_scan,'
+            'st.n_tup_newpage_upd,'
+            'to_jsonb(class.reloptions) '
+          'FROM pg_catalog.pg_stat_all_tables st '
+          'JOIN pg_catalog.pg_statio_all_tables stio USING (relid, schemaname, relname) '
+          'JOIN pg_catalog.pg_class class ON (st.relid = class.oid) '
+          -- is relation or its dependant is locked
+          '{lock_join}'
+          ;
+
+        WHEN (
+          SELECT count(*) = 1 FROM jsonb_to_recordset(properties #> '{settings}')
+            AS x(name text, reset_val text)
+          WHERE name = 'server_version_num'
+            AND reset_val::integer >= 180000
+        )
+        THEN
+          t_query := 'SELECT '
+            'st.relid,'
+            'st.schemaname,'
+            'st.relname,'
+            'st.seq_scan,'
+            'st.seq_tup_read,'
+            'st.idx_scan,'
+            'st.idx_tup_fetch,'
+            'st.n_tup_ins,'
+            'st.n_tup_upd,'
+            'st.n_tup_del,'
+            'st.n_tup_hot_upd,'
+            'st.n_live_tup,'
+            'st.n_dead_tup,'
+            'st.n_mod_since_analyze,'
+            'st.n_ins_since_vacuum,'
+            'st.last_vacuum,'
+            'st.last_autovacuum,'
+            'st.last_analyze,'
+            'st.last_autoanalyze,'
+            'st.vacuum_count,'
+            'st.autovacuum_count,'
+            'st.analyze_count,'
+            'st.autoanalyze_count,'
+            'st.total_vacuum_time,'
+            'st.total_autovacuum_time,'
+            'st.total_analyze_time,'
+            'st.total_autoanalyze_time,'
             'stio.heap_blks_read,'
             'stio.heap_blks_hit,'
             'stio.idx_blks_read,'
@@ -2465,6 +2731,10 @@ BEGIN
           autovacuum_count,
           analyze_count,
           autoanalyze_count,
+          total_vacuum_time,
+          total_autovacuum_time,
+          total_analyze_time,
+          total_autoanalyze_time,
           heap_blks_read,
           heap_blks_hit,
           idx_blks_read,
@@ -2513,6 +2783,10 @@ BEGIN
           dbl.autovacuum_count AS autovacuum_count,
           dbl.analyze_count AS analyze_count,
           dbl.autoanalyze_count AS autoanalyze_count,
+          dbl.total_vacuum_time AS total_vacuum_time,
+          dbl.total_autovacuum_time AS total_autovacuum_time,
+          dbl.total_analyze_time AS total_analyze_time,
+          dbl.total_autoanalyze_time AS total_autoanalyze_time,
           dbl.heap_blks_read AS heap_blks_read,
           dbl.heap_blks_hit AS heap_blks_hit,
           dbl.idx_blks_read AS idx_blks_read,
@@ -2558,6 +2832,10 @@ BEGIN
             autovacuum_count      bigint,
             analyze_count         bigint,
             autoanalyze_count     bigint,
+            total_vacuum_time       double precision,
+            total_autovacuum_time   double precision,
+            total_analyze_time      double precision,
+            total_autoanalyze_time  double precision,
             heap_blks_read        bigint,
             heap_blks_hit         bigint,
             idx_blks_read         bigint,
@@ -3006,9 +3284,13 @@ BEGIN
             lst.toast_blks_read+lst.toast_blks_hit+lst.tidx_blks_read+lst.tidx_blks_hit, 0) DESC) gets_rank,
           -- Vacuum rank
           row_number() OVER (ORDER BY cur.vacuum_count - COALESCE(lst.vacuum_count, 0) +
-            cur.autovacuum_count - COALESCE(lst.autovacuum_count, 0) DESC) vacuum_rank,
+            cur.autovacuum_count - COALESCE(lst.autovacuum_count, 0) DESC) vacuum_count_rank,
           row_number() OVER (ORDER BY cur.analyze_count - COALESCE(lst.analyze_count,0) +
-            cur.autoanalyze_count - COALESCE(lst.autoanalyze_count,0) DESC) analyze_rank,
+            cur.autoanalyze_count - COALESCE(lst.autoanalyze_count,0) DESC) analyze_count_rank,
+          row_number() OVER (ORDER BY cur.total_vacuum_time - COALESCE(lst.total_vacuum_time, 0) +
+            cur.total_autovacuum_time - COALESCE(lst.total_autovacuum_time, 0) DESC) vacuum_time_rank,
+          row_number() OVER (ORDER BY cur.total_analyze_time - COALESCE(lst.total_analyze_time,0) +
+            cur.total_autoanalyze_time - COALESCE(lst.total_autoanalyze_time,0) DESC) analyze_time_rank,
 
           -- Newpage updates rank (since PG16)
           CASE WHEN cur.n_tup_newpage_upd IS NOT NULL THEN
@@ -3047,8 +3329,10 @@ BEGIN
         vacuum_dml_rank,
         read_rank,
         gets_rank,
-        vacuum_rank,
-        analyze_rank,
+        vacuum_count_rank,
+        analyze_count_rank,
+        vacuum_time_rank,
+        analyze_time_rank,
         newpage_upd_rank
       ) <= topn
       AND (ulst.server_id, ulst.sample_id, ulst.datid, ulst.in_sample) =
@@ -3174,6 +3458,10 @@ BEGIN
       autovacuum_count,
       analyze_count,
       autoanalyze_count,
+      total_vacuum_time,
+      total_autovacuum_time,
+      total_analyze_time,
+      total_autoanalyze_time,
       heap_blks_read,
       heap_blks_hit,
       idx_blks_read,
@@ -3217,6 +3505,10 @@ BEGIN
       cur.autovacuum_count - COALESCE(lst.autovacuum_count,0) AS autovacuum_count,
       cur.analyze_count - COALESCE(lst.analyze_count,0) AS analyze_count,
       cur.autoanalyze_count - COALESCE(lst.autoanalyze_count,0) AS autoanalyze_count,
+      cur.total_vacuum_time - COALESCE(lst.total_vacuum_time,0) AS total_vacuum_time,
+      cur.total_autovacuum_time - COALESCE(lst.total_autovacuum_time,0) AS total_autovacuum_time,
+      cur.total_analyze_time - COALESCE(lst.total_analyze_time,0) AS total_analyze_time,
+      cur.total_autoanalyze_time - COALESCE(lst.total_autoanalyze_time,0) AS total_autoanalyze_time,
       cur.heap_blks_read - COALESCE(lst.heap_blks_read,0) AS heap_blks_read,
       cur.heap_blks_hit - COALESCE(lst.heap_blks_hit,0) AS heap_blks_hit,
       cur.idx_blks_read - COALESCE(lst.idx_blks_read,0) AS idx_blks_read,
@@ -3283,6 +3575,10 @@ BEGIN
       autovacuum_count,
       analyze_count,
       autoanalyze_count,
+      total_vacuum_time,
+      total_autovacuum_time,
+      total_analyze_time,
+      total_autoanalyze_time,
       heap_blks_read,
       heap_blks_hit,
       idx_blks_read,
@@ -3312,6 +3608,10 @@ BEGIN
       sum(cur.autovacuum_count - COALESCE(lst.autovacuum_count,0)),
       sum(cur.analyze_count - COALESCE(lst.analyze_count,0)),
       sum(cur.autoanalyze_count - COALESCE(lst.autoanalyze_count,0)),
+      sum(cur.total_vacuum_time - COALESCE(lst.total_vacuum_time,0)),
+      sum(cur.total_autovacuum_time - COALESCE(lst.total_autovacuum_time,0)),
+      sum(cur.total_analyze_time - COALESCE(lst.total_analyze_time,0)),
+      sum(cur.total_autoanalyze_time - COALESCE(lst.total_autoanalyze_time,0)),
       sum(cur.heap_blks_read - COALESCE(lst.heap_blks_read,0)),
       sum(cur.heap_blks_hit - COALESCE(lst.heap_blks_hit,0)),
       sum(cur.idx_blks_read - COALESCE(lst.idx_blks_read,0)),

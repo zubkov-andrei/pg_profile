@@ -22,6 +22,8 @@ CREATE TABLE sample_stat_cluster
     restartpoints_req          bigint,
     restartpoints_done         bigint,
     checkpoint_stats_reset     timestamp with time zone,
+    checkpoints_done           bigint,
+    slru_checkpoint            bigint,
     CONSTRAINT fk_statcluster_samples FOREIGN KEY (server_id, sample_id)
       REFERENCES samples (server_id, sample_id) ON DELETE CASCADE
       DEFERRABLE INITIALLY IMMEDIATE,
@@ -114,6 +116,9 @@ CREATE TABLE sample_stat_io
     fsyncs                      bigint,
     fsync_time                  double precision,
     stats_reset                 timestamp with time zone,
+    read_bytes                  numeric,
+    write_bytes                 numeric,
+    extend_bytes                numeric,
     CONSTRAINT pk_sample_stat_io PRIMARY KEY (server_id, sample_id, backend_type, object, context),
     CONSTRAINT fk_sample_stat_io_samples FOREIGN KEY (server_id, sample_id)
       REFERENCES samples (server_id, sample_id) ON DELETE CASCADE

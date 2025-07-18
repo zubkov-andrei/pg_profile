@@ -30,16 +30,16 @@ SET search_path=@extschema@ AS $$
         st.object AS object,
         st.context AS context,
         SUM(reads)::bigint AS reads,
-        SUM(reads * op_bytes)::bigint AS read_bytes,
+        SUM(read_bytes)::bigint AS read_bytes,
         SUM(read_time)::double precision AS read_time,
         SUM(writes)::bigint AS writes,
-        SUM(writes * op_bytes)::bigint AS write_bytes,
+        SUM(write_bytes)::bigint AS write_bytes,
         SUM(write_time)::double precision AS write_time,
         SUM(writebacks)::bigint AS writebacks,
         SUM(writebacks * op_bytes)::bigint AS writeback_bytes,
         SUM(writeback_time)::double precision AS writeback_time,
         SUM(extends)::bigint AS extends,
-        SUM(extends * op_bytes)::bigint AS extend_bytes,
+        SUM(extend_bytes)::bigint AS extend_bytes,
         SUM(extend_time)::double precision AS extend_time,
         SUM(hits)::bigint AS hits,
         SUM(evictions)::bigint AS evictions,
@@ -249,7 +249,7 @@ RETURNS TABLE(
     context,
     stats_reset
   FROM cluster_stat_io_resets(sserver_id, start_id, end_id)
-  ORDER BY sample_id ASC
+  ORDER BY sample_id ASC, object ASC, backend_type ASC
 $$ LANGUAGE sql;
 
 CREATE FUNCTION cluster_stat_io_reset_format(IN sserver_id integer,
@@ -284,5 +284,5 @@ RETURNS TABLE(
       stats_reset
     FROM cluster_stat_io_resets(sserver_id, start2_id, end2_id)
     ) st
-  ORDER BY sample_id ASC
+  ORDER BY sample_id ASC, object ASC, backend_type ASC
 $$ LANGUAGE sql;
