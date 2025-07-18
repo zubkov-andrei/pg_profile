@@ -1513,8 +1513,8 @@ Top tables sorted by vacuums (manual and automatic) processed
   * *Vacuum* - number of times this table has been manually vacuumed (not counting VACUUM FULL)
   * *AutoVacuum* - number of times this table has been vacuumed by the autovacuum daemon
 * *Vacuum time*
-  * *Vacuum* - total time this table has been manually vacuumed, in milliseconds. (This includes the time spent sleeping due to cost-based delays.)
-  * *AutoVacuum* - total time this table has been vacuumed by the autovacuum daemon, in milliseconds. (This includes the time spent sleeping due to cost-based delays.)
+  * *Vacuum* - total time this table has been manually vacuumed, in seconds. (This includes the time spent sleeping due to cost-based delays.)
+  * *AutoVacuum* - total time this table has been vacuumed by the autovacuum daemon, in seconds. (This includes the time spent sleeping due to cost-based delays.)
 * *Ins* - number of rows inserted (*n_tup_ins* field)
 * *Upd* - number of rows updated (including HOT) (*n_tup_upd* field)
 * *Del* - number of rows deleted (*n_tup_del* field)
@@ -1532,8 +1532,8 @@ Top tables sorted by analyze run (manual and automatic) count
   * *Analyze* - number of times this table has been manually analyzed
   * *AutoAnalyze* - number of times this table has been analyzed by the autovacuum daemon
 * *Analyze time*
-  * *Analyze* - total time this table has been manually analyzed, in milliseconds. (This includes the time spent sleeping due to cost-based delays.)
-  * *AutoAnalyze* - total time this table has been analyzed by the autovacuum daemon, in milliseconds. (This includes the time spent sleeping due to cost-based delays.)
+  * *Analyze* - total time this table has been manually analyzed, in seconds. (This includes the time spent sleeping due to cost-based delays.)
+  * *AutoAnalyze* - total time this table has been analyzed by the autovacuum daemon, in seconds. (This includes the time spent sleeping due to cost-based delays.)
 * *Ins* - number of rows inserted (*n_tup_ins* field)
 * *Upd* - number of rows updated (including HOT) (*n_tup_upd* field)
 * *Del* - number of rows deleted (*n_tup_del* field)
@@ -1548,8 +1548,8 @@ Top tables sorted by vacuum time spent (manual and automatic)
 * *Schema* - schema name of the table
 * *Table* - table name
 * *Vacuum time*
-  * *Vacuum* - total time this table has been manually vacuumed, in milliseconds. (This includes the time spent sleeping due to cost-based delays.)
-  * *AutoVacuum* - total time this table has been vacuumed by the autovacuum daemon, in milliseconds. (This includes the time spent sleeping due to cost-based delays.)
+  * *Vacuum* - total time this table has been manually vacuumed, in seconds. (This includes the time spent sleeping due to cost-based delays.)
+  * *AutoVacuum* - total time this table has been vacuumed by the autovacuum daemon, in seconds. (This includes the time spent sleeping due to cost-based delays.)
 * *Vacuum count*
   * *Vacuum* - number of times this table has been manually vacuumed (not counting VACUUM FULL)
   * *AutoVacuum* - number of times this table has been vacuumed by the autovacuum daemon
@@ -1567,8 +1567,8 @@ Top tables sorted by analyze time spent (manual and automatic)
 * *Schema* - schema name of the table
 * *Table* - table name
 * *Analyze time*
-  * *Analyze* - total time this table has been manually analyzed, in milliseconds. (This includes the time spent sleeping due to cost-based delays.)
-  * *AutoAnalyze* - total time this table has been analyzed by the autovacuum daemon, in milliseconds. (This includes the time spent sleeping due to cost-based delays.)
+  * *Analyze* - total time this table has been manually analyzed, in seconds. (This includes the time spent sleeping due to cost-based delays.)
+  * *AutoAnalyze* - total time this table has been analyzed by the autovacuum daemon, in seconds. (This includes the time spent sleeping due to cost-based delays.)
 * *Analyze count*
   * *Analyze* - number of times this table has been manually analyzed
   * *AutoAnalyze* - number of times this table has been analyzed by the autovacuum daemon

@@ -271,10 +271,14 @@ SET search_path=@extschema@ AS $$
     NULLIF(rel.autovacuum_count, 0) AS autovacuum_count,
     NULLIF(rel.analyze_count, 0) AS analyze_count,
     NULLIF(rel.autoanalyze_count, 0) AS autoanalyze_count,
-    NULLIF(rel.total_vacuum_time, 0) AS total_vacuum_time,
-    NULLIF(rel.total_autovacuum_time, 0) AS total_autovacuum_time,
-    NULLIF(rel.total_analyze_time, 0) AS total_analyze_time,
-    NULLIF(rel.total_autoanalyze_time, 0) AS total_autoanalyze_time,
+    round(CAST(NULLIF(rel.total_vacuum_time, 0.0)
+        / 1000 AS numeric), 2) AS total_vacuum_time,
+    round(CAST(NULLIF(rel.total_autovacuum_time, 0.0)
+        / 1000 AS numeric), 2) AS total_autovacuum_time,
+    round(CAST(NULLIF(rel.total_analyze_time, 0.0)
+        / 1000 AS numeric), 2) AS total_analyze_time,
+    round(CAST(NULLIF(rel.total_autoanalyze_time, 0.0)
+        / 1000 AS numeric), 2) AS total_autoanalyze_time,
     
     NULLIF(toast.seq_scan, 0) AS toastseq_scan,
     NULLIF(toast.seq_tup_read, 0) AS toastseq_tup_read,
@@ -290,10 +294,14 @@ SET search_path=@extschema@ AS $$
     NULLIF(toast.autovacuum_count, 0) AS toastautovacuum_count,
     NULLIF(toast.analyze_count, 0) AS toastanalyze_count,
     NULLIF(toast.autoanalyze_count, 0) AS toastautoanalyze_count,
-    NULLIF(toast.total_vacuum_time, 0) AS toasttotal_vacuum_time,
-    NULLIF(toast.total_autovacuum_time, 0) AS toasttotal_autovacuum_time,
-    NULLIF(toast.total_analyze_time, 0) AS toasttotal_analyze_time,
-    NULLIF(toast.total_autoanalyze_time, 0) AS toasttotal_autoanalyze_time,
+    round(CAST(NULLIF(toast.total_vacuum_time, 0.0)
+        / 1000 AS numeric), 2) AS toasttotal_vacuum_time,
+    round(CAST(NULLIF(toast.total_autovacuum_time, 0.0)
+        / 1000 AS numeric), 2) AS toasttotal_autovacuum_time,
+    round(CAST(NULLIF(toast.total_analyze_time, 0.0)
+        / 1000 AS numeric), 2) AS toasttotal_analyze_time,
+    round(CAST(NULLIF(toast.total_autoanalyze_time, 0.0)
+        / 1000 AS numeric), 2) AS toasttotal_autoanalyze_time,
     
     CASE WHEN relrs.growth_avail THEN
       pg_size_pretty(NULLIF(rel.growth, 0))
@@ -632,10 +640,14 @@ SET search_path=@extschema@ AS $$
     NULLIF(rel1.autovacuum_count, 0) AS autovacuum_count1,
     NULLIF(rel1.analyze_count, 0) AS analyze_count1,
     NULLIF(rel1.autoanalyze_count, 0) AS autoanalyze_count1,
-    NULLIF(rel1.total_vacuum_time, 0) AS total_vacuum_time1,
-    NULLIF(rel1.total_autovacuum_time, 0) AS total_autovacuum_time1,
-    NULLIF(rel1.total_analyze_time, 0) AS total_analyze_time1,
-    NULLIF(rel1.total_autoanalyze_time, 0) AS total_autoanalyze_time1,
+    round(CAST(NULLIF(rel1.total_vacuum_time, 0.0)
+        / 1000 AS numeric), 2) AS total_vacuum_time1,
+    round(CAST(NULLIF(rel1.total_autovacuum_time, 0.0)
+        / 1000 AS numeric), 2) AS total_autovacuum_time1,
+    round(CAST(NULLIF(rel1.total_analyze_time, 0.0)
+        / 1000 AS numeric), 2) AS total_analyze_time1,
+    round(CAST(NULLIF(rel1.total_autoanalyze_time, 0.0)
+        / 1000 AS numeric), 2) AS total_autoanalyze_time1,
     
     NULLIF(toast1.seq_scan, 0) AS toastseq_scan1,
     NULLIF(toast1.seq_tup_read, 0) AS toastseq_tup_read1,
@@ -651,10 +663,14 @@ SET search_path=@extschema@ AS $$
     NULLIF(toast1.autovacuum_count, 0) AS toastautovacuum_count1,
     NULLIF(toast1.analyze_count, 0) AS toastanalyze_count1,
     NULLIF(toast1.autoanalyze_count, 0) AS toastautoanalyze_count1,
-    NULLIF(toast1.total_vacuum_time, 0) AS toasttotal_vacuum_time1,
-    NULLIF(toast1.total_autovacuum_time, 0) AS toasttotal_autovacuum_time_count1,
-    NULLIF(toast1.total_analyze_time, 0) AS toasttotal_analyze_time1,
-    NULLIF(toast1.total_autoanalyze_time, 0) AS toasttotal_autoanalyze_time1,
+    round(CAST(NULLIF(toast1.total_vacuum_time, 0.0)
+        / 1000 AS numeric), 2) AS toasttotal_vacuum_time1,
+    round(CAST(NULLIF(toast1.total_autovacuum_time, 0.0)
+        / 1000 AS numeric), 2) AS toasttotal_autovacuum_time1,
+    round(CAST(NULLIF(toast1.total_analyze_time, 0.0)
+        / 1000 AS numeric), 2) AS toasttotal_analyze_time1,
+    round(CAST(NULLIF(toast1.total_autoanalyze_time, 0.0)
+        / 1000 AS numeric), 2) AS toasttotal_autoanalyze_time1,
     
     CASE WHEN relrs1.growth_avail THEN
       pg_size_pretty(NULLIF(rel1.growth, 0))
@@ -702,10 +718,14 @@ SET search_path=@extschema@ AS $$
     NULLIF(rel2.autovacuum_count, 0) AS autovacuum_count2,
     NULLIF(rel2.analyze_count, 0) AS analyze_count2,
     NULLIF(rel2.autoanalyze_count, 0) AS autoanalyze_count2,
-    NULLIF(rel2.total_vacuum_time, 0) AS total_vacuum_time2,
-    NULLIF(rel2.total_autovacuum_time, 0) AS total_autovacuum_time2,
-    NULLIF(rel2.total_analyze_time, 0) AS total_analyze_time2,
-    NULLIF(rel2.total_autoanalyze_time, 0) AS total_autoanalyze_time2,
+    round(CAST(NULLIF(rel2.total_vacuum_time, 0.0)
+        / 1000 AS numeric), 2) AS total_vacuum_time2,
+    round(CAST(NULLIF(rel2.total_autovacuum_time, 0.0)
+        / 1000 AS numeric), 2) AS total_autovacuum_time2,
+    round(CAST(NULLIF(rel2.total_analyze_time, 0.0)
+        / 1000 AS numeric), 2) AS total_analyze_time2,
+    round(CAST(NULLIF(rel2.total_autoanalyze_time, 0.0)
+        / 1000 AS numeric), 2) AS total_autoanalyze_time2,
     
     NULLIF(toast2.seq_scan, 0) AS toastseq_scan2,
     NULLIF(toast2.seq_tup_read, 0) AS toastseq_tup_read2,
@@ -721,10 +741,14 @@ SET search_path=@extschema@ AS $$
     NULLIF(toast2.autovacuum_count, 0) AS toastautovacuum_count2,
     NULLIF(toast2.analyze_count, 0) AS toastanalyze_count2,
     NULLIF(toast2.autoanalyze_count, 0) AS toastautoanalyze_count2,
-    NULLIF(toast2.total_vacuum_time, 0) AS toasttotal_vacuum_time2,
-    NULLIF(toast2.total_autovacuum_time, 0) AS toasttotal_autovacuum_time_count2,
-    NULLIF(toast2.total_analyze_time, 0) AS toasttotal_analyze_time2,
-    NULLIF(toast2.total_autoanalyze_time, 0) AS toasttotal_autoanalyze_time2,
+    round(CAST(NULLIF(toast2.total_vacuum_time, 0.0)
+        / 1000 AS numeric), 2) AS toasttotal_vacuum_time2,
+    round(CAST(NULLIF(toast2.total_autovacuum_time, 0.0)
+        / 1000 AS numeric), 2) AS toasttotal_autovacuum_time2,
+    round(CAST(NULLIF(toast2.total_analyze_time, 0.0)
+        / 1000 AS numeric), 2) AS toasttotal_analyze_time2,
+    round(CAST(NULLIF(toast2.total_autoanalyze_time, 0.0)
+        / 1000 AS numeric), 2) AS toasttotal_autoanalyze_time2,
     
     CASE WHEN relrs2.growth_avail THEN
       pg_size_pretty(NULLIF(rel2.growth, 0))
