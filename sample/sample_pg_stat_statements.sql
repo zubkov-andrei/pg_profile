@@ -596,7 +596,7 @@ BEGIN
             'kc.exec_nivcsws as exec_nivcsws,'
             'NULL as stats_since '
           );
-        WHEN '2.3.0'
+        WHEN '2.3.0', '2.3.1'
         THEN
           st_query := replace(st_query, '{kcache_fields}',
             'kc.top as toplevel,'
@@ -891,6 +891,7 @@ BEGIN
         WHERE extname = 'pg_stat_kcache'
     )
       WHEN '2.1.0','2.1.1','2.1.2','2.1.3','2.2.0','2.2.1','2.2.2','2.2.3','2.3.0'
+        , '2.3.1'
       THEN
         IF (properties #> '{properties,statements_reset}')::boolean THEN
           st_query := 'SELECT %1$I.pg_stat_kcache_reset() IS NULL';

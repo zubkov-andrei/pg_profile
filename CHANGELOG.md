@@ -1,5 +1,8 @@
 # pg_profile changelog
 
+## 4.10
+- Support of *pg_stat_kcache* 2.3.1
+
 ## 4.9
 - Added table and index storage parameter sections (@blackstranger, @Djoongaar)
 - Report design refactored (@Djoongaar)

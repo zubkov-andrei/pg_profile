@@ -4,7 +4,7 @@ CREATE FUNCTION profile_checkavail_rusage(IN sserver_id integer, IN start_id int
 RETURNS BOOLEAN
 SET search_path=@extschema@ AS $$
   SELECT
-    count(*) = end_id - start_id
+    count(*) > 0
   FROM
     (SELECT
       sum(exec_user_time) > 0 as exec
@@ -18,7 +18,7 @@ CREATE FUNCTION profile_checkavail_rusage_planstats(IN sserver_id integer, IN st
 RETURNS BOOLEAN
 SET search_path=@extschema@ AS $$
   SELECT
-    count(*) = end_id - start_id
+    count(*) > 0
   FROM
     (SELECT
       sum(plan_user_time) > 0 as plan
