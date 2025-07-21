@@ -1,0 +1,1410 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "datasource": {
+          "type": "postgres",
+          "uid": "${ProfileDB}"
+        },
+        "enable": true,
+        "iconColor": "semi-dark-green",
+        "name": "Server starts",
+        "target": {
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  setting::timestamptz as time,\n  'postmaster started' as text\nFROM sample_settings \nWHERE \n  server_id = $profile_servers AND\n  name = 'pg_postmaster_start_time' AND \n  setting::timestamptz BETWEEN $__timeFrom() AND $__timeTo() \nORDER BY time ASC",
+          "refId": "Anno",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      },
+      {
+        "datasource": {
+          "type": "postgres",
+          "uid": "${ProfileDB}"
+        },
+        "enable": true,
+        "iconColor": "semi-dark-yellow",
+        "name": "Configuration loads",
+        "target": {
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  setting::timestamptz as time,\n  'configuration loaded' as text\nFROM sample_settings \nWHERE \n  server_id = $profile_servers AND\n  name = 'pg_conf_load_time' AND \n  setting::timestamptz BETWEEN $__timeFrom() AND $__timeTo() \nORDER BY time ASC",
+          "refId": "Anno",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      },
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "target": {
+          "limit": 100,
+          "matchAny": false,
+          "tags": [],
+          "type": "dashboard"
+        },
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Vacuum statistics",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 23,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Interval",
+      "tooltip": "",
+      "type": "link",
+      "url": "/d/${__dashboard.uid}﻿?var-ProfileDB=${ProfileDB}&var-profile_servers=${profile_servers}&from=${min_from}&to=${max_to}"
+    },
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [
+        "pg_profile"
+      ],
+      "targetBlank": false,
+      "title": "pg_profile dashboards",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    }
+  ],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 64,
+      "panels": [],
+      "title": "Info",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Use provided pg_profile function call to get report of observable interval",
+      "gridPos": {
+        "h": 3,
+        "w": 3,
+        "x": 0,
+        "y": 1
+      },
+      "id": 30,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
+        "content": "get_report(${profile_servers},${startid},${endid})\n",
+        "mode": "markdown"
+      },
+      "pluginVersion": "10.4.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time < '${__from:date:iso}'\n  ORDER BY sample_id DESC\n  LIMIT 1),\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time > '${__from:date:iso}'\n  ORDER BY sample_id ASC\n  LIMIT 1)\n) as StartID",
+          "refId": "StartID",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        },
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "hide": false,
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time < '${__to:date:iso}'\n  ORDER BY sample_id DESC\n  LIMIT 1),\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time > '${__to:date:iso}'\n  ORDER BY sample_id ASC\n  LIMIT 1)\n) as StartID",
+          "refId": "EndID",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Report generation",
+      "type": "text"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 9,
+        "x": 3,
+        "y": 1
+      },
+      "id": 47,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": false
+      },
+      "pluginVersion": "10.4.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  reset_val\nFROM settings_and_changes($profile_servers, $startid, $endid)\nWHERE name = 'version'\nORDER BY first_seen ASC",
+          "refId": "Version",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Version",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "id": 39,
+      "panels": [],
+      "title": "Cluster stats",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "LSN and pg_stat_archiver increment",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Write time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Bytes"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Archive failed"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 0,
+        "y": 5
+      },
+      "id": 33,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "10.4.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  sum(wal_size) as \"Bytes\",\n  sum(archived_count) as \"Archived\",\n  sum(failed_count) as \"Archive failed\"\nFROM sample_stat_cluster sc JOIN sample_stat_archiver sa USING (server_id, sample_id)\nWHERE\n  sc.server_id = ${profile_servers}\n  AND sample_id BETWEEN $startid + 1 AND $endid \n",
+          "refId": "WAL",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "WAL",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Summary transaction data from pg_stat_database view",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Deadlocks"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 6,
+        "y": 5
+      },
+      "id": 35,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "10.4.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  sum(xact_commit) as \"Commit\",\n  sum(xact_rollback) as \"Rollback\",\n  sum(deadlocks) as \"Deadlocks\"\nFROM sample_stat_database sc\nWHERE\n  sc.server_id = ${profile_servers}\n  AND sample_id BETWEEN $startid + 1 AND $endid \n",
+          "refId": "xact",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Transactions",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Commit rate data from pg_stat_database view",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 52,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "si:tps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "id": 81,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sum(xact_rollback) / extract(epoch from smpe.sample_time - smps.sample_time) as \"Rollbacks\",\n  sum(xact_commit) / extract(epoch from smpe.sample_time - smps.sample_time) as \"Commits\"\nFROM sample_stat_database sd JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sd.server_id = ${profile_servers}\n  AND NOT datistemplate\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY smpe.sample_time, smps.sample_time\nORDER BY time",
+          "refId": "xact",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Transactions",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Commit rate data from pg_stat_database view",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 52,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "binBps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "id": 85,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sum(wal_bytes) / extract(epoch from smpe.sample_time - smps.sample_time) as \"Statements WAL\"\nFROM sample_statements_total sst \n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sst.server_id = ${profile_servers}\n  AND $__timeFilter(smpe.sample_time)\nGROUP BY smpe.sample_time, smps.sample_time\nORDER BY time",
+          "refId": "Statements WAL",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "hide": false,
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  wal_size / extract(epoch from smpe.sample_time - smps.sample_time) as \"Cluster WAL\"\nFROM sample_stat_cluster sc \n  JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sc.server_id = ${profile_servers}\n  AND $__timeFilter(smpe.sample_time)\nORDER BY time\n",
+          "refId": "Cluster WAL",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Transactions",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "id": 12,
+      "panels": [],
+      "title": "Vacuum",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Cluster vacuum runs",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 52,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 25
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sum(vacuum_count) / extract(epoch from smpe.sample_time - smps.sample_time) / 60 as \"Vacuum\",\n  sum(autovacuum_count) / extract(epoch from smpe.sample_time - smps.sample_time) / 60 as \"Autovacuum\"\nFROM sample_stat_tables_total st JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  st.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY smpe.sample_time, smps.sample_time\nORDER BY time",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Vacuum runs per minute",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Cluster vacuum runs",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 52,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 25
+      },
+      "id": 82,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sum(analyze_count) / extract(epoch from smpe.sample_time - smps.sample_time) / 60 as \"Analyze\",\n  sum(autoanalyze_count) / extract(epoch from smpe.sample_time - smps.sample_time) / 60 as \"Autoanalyze\"\nFROM sample_stat_tables_total st JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  st.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY smpe.sample_time, smps.sample_time\nORDER BY time",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Analyze runs per minute",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Cluster vacuum time spent",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 52,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 33
+      },
+      "id": 83,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sum(total_vacuum_time) / extract(epoch from smpe.sample_time - smps.sample_time) / 1000 as \"Vacuum time\",\n  sum(total_autovacuum_time) / extract(epoch from smpe.sample_time - smps.sample_time) / 1000 as \"Autovacuum time\"\nFROM sample_stat_tables_total st JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  st.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY smpe.sample_time, smps.sample_time\nORDER BY time",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Vacuum time spent (in seconds per second)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Cluster vacuum time spent",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 52,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 33
+      },
+      "id": 84,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sum(total_analyze_time) / extract(epoch from smpe.sample_time - smps.sample_time) / 1000 as \"Analyze time\",\n  sum(total_autoanalyze_time) / extract(epoch from smpe.sample_time - smps.sample_time) / 1000 as \"Autoanalyze time\"\nFROM sample_stat_tables_total st JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  st.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY smpe.sample_time, smps.sample_time\nORDER BY time",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Analyze time spent (in seconds per second)",
+      "type": "timeseries"
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": [
+    "pg_profile"
+  ],
+  "templating": {
+    "list": [
+      {
+        "hide": 0,
+        "includeAll": false,
+        "label": "Database with pg_profile extension",
+        "multi": false,
+        "name": "ProfileDB",
+        "options": [],
+        "query": "postgres",
+        "queryValue": "",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "datasource": {
+          "type": "postgres",
+          "uid": "${ProfileDB}"
+        },
+        "definition": "select server_id as __value, server_name as __text FROM servers",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Server",
+        "multi": false,
+        "name": "profile_servers",
+        "options": [],
+        "query": "select server_id as __value, server_name as __text FROM servers",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "datasource": {
+          "type": "postgres",
+          "uid": "${ProfileDB}"
+        },
+        "definition": "SELECT COALESCE(\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time < '${__from:date:iso}'\n  ORDER BY sample_id DESC\n  LIMIT 1),\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time > '${__from:date:iso}'\n  ORDER BY sample_id ASC\n  LIMIT 1)\n) as StartID",
+        "description": "Sample identifier of range start",
+        "hide": 2,
+        "includeAll": false,
+        "label": "StartID",
+        "multi": false,
+        "name": "startid",
+        "options": [],
+        "query": "SELECT COALESCE(\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time < '${__from:date:iso}'\n  ORDER BY sample_id DESC\n  LIMIT 1),\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time > '${__from:date:iso}'\n  ORDER BY sample_id ASC\n  LIMIT 1)\n) as StartID",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "datasource": {
+          "type": "postgres",
+          "uid": "${ProfileDB}"
+        },
+        "definition": "SELECT COALESCE(\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time < '${__to:date:iso}'\n  ORDER BY sample_id DESC\n  LIMIT 1),\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time > '${__to:date:iso}'\n  ORDER BY sample_id ASC\n  LIMIT 1)\n) as StartID",
+        "description": "Sample identifier of the current range end",
+        "hide": 2,
+        "includeAll": false,
+        "label": "EndID",
+        "multi": false,
+        "name": "endid",
+        "options": [],
+        "query": "SELECT COALESCE(\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time < '${__to:date:iso}'\n  ORDER BY sample_id DESC\n  LIMIT 1),\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time > '${__to:date:iso}'\n  ORDER BY sample_id ASC\n  LIMIT 1)\n) as StartID",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "datasource": {
+          "type": "postgres",
+          "uid": "${ProfileDB}"
+        },
+        "definition": "SELECT extract(epoch from min(sample_time))*1000 + 1 as min_from\nFROM samples\nWHERE\n  server_id = $profile_servers",
+        "description": "Minimal time for the current server",
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "min_from",
+        "options": [],
+        "query": "SELECT extract(epoch from min(sample_time))*1000 + 1 as min_from\nFROM samples\nWHERE\n  server_id = $profile_servers",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "datasource": {
+          "type": "postgres",
+          "uid": "${ProfileDB}"
+        },
+        "definition": "SELECT extract(epoch from max(sample_time))*1000 + 1 as max_to\nFROM samples\nWHERE\n  server_id = $profile_servers",
+        "description": "Maximum time for the current server",
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "max_to",
+        "options": [],
+        "query": "SELECT extract(epoch from max(sample_time))*1000 + 1 as max_to\nFROM samples\nWHERE\n  server_id = $profile_servers",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "15m",
+      "30m",
+      "1h",
+      "2h",
+      "1d"
+    ]
+  },
+  "timezone": "",
+  "title": "pg_profile vacuum",
+  "uid": "fesl2s0efompsd",
+  "version": 19,
+  "weekStart": ""
+}
