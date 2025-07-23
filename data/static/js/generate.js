@@ -14,10 +14,10 @@ class BaseSection {
      */
     static buildTitle(section, deep) {
         let title = document.createElement('h3');
-        if (deep != 1) {
+        if (deep !== 1) {
             title = document.createElement('p');
         }
-        
+
         title.innerHTML = section.tbl_cap;
         title.id = section.sect_id;
         return title;
@@ -240,6 +240,7 @@ class BaseTable extends BaseSection {
 
         /** Tag with md5 of (userid::text || datid::text || queryid::text) */
         let p2 = document.createElement('p');
+        p2.classList.add('small_p');
         let small = document.createElement('small');
         p2.appendChild(small);
         small.innerHTML = `[${row.hashed_ids}]`;
@@ -329,13 +330,13 @@ class BaseTable extends BaseSection {
                 newRow.setAttribute('data-all', row.hexqueryid);
             }
             let newCell = newRow.insertCell(-1);
-            let text = Utilities.preprocessQueryString(row[column.id][i], 5000);
+            let preprocessedQueryText = Utilities.preprocessQueryString(row[column.id][i], 5000);
 
             /** Setting attributes to new cell */
             newCell.setAttribute('class', column.class);
 
-            let newText = document.createTextNode(text);
-            newCell.appendChild(newText);
+            let newText = `<pre>${preprocessedQueryText}</pre>`;
+            newCell.insertAdjacentHTML('afterbegin', newText);
         }
 
         /** If plans of statements are available */
@@ -354,13 +355,16 @@ class BaseTable extends BaseSection {
                 newCell.appendChild(newText);
 
                 /** Setting attributes to new cell */
-                newCell.setAttribute('class', "mono queryTextId");
+                newCell.setAttribute('class', column.class);
                 newCell.setAttribute('id', `${row.hexqueryid}_${row.plans[i].hexplanid}`);
 
                 /** Plantext column */
-                newCell = newRow.insertCell(-1);
-                text = `<pre>${row.plans[i].plan_text}</pre>`;
-                newCell.insertAdjacentHTML('afterbegin', text);
+                let newPlanCell = newRow.insertCell(-1);
+                let preprocessedPlanText = Utilities.preprocessQueryString(row.plans[i].plan_text);
+                let planText = `<pre>${preprocessedPlanText}</pre>`;
+
+                newPlanCell.setAttribute('class', column.class);
+                newPlanCell.insertAdjacentHTML('afterbegin', planText);
             }
         }
 
@@ -839,10 +843,10 @@ class VerticalTable extends BaseTable {
             }
 
             VerticalTable.buildCell(newRow, columns[i], rows, classes[0].class);
-            
+
             for (let j = 0; j < columns[i].cells.length; j++) {
                 let cell = columns[i].cells[j];
-                let klass = classes[j+1].class;
+                let klass = classes[j].class;
                 VerticalTable.buildCell(newRow, cell, rows, klass);
             }
         }
