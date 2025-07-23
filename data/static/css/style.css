@@ -47,8 +47,11 @@ td p {
 
 td p:nth-of-type(2) {
     display: flex;
-    justify-content: center;
     align-items: center;
+}
+
+.small_p {
+    justify-content: center;
 }
 
 p i {
@@ -279,6 +282,7 @@ select {
 
 table {
     margin-bottom: 10px;
+    font-family: var(--main-font-family);
 }
 
 table tr.header {
@@ -307,8 +311,18 @@ table tr td.table_obj_name {
     text-align: left;
 }
 
-table tr td.fullScreen {
-    width: 85%
+table tr td.fullScreen, td.halfScreen {
+    width: 85%;
+    font-family: var(--main-font-family);
+    font-size: clamp(8px, 0.9vw, 12px);
+}
+
+.lineSvg:hover {
+    cursor: pointer;
+}
+
+.lineSvg line:hover {
+    opacity: 1;
 }
 
 table tr td.halfScreen {
@@ -409,9 +423,10 @@ table tr.previewRow {
     background-color: white;
 }
 
-table tr.grey {
+table:not(.pgprototals) tr.grey {
     background-color: #eee;
 }
+
 table tr.previewRow {
     background-color: white;
 }
@@ -432,7 +447,7 @@ table tr.previewRow a {
     float: left;
 }
 
-table tr td.queryText {
+.queryText, .queryTextId {
     font-size: 13px;
 }
 

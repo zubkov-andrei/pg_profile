@@ -21,36 +21,106 @@ class BaseChart {
 class PipeChart extends BaseChart {
     static drawSVG(orderedData, value, key) {
         let x = 0; // Start position of nested svg
-
         let nestedSvg = '';
+        let totalWidth = 0;
 
         orderedData.forEach(elem => {
             let width = Math.floor(elem[value]);
+            if (width > 0) {
+                totalWidth += width;
+            }
+        });
+
+        orderedData.forEach(elem => {
+            let width = Math.floor(elem[value]);
+            /** all lines with a value of 'width' > 0 */
+            if (width > 0) {
+                let textContent = `${elem.objname}: ${elem[key]}`;
+                let lineColor;
+                if (elem[value] > 50) {         // >50%
+                    lineColor = "FA1900";
+                } else if (elem[value] > 25) {  // >25% <=50%
+                    lineColor = "FF9500";
+                } else if (elem[value] > 10) {  // >10% <=25%
+                    lineColor = "FFC83B";
+                } else {                        // <=10%
+                    lineColor = "00B896";
+                }
+
+                /** If there is only one parameter, it takes up the entire width without any padding */
+                if (width !== 100) {
+                    width = width - 0.3;
+                }
+
+                nestedSvg += `
+                    <svg class="lineSvg" height="2em" width="${width}%" x="${x}%">
+                        <title>${elem.objname}: ${elem[value]}%</title>
+                        <line opacity="0.4" x1="0" y1="80%" x2="100%" y2="80%" stroke="#${lineColor}" stroke-width="4px"></line>
+                        <text x="0.1em" y="45%" dominant-baseline="middle" fill="#${lineColor}" class="textSvg">
+                            ${textContent}
+                        </text>
+                    </svg>
+                `;
+
+                x += width + 0.3;
+            }
+        });
+
+        if (totalWidth < 100) {
+            let remainingWidth = 100 - totalWidth;
             nestedSvg += `
-                <svg height="2em" width="${width}%" x="${x}%">
-                    <title>${elem.objname}: ${elem[value]}</title>
-                    <rect height="90%" x="0%" y="10%" ry="15%" stroke="black" stroke-width="1px" width="100%" fill="#${elem.objcolor}"></rect>
-                    <text x="0.3em" y="70%">${elem.objname}: ${elem[key]}</text>
+                <svg class="lineSvg" height="2em" width="${remainingWidth}%" x="${x}%">
+                    <title>Others (${remainingWidth}%)</title>
+                    <line opacity="0.4" x1="0" y1="80%" x2="100%" y2="80%" stroke="#8898AE" stroke-width="4px"></line>
                 </svg>
             `;
+        }
 
-            x += width;
-        })
-
-        let svg = `
-            <svg
-                height="2em"
-                width="100%">
-                ${nestedSvg}
-            </svg>
-        `;
-
-        return svg;
+        return `<svg height="2em" width="100%" class="pipe-chart-container">${nestedSvg}</svg>`;
     }
 
     static drawIntoTable(newRow, column, data) {
         BaseChart.drawIntoTable(PipeChart, newRow, column, data);
+        setTimeout(() => {
+            /** We are looking for all fields of the chart */
+            let containerSvg = newRow.querySelectorAll('.pipe-chart-container');
+
+            containerSvg.forEach(containerSvg => {
+                if (containerSvg) {
+                    PipeChart.checkTextOverflow(containerSvg); /** first check */
+                    /** tracking window size changes */
+                    let resizeObserver = new ResizeObserver((entries) => {
+                        entries.forEach(entry => {
+                            PipeChart.checkTextOverflow(entry.target);
+                        });
+                    });
+                    resizeObserver.observe(containerSvg);
+                    /** Saving the observer */
+                    containerSvg._resizeObserver = resizeObserver;
+                }
+            });
+        }, 100); /** delay for reliability */
+
         return true;
+    }
+
+    /** A function for comparing the width of text and line */
+    static checkTextOverflow(containerSvg) {
+        let lineSvgs = containerSvg.querySelectorAll('.lineSvg');
+        if (lineSvgs) {
+            lineSvgs.forEach(svg => {
+                let textElement = svg.querySelector('.textSvg');
+                let lineElement = svg.querySelector('line');
+
+                if (textElement && lineElement && textElement.getBBox && lineElement.getBBox) {
+                    /** getting the dimensions */
+                    let textBBox = textElement.getBBox();
+                    let lineBBox = lineElement.getBBox();
+
+                    textElement.style.visibility = textBBox?.width > lineBBox?.width ? 'hidden' : 'visible';
+                }
+            });
+        }
     }
 }
 
@@ -280,7 +350,7 @@ class SessionChart extends BaseChart {
                 'queryid': elem.queryid
             };
             if (stateChanging[`${elem.pid}_${elem.backend_start_ut}`] === undefined) {
-                // Backend statistics
+                /** Backend statistics */
                 let xact = {}
                 xact[elem.xact_start_ut] = {
                     'pid': elem.pid,
@@ -352,14 +422,14 @@ class SessionChart extends BaseChart {
         Object.keys(stateChanging).forEach(backend => {
             let colour;
             let backendObj = stateChanging[backend];
-            // Drawing rectangle with backend
+            /** Drawing rectangle with backend */
             let title = '';
             title += `PID: ${backendObj.pid}\n`;
             title += `Backend start: ${new Date(backendObj.start_ut * 1000)}\n`;
             title += `Backend duration: ${Math.round(backendObj.duration * 100) / 100} sec`;
 
             let backendSVG = this.drawRect(backendObj, reportStartUT, proportion, backendObj['chart_line'], this.colours[2], this.colours[17], title, 'backend');
-            // Drawing PID
+            /** Drawing PID */
             let pidSVG = this.drawPID(backendObj, reportStartUT, proportion, backendObj['chart_line']);
 
             StateChangeSVGNested += backendSVG;
@@ -381,10 +451,10 @@ class SessionChart extends BaseChart {
                 Object.keys(xactObj.state_changes).forEach(state_change => {
                     let stateChangeObj = xactObj.state_changes[state_change];
                     if (stateChangeObj.state_code === 1) {
-                        // idle in transaction
+                        /** idle in transaction */
                         colour = this.colours[6]
                     } else if (stateChangeObj.state_code === 3) {
-                        // active
+                        /** active */
                         colour = this.colours[9]
                     }
                     let title = '';
@@ -398,7 +468,7 @@ class SessionChart extends BaseChart {
                     title += `Backend start: ${new Date(backendObj.start_ut * 1000)} \n`;
                     title += `Backend duration: ${Math.round(backendObj.duration * 100) / 100} sec`;
 
-                    // dataObj, reportStartUT, proportion, num, strokeColour, fillColour, title, klass
+                    /** dataObj, reportStartUT, proportion, num, strokeColour, fillColour, title, klass */
                     let stateChangeSVG = this.drawRect(
                         stateChangeObj,
                         reportStartUT,
@@ -416,8 +486,7 @@ class SessionChart extends BaseChart {
             })
         })
 
-        // Drawing timeline grid
-
+        /** Drawing timeline grid */
         let timeGridNestedSVG = '';
 
         for (let i = 0; i <= linesCount; i++) {
@@ -477,7 +546,7 @@ class SessionChart extends BaseChart {
     }
 
     drawSessionChartLegend() {
-        // Create legend
+        /** Create legend */
         let legend = document.createElement('div');
         legend.style.display = 'flex';
         legend.style.flexDirection = 'column';

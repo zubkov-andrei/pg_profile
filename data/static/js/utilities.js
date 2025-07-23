@@ -167,4 +167,8 @@ class Utilities {
             Utilities.searchWithParam(rowsForSearch, keyword, searchParam);
         }
     }
+
+    static getValue(el) {
+        console.log(el.value)
+    }
 }
