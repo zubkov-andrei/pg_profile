@@ -442,6 +442,11 @@ BEGIN
 
   /* Import tables data */
 
+  CREATE TEMP TABLE import_sections_map (
+       map_key text PRIMARY KEY,
+       map_value jsonb
+  );
+
   SET CONSTRAINTS ALL DEFERRED;
   import_stage := 0;
   WHILE import_stage < 3 LOOP
@@ -507,6 +512,8 @@ BEGIN
     END LOOP; -- over dump tables
     import_stage := import_stage + 1;
   END LOOP; -- over import stages
+
+  DROP TABLE import_sections_map;
 
   -- Finalize import
   FOR r_result IN (SELECT * FROM jsonb_each(tmp_srv_map)) LOOP
@@ -608,7 +615,6 @@ DECLARE
   datarow          record;
   rowcnt           bigint = 0;
   row_proc         bigint = 0;
-  section_meta     jsonb;
 BEGIN
   new_import_meta := import_meta;
   CASE imp_table_name
@@ -1114,7 +1120,6 @@ BEGIN
             imp_table_name, import_meta ->> 'extension', import_meta ->> 'version');
       END CASE; -- over import versions
     WHEN 'tables_list' THEN
-      section_meta := '{}'::jsonb;
       LOOP
         FETCH data INTO datarow;
         EXIT WHEN NOT FOUND;
@@ -1122,13 +1127,16 @@ BEGIN
         * binding here. We'll need it in further insert into sample_stat_tables
         */
         IF datarow.row_data #> ARRAY['reltoastrelid'] IS NOT NULL THEN
-          section_meta := jsonb_set(section_meta,
-            ARRAY[format('%s.%s',
+          INSERT INTO import_sections_map (map_key, map_value)
+          VALUES (
+            format('%s.%s',
               datarow.row_data #>> ARRAY['server_id'],
-              datarow.row_data #>> ARRAY['relid'])
-            ],
-            jsonb_build_object('reltoastrelid', datarow.row_data #> ARRAY['reltoastrelid'])
-          );
+              datarow.row_data #>> ARRAY['relid']
+            ),
+            jsonb_build_object('reltoastrelid',
+              datarow.row_data #> ARRAY['reltoastrelid']
+            )
+          ) ON CONFLICT DO NOTHING;
         END IF;
         INSERT INTO tables_list(server_id,last_sample_id,datid,relid,relkind,
           schemaname,relname)
@@ -1163,11 +1171,15 @@ BEGIN
         END IF;
       END LOOP; -- over data rows
       -- Return collected relations mapping
-      IF section_meta != '{}'::jsonb THEN
-        new_import_meta := jsonb_set(new_import_meta, '{relations_map}', section_meta);
+      IF (SELECT count(*) > 0 FROM import_sections_map) THEN
+        SELECT jsonb_set(new_import_meta, '{relations_map}',
+          jsonb_object_agg(map_key, map_value))
+          INTO new_import_meta
+        FROM
+          import_sections_map;
+        TRUNCATE import_sections_map;
       END IF;
     WHEN 'stmt_list' THEN
-      section_meta := '{}'::jsonb;
       CASE
         WHEN array_position(versions_array, '0.3.2:pg_profile') >= 1 THEN
           LOOP
@@ -1199,17 +1211,17 @@ BEGIN
           LOOP
             FETCH data INTO datarow;
             EXIT WHEN NOT FOUND;
-            IF section_meta #> ARRAY[datarow.row_data->>'queryid_md5'] IS NULL THEN
-              section_meta := jsonb_set(section_meta,
-                ARRAY[datarow.row_data->>'queryid_md5'], '{}'::jsonb);
-            END IF;
-            section_meta := jsonb_set(section_meta,
-              ARRAY[datarow.row_data->>'queryid_md5', datarow.row_data->>'server_id'],
+            INSERT INTO import_sections_map (map_key, map_value)
+            VALUES (
+              format('%s.%s',
+                datarow.row_data->>'queryid_md5',
+                datarow.row_data->>'server_id'
+              ),
               to_jsonb(left(encode(sha224(convert_to(
                 datarow.row_data->>'query',
                 'UTF8')
               ), 'base64'), 32))
-            );
+            ) ON CONFLICT DO NOTHING;
             INSERT INTO stmt_list(server_id, last_sample_id, queryid_md5, query)
             SELECT
               (srv_map ->> dr.server_id::text)::integer,
@@ -1229,7 +1241,14 @@ BEGIN
             END IF;
           END LOOP; -- over data rows
           -- Return queryid mapping
-          new_import_meta := jsonb_set(new_import_meta, '{queryid_map}', section_meta);
+          IF (SELECT count(*) > 0 FROM import_sections_map) THEN
+            SELECT jsonb_set(new_import_meta, '{queryid_map}',
+              jsonb_object_agg(map_key, map_value))
+              INTO new_import_meta
+            FROM
+              import_sections_map;
+            TRUNCATE import_sections_map;
+          END IF;
         ELSE
           RAISE '%', format('[import %s]: Unsupported extension version: %s %s',
             imp_table_name, import_meta ->> 'extension', import_meta ->> 'version');
@@ -1746,7 +1765,10 @@ BEGIN
               dr.datid,
               dr.queryid,
               CASE WHEN starts_with(versions_array[1], '0.3.1:') THEN
-                import_meta #>> ARRAY['queryid_map', dr.queryid_md5, dr.server_id::text]
+                import_meta #>> ARRAY[
+                   'queryid_map',
+                   format('%s.%s', dr.queryid_md5, dr.server_id::text)
+                ]
               ELSE
                 dr.queryid_md5
               END,
@@ -2669,7 +2691,10 @@ BEGIN
               dr.datid,
               dr.queryid,
               CASE WHEN starts_with(versions_array[1], '0.3.1:') THEN
-                import_meta #>> ARRAY[dr.queryid_md5, dr.server_id::text]
+                import_meta #>> ARRAY[
+                   'queryid_map',
+                   format('%s.%s', dr.queryid_md5, dr.server_id::text)
+                ]
               ELSE
                 dr.queryid_md5
               END,
@@ -3861,7 +3886,6 @@ DECLARE
   datarow          record;
   rowcnt           bigint = 0;
   row_proc         bigint = 0;
-  section_meta     jsonb;
 BEGIN
   new_import_meta := import_meta;
   CASE imp_table_name
