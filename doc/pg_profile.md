@@ -144,7 +144,7 @@ Any postgres user can build a *pg_profile* report. The minimal privileges needed
 ## Using pg_profile
 ### Setting extension parameters
 You can define extension parameters in *postgresql.conf*. Default values:
-* _pg_profile.topn = 20_ - Number of top objects (statements, relations, etc.), to be reported in each sorted report table. Also, this parameter affects size of a sample - the more objects you want to appear in your report, the more objects we need to keep in a sample.
+* _pg_profile.topn = 20_ - Number of top objects (statements, relations, etc.), to be reported in each sorted report table. Also, this parameter affects size of a sample - the more objects you want to appear in your report, the more objects we need to keep in a sample. The maximum value  is 100. Any greater values  will be lowered to 100.
 * _pg_profile.max_sample_age = 7_ - Retention time of samples in days. Samples, aged _pg_profile.max_sample_age_ days and more will be automatically deleted on next _take_sample()_ call.
 * _pg_profile.track_sample_timings = off_ - when this parameter is on, _pg_profile_ will track detailed sample taking timings.
 * _pg_profile.max_query_length = 20000_ - query length limit for reports. All queries in a report will be truncated to this length. This setting does not affect query text collection - during a sample full query texts are collected, thus can be obtained.

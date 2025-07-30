@@ -41,7 +41,7 @@ BEGIN
 
     -- Getting TopN setting
     BEGIN
-        SELECT current_setting('{pg_profile}.topn')::integer AS topn INTO qres;
+        SELECT least(current_setting('{pg_profile}.topn')::integer, 100) AS topn INTO qres;
         server_properties := jsonb_set(server_properties,'{properties,topn}',to_jsonb(qres.topn));
     EXCEPTION
         WHEN OTHERS THEN

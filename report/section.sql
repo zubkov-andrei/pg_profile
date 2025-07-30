@@ -29,7 +29,7 @@ BEGIN
 
     -- Getting TopN setting
     BEGIN
-        topn := current_setting('{pg_profile}.topn')::integer;
+        topn := least(current_setting('{pg_profile}.topn')::integer, 100);
     EXCEPTION
         WHEN OTHERS THEN topn := 20;
     END;
