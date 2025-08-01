@@ -2228,7 +2228,8 @@ BEGIN
                     /*
                       Cleanup dblink connections
                     */
-                    FOREACH conname IN ARRAY dblink_get_connections()
+                    FOREACH conname IN ARRAY
+                        coalesce(dblink_get_connections(), array[]::text[])
                     LOOP
                         IF conname IN ('server_connection', 'server_db_connection') THEN
                             PERFORM dblink_disconnect(conname);
@@ -2306,7 +2307,8 @@ BEGIN
                     /*
                       Cleanup dblink connections
                     */
-                    FOREACH conname IN ARRAY dblink_get_connections()
+                    FOREACH conname IN ARRAY
+                        coalesce(dblink_get_connections(), array[]::text[])
                     LOOP
                         IF conname IN ('server_connection', 'server_db_connection') THEN
                             PERFORM dblink_disconnect(conname);
