@@ -29,3 +29,8 @@ DROP FUNCTION cluster_stat_io_reset_format(integer, integer, integer, integer, i
 DROP FUNCTION profile_checkavail_rusage;
 DROP FUNCTION profile_checkavail_rusage_planstats;
 DROP FUNCTION wal_stats;
+DROP FUNCTION import_data;
+DROP FUNCTION import_section_data_subsample;
+DROP FUNCTION init_sample;
+DROP FUNCTION take_sample(name, boolean);
+DROP FUNCTION take_sample_subset;
