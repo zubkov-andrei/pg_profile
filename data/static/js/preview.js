@@ -13,7 +13,7 @@ class Previewer {
 
         /** Query text preview */
         if (!queryCell.hasChildNodes()) {
-            let preprocessedText = Utilities.preprocessQueryString(queryString, 1000);
+            let preprocessedText = Utilities.preprocessQueryString(queryString);
             queryCell.insertAdjacentHTML('afterbegin', `<p><i>${preprocessedText}</i></p>`);
         }
     }
@@ -27,7 +27,7 @@ class Previewer {
         if (!previewCell.hasChildNodes()) {
             let topn = data.properties.topn || 20;
             previewData.slice(-topn).reverse().forEach(item => {
-                let preprocessedText = Utilities.preprocessQueryString(`${item['first_seen']}: ${item['reloptions']}`, 1000);
+                let preprocessedText = Utilities.preprocessQueryString(`${item['first_seen']}: ${item['reloptions']}`);
                 previewCell.insertAdjacentHTML('afterbegin', `<p><i>${preprocessedText}</i></p>`);
             })
         }

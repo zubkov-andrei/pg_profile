@@ -330,7 +330,7 @@ class BaseTable extends BaseSection {
                 newRow.setAttribute('data-all', row.hexqueryid);
             }
             let newCell = newRow.insertCell(-1);
-            let preprocessedQueryText = Utilities.preprocessQueryString(row[column.id][i], 5000);
+            let preprocessedQueryText = Utilities.preprocessQueryString(row[column.id][i]);
 
             /** Setting attributes to new cell */
             newCell.setAttribute('class', column.class);
