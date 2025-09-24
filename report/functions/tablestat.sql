@@ -29,8 +29,8 @@ RETURNS TABLE(
     total_autoanalyze_time  double precision,
     growth              bigint,
     relpagegrowth_bytes bigint,
-    seqscan_bytes_relsize bigint,
-    seqscan_bytes_relpages bigint
+    seqscan_bytes_relsize numeric,
+    seqscan_bytes_relpages numeric
 ) SET search_path=@extschema@ AS $$
     SELECT
         st.datid,
@@ -62,10 +62,10 @@ RETURNS TABLE(
         sum(st.relsize_diff)::bigint AS growth,
         sum(st.relpages_bytes_diff)::bigint AS relpagegrowth_bytes,
         CASE WHEN bool_and(COALESCE(st.seq_scan, 0) = 0 OR st.relsize IS NOT NULL) THEN
-          sum(st.seq_scan * st.relsize)::bigint
+          sum(st.seq_scan::numeric * st.relsize::numeric)
         ELSE NULL
         END AS seqscan_bytes_relsize,
-        sum(st.seq_scan * st.relpages_bytes)::bigint AS seqscan_bytes_relpages
+        sum(st.seq_scan::numeric * st.relpages_bytes::numeric) AS seqscan_bytes_relpages
     FROM v_sample_stat_tables st
         -- Database name
         JOIN sample_stat_database sample_db
@@ -104,8 +104,8 @@ RETURNS TABLE(
     total_autoanalyze_time  double precision,
     growth              bigint,
     relpagegrowth_bytes bigint,
-    seqscan_bytes_relsize bigint,
-    seqscan_bytes_relpages bigint
+    seqscan_bytes_relsize numeric,
+    seqscan_bytes_relpages numeric
 ) SET search_path=@extschema@ AS $$
     SELECT
         st.datid,
@@ -136,10 +136,10 @@ RETURNS TABLE(
         sum(st.relsize_diff)::bigint AS growth,
         sum(st.relpages_bytes_diff)::bigint AS relpagegrowth_bytes,
         CASE WHEN bool_and(COALESCE(st.seq_scan, 0) = 0 OR st.relsize IS NOT NULL) THEN
-          sum(st.seq_scan * st.relsize)::bigint
+          sum(st.seq_scan::numeric * st.relsize::numeric)
         ELSE NULL
         END AS seqscan_bytes_relsize,
-        sum(st.seq_scan * st.relpages_bytes)::bigint AS seqscan_bytes_relpages
+        sum(st.seq_scan::numeric * st.relpages_bytes::numeric) AS seqscan_bytes_relpages
     FROM v_sample_stat_tables st
         -- Database name
         JOIN sample_stat_database sample_db

@@ -3257,8 +3257,8 @@ BEGIN
           tcur.relid AS toastrelid,
           -- Seq. scanned blocks rank
           row_number() OVER (ORDER BY
-            (cur.seq_scan - COALESCE(lst.seq_scan,0)) * cur.relsize +
-            (tcur.seq_scan - COALESCE(tlst.seq_scan,0)) * tcur.relsize DESC) scan_rank,
+            (cur.seq_scan - COALESCE(lst.seq_scan,0)) * (cur.relpages_bytes / 8192) +
+            (tcur.seq_scan - COALESCE(tlst.seq_scan,0)) * (tcur.relpages_bytes / 8192) DESC) scan_rank,
           row_number() OVER (ORDER BY cur.n_tup_ins + cur.n_tup_upd + cur.n_tup_del -
             COALESCE(lst.n_tup_ins + lst.n_tup_upd + lst.n_tup_del, 0) +
             COALESCE(tcur.n_tup_ins + tcur.n_tup_upd + tcur.n_tup_del, 0) -
