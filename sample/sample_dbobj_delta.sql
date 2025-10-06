@@ -9,9 +9,7 @@ BEGIN
     * Due to relations between objects we need to mark top objects (and their
     * dependencies) first, and calculate increments later
     */
-    IF (properties #>> '{collect_timings}')::boolean THEN
-      result := jsonb_set(properties,'{timings,calculate tables stats}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+    result := log_sample_timings(result, 'calculate tables stats', 'start');
 
     -- Marking functions
     UPDATE last_stat_user_functions ulf
@@ -555,10 +553,8 @@ BEGIN
       (cur.server_id, s_id - 1, cur.datid, cur.relid)
       AND cur.relsize IS NULL;
 
-    IF (result #>> '{collect_timings}')::boolean THEN
-      result := jsonb_set(result,'{timings,calculate tables stats,end}',to_jsonb(clock_timestamp()));
-      result := jsonb_set(result,'{timings,calculate indexes stats}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+    result := log_sample_timings(result, 'calculate tables stats', 'end');
+    result := log_sample_timings(result, 'calculate indexes stats', 'start');
 
     -- New index names
     INSERT INTO indexes_list AS iil (
@@ -736,10 +732,8 @@ BEGIN
       (sserver_id, s_id - 1, cur.datid, cur.indexrelid)
       AND cur.relsize IS NULL;
 
-    IF (result #>> '{collect_timings}')::boolean THEN
-      result := jsonb_set(result,'{timings,calculate indexes stats,end}',to_jsonb(clock_timestamp()));
-      result := jsonb_set(result,'{timings,calculate functions stats}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+    result := log_sample_timings(result, 'calculate indexes stats', 'end');
+    result := log_sample_timings(result, 'calculate functions stats', 'start');
 
     -- New function names
     INSERT INTO funcs_list AS ifl (
@@ -834,10 +828,8 @@ BEGIN
       (cur.server_id, cur.sample_id) = (sserver_id, s_id)
     GROUP BY cur.server_id, cur.sample_id, cur.datid, cur.trg_fn;
 
-    IF (result #>> '{collect_timings}')::boolean THEN
-      result := jsonb_set(result,'{timings,calculate functions stats,end}',to_jsonb(clock_timestamp()));
-      result := jsonb_set(result,'{timings,merge new extensions version}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+    result := log_sample_timings(result, 'calculate functions stats', 'end');
+    result := log_sample_timings(result, 'merge new extensions version', 'start');
 
     UPDATE extension_versions ev
     SET last_sample_id = s_id - 1
@@ -874,10 +866,8 @@ BEGIN
       (cur_lev.server_id, cur_lev.sample_id) = (sserver_id, s_id) AND
       prev_lev.extname IS NULL;
 
-    IF (result #>> '{collect_timings}')::boolean THEN
-      result := jsonb_set(result,'{timings,merge new extensions version,end}',to_jsonb(clock_timestamp()));
-      result := jsonb_set(result,'{timings,merge new relation storage parameters}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+    result := log_sample_timings(result, 'merge new extensions version', 'end');
+    result := log_sample_timings(result, 'merge new relation storage parameters', 'start');
 
     UPDATE table_storage_parameters tsp
     SET last_sample_id = s_id - 1
@@ -962,9 +952,7 @@ BEGIN
       prev_lsi IS NULL AND
       isp IS NULL;
 
-    IF (result #>> '{collect_timings}')::boolean THEN
-      result := jsonb_set(result,'{timings,merge new relation storage parameters,end}',to_jsonb(clock_timestamp()));
-    END IF;
+    result := log_sample_timings(result, 'merge new relation storage parameters', 'end');
 
     -- Clear data in last_ tables, holding data only for next diff sample
     DELETE FROM last_stat_tables WHERE server_id=sserver_id AND sample_id != s_id;

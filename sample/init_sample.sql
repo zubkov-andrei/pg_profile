@@ -1,7 +1,7 @@
 CREATE FUNCTION init_sample(IN sserver_id integer
 ) RETURNS jsonb SET search_path=@extschema@ AS $$
 DECLARE
-    server_properties jsonb = '{"extensions":[],"settings":[],"timings":{},"properties":{}}'; -- version, extensions, etc.
+    server_properties jsonb = '{"extensions":[],"settings":[],"timings":[],"properties":{}}'; -- version, extensions, etc.
     qres              record;
     qres_subsample    record;
     server_connstr    text;
@@ -78,10 +78,8 @@ BEGIN
         PERFORM dblink_disconnect('server_connection');
     END IF;
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,connect}',jsonb_build_object('start',clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,total}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+    server_properties := log_sample_timings(server_properties, 'connect', 'start');
+    server_properties := log_sample_timings(server_properties, 'total', 'start');
 
     -- Server connection
     PERFORM dblink_connect('server_connection', server_properties #>> '{properties,server_connstr}');
@@ -107,10 +105,8 @@ BEGIN
     -- Reset search_path for security reasons
     PERFORM dblink('server_connection','SET search_path=''''');
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,connect,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,get server environment}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+    server_properties := log_sample_timings(server_properties, 'connect', 'end');
+    server_properties := log_sample_timings(server_properties, 'get server environment', 'start');
     -- Get settings values for the server
     FOR qres IN
       SELECT * FROM dblink('server_connection',

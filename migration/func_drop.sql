@@ -5,6 +5,7 @@ DROP FUNCTION import_section_data_profile;
 DROP FUNCTION import_section_data_subsample;
 DROP FUNCTION init_sample;
 DROP FUNCTION sample_dbobj_delta;
+DROP FUNCTION take_sample(integer, boolean);
 DROP FUNCTION take_sample(name, boolean);
 DROP FUNCTION take_sample_subset(integer, integer);
 DROP FUNCTION top_tables;

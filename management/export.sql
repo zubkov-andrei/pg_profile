@@ -1294,17 +1294,19 @@ BEGIN
       LOOP
         FETCH data INTO datarow;
         EXIT WHEN NOT FOUND;
-        INSERT INTO sample_timings(server_id, sample_id, event, time_spent)
+        INSERT INTO sample_timings(server_id, sample_id, event, exec_point, event_ts)
         SELECT
           (srv_map ->> dr.server_id::text)::integer,
           dr.sample_id,
           dr.event,
-          dr.time_spent
+          dr.exec_point,
+          dr.event_ts
         FROM json_to_record(datarow.row_data) AS dr(
             server_id      integer,
             sample_id      integer,
             event          text,
-            time_spent     interval minute to second(2)
+            exec_point     text,
+            event_ts       timestamp
           )
          JOIN
           samples s_ctl ON

@@ -8,6 +8,8 @@
 /^CREATE FUNCTION import_data(.*$/,/\$\$[[:space:]]*LANGUAGE[[:space:]]\+\(plpg\)\?sql[[:space:]]*;[[:space:]]*$/p
 /^COMMENT ON FUNCTION import_data(.*$/,/';$/p
 /^CREATE FUNCTION init_sample(.*$/,/\$\$[[:space:]]*LANGUAGE[[:space:]]\+\(plpg\)\?sql[[:space:]]*;[[:space:]]*$/p
+/^CREATE FUNCTION log_sample_timings(.*$/,/'log event to sample_timings';$/p
+/^CREATE FUNCTION take_sample(IN sserver_id integer.*$/,/'Statistics sample creation function (by server_id)';$/p
 /^CREATE FUNCTION take_sample(IN server name.*$/,/\$\$[[:space:]]*LANGUAGE[[:space:]]\+\(plpg\)\?sql[[:space:]]*;[[:space:]]*$/p
 /^COMMENT ON FUNCTION take_sample(IN server name.*$/,/';$/p
 /^CREATE FUNCTION take_sample_subset(IN sets_cnt integer.*$/,/\$\$[[:space:]]*LANGUAGE[[:space:]]\+\(plpg\)\?sql[[:space:]]*;[[:space:]]*$/p

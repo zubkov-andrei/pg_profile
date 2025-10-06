@@ -57,6 +57,7 @@ adm_funcs = management/baseline.sql \
 export_funcs = \
 	management/export.sql
 sample = \
+	sample/log_sample_timings.sql \
 	sample/sample_pg_stat_statements.sql \
 	sample/pg_wait_sampling.sql \
 	sample/collect_obj_stats.sql \

@@ -64,9 +64,7 @@ BEGIN
       -- Reset search_path for security reasons
       PERFORM dblink('server_db_connection','SET search_path=''''');
 
-      IF (properties #>> '{collect_timings}')::boolean THEN
-        result := jsonb_set(result,ARRAY['timings',format('db:%s get extensions version',qres.datname)],jsonb_build_object('start',clock_timestamp()));
-      END IF;
+      result := log_sample_timings(result, format('db:%s get extensions version',qres.datname), 'start');
 
       t_query := 'SELECT '
         'extname,'
@@ -92,10 +90,8 @@ BEGIN
          extversion text
       );
 
-      IF (result #>> '{collect_timings}')::boolean THEN
-        result := jsonb_set(result,ARRAY['timings',format('db:%s get extensions version',qres.datname),'end'],to_jsonb(clock_timestamp()));
-        result := jsonb_set(result,ARRAY['timings',format('db:%s collect tables stats',qres.datname)],jsonb_build_object('start',clock_timestamp()));
-      END IF;
+      result := log_sample_timings(result, format('db:%s get extensions version',qres.datname), 'end');
+      result := log_sample_timings(result, format('db:%s collect tables stats',qres.datname), 'start');
 
       -- Generate Table stats query
       CASE
@@ -613,10 +609,8 @@ BEGIN
         END IF;
       END IF; -- relation collection condition
 
-      IF (result #>> '{collect_timings}')::boolean THEN
-        result := jsonb_set(result,ARRAY['timings',format('db:%s collect tables stats',qres.datname),'end'],to_jsonb(clock_timestamp()));
-        result := jsonb_set(result,ARRAY['timings',format('db:%s collect indexes stats',qres.datname)],jsonb_build_object('start',clock_timestamp()));
-      END IF;
+      result := log_sample_timings(result, format('db:%s collect tables stats',qres.datname), 'end');
+      result := log_sample_timings(result, format('db:%s collect indexes stats',qres.datname), 'start');
 
       -- Generate index stats query
       CASE
@@ -783,10 +777,8 @@ BEGIN
         END IF;
       END IF; -- relation collection condition
 
-      IF (result #>> '{collect_timings}')::boolean THEN
-        result := jsonb_set(result,ARRAY['timings',format('db:%s collect indexes stats',qres.datname),'end'],to_jsonb(clock_timestamp()));
-        result := jsonb_set(result,ARRAY['timings',format('db:%s collect functions stats',qres.datname)],jsonb_build_object('start',clock_timestamp()));
-      END IF;
+      result := log_sample_timings(result, format('db:%s collect indexes stats',qres.datname), 'end');
+      result := log_sample_timings(result, format('db:%s collect functions stats',qres.datname), 'start');
 
       -- Generate Function stats query
       t_query := 'SELECT f.funcid,'
@@ -847,24 +839,18 @@ BEGIN
 
       PERFORM dblink('server_db_connection', 'COMMIT');
       PERFORM dblink_disconnect('server_db_connection');
-      IF (result #>> '{collect_timings}')::boolean THEN
-        result := jsonb_set(result,ARRAY['timings',format('db:%s collect functions stats',qres.datname),'end'],to_jsonb(clock_timestamp()));
-      END IF;
+      result := log_sample_timings(result, format('db:%s collect functions stats',qres.datname), 'end');
     END LOOP; -- over databases
 
     -- Now we should preform ANALYZE on collected data
-    IF (result #>> '{collect_timings}')::boolean THEN
-      result := jsonb_set(result,ARRAY['timings', 'analyzing collected data'],jsonb_build_object('start',clock_timestamp()));
-    END IF;
+    result := log_sample_timings(result, 'analyzing collected data', 'start');
 
     FOREACH analyze_obj IN ARRAY analyze_list
     LOOP
       EXECUTE format('ANALYZE %1$I', analyze_obj);
     END LOOP;
 
-    IF (result #>> '{collect_timings}')::boolean THEN
-      result := jsonb_set(result,ARRAY['timings', 'analyzing collected data', 'end'],to_jsonb(clock_timestamp()));
-    END IF;
+    result := log_sample_timings(result, 'analyzing collected data', 'end');
 
    RETURN result;
 END;

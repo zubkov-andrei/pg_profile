@@ -8,7 +8,6 @@ DECLARE
     qres              record;
     qres_settings     record;
     settings_refresh  boolean = true;
-    collect_timings   boolean = false;
 
     server_query      text;
 BEGIN
@@ -233,10 +232,8 @@ BEGIN
       (s.server_id = prm.server_id AND s.sample_id = prm.sample_id AND prm.name = '{pg_profile}.topn' AND prm.setting_scope = 1)
     WHERE s.server_id = sserver_id AND s.sample_id = s_id AND (prm.setting IS NULL OR prm.setting::integer != topn);
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,get server environment,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,collect database stats}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+	server_properties := log_sample_timings(server_properties, 'get server environment', 'end');
+	server_properties := log_sample_timings(server_properties, 'collect database stats', 'start');
 
     -- Construct pg_stat_database query
     CASE
@@ -537,10 +534,9 @@ BEGIN
     EXECUTE format('ANALYZE last_stat_database_srv%1$s',
       sserver_id);
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,collect database stats,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,calculate database stats}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+	server_properties := log_sample_timings(server_properties, 'collect database stats', 'end');
+	server_properties := log_sample_timings(server_properties, 'calculate database stats', 'start');
+
     -- Calc stat_database diff
     INSERT INTO sample_stat_database(
       server_id,
@@ -641,10 +637,8 @@ BEGIN
       (sdb.server_id, sdb.sample_id, sdb.datid, sdb.datname) =
       (cur.server_id, cur.sample_id, cur.datid, cur.datname);
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,calculate database stats,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,collect tablespace stats}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+	server_properties := log_sample_timings(server_properties, 'calculate database stats', 'end');
+	server_properties := log_sample_timings(server_properties, 'collect tablespace stats', 'start');
 
     -- Construct tablespace stats query
     server_query := 'SELECT '
@@ -685,10 +679,8 @@ BEGIN
     EXECUTE format('ANALYZE last_stat_tablespaces_srv%1$s',
       sserver_id);
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,collect tablespace stats,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,collect statement stats}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+	server_properties := log_sample_timings(server_properties, 'collect tablespace stats', 'end');
+	server_properties := log_sample_timings(server_properties, 'collect statement stats', 'start');
 
     -- Search for statements statistics extension
     CASE
@@ -703,10 +695,8 @@ BEGIN
         NULL;
     END CASE;
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,collect statement stats,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,collect wait sampling stats}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+	server_properties := log_sample_timings(server_properties, 'collect statement stats', 'end');
+	server_properties := log_sample_timings(server_properties, 'collect wait sampling stats', 'start');
 
     -- Search for wait sampling extension
     CASE
@@ -721,10 +711,8 @@ BEGIN
         NULL;
     END CASE;
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,collect wait sampling stats,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,query pg_stat_bgwriter}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+	server_properties := log_sample_timings(server_properties, 'collect wait sampling stats', 'end');
+	server_properties := log_sample_timings(server_properties, 'query pg_stat_bgwriter', 'start');
 
     -- pg_stat_bgwriter data
     CASE
@@ -944,10 +932,8 @@ BEGIN
         checkpoint_stats_reset timestamp with time zone);
     END IF;
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,query pg_stat_bgwriter,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,query pg_stat_wal}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+	server_properties := log_sample_timings(server_properties, 'query pg_stat_bgwriter', 'end');
+	server_properties := log_sample_timings(server_properties, 'query pg_stat_wal', 'start');
 
     -- pg_stat_wal data
     CASE
@@ -1029,10 +1015,8 @@ BEGIN
         stats_reset         timestamp with time zone);
     END IF;
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,query pg_stat_wal,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,query pg_stat_io}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+	server_properties := log_sample_timings(server_properties, 'query pg_stat_wal', 'end');
+	server_properties := log_sample_timings(server_properties, 'query pg_stat_io', 'start');
 
     -- pg_stat_io data
     CASE
@@ -1198,10 +1182,8 @@ BEGIN
       );
     END IF;
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,query pg_stat_io,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,query pg_stat_slru}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+	server_properties := log_sample_timings(server_properties, 'query pg_stat_io', 'end');
+	server_properties := log_sample_timings(server_properties, 'query pg_stat_slru', 'start');
 
     -- pg_stat_slru data
     CASE
@@ -1276,10 +1258,8 @@ BEGIN
       );
     END IF;
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,query pg_stat_slru,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,query pg_stat_archiver}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+	server_properties := log_sample_timings(server_properties, 'query pg_stat_slru', 'end');
+	server_properties := log_sample_timings(server_properties, 'query pg_stat_archiver', 'start');
 
     -- pg_stat_archiver data
     CASE
@@ -1333,10 +1313,8 @@ BEGIN
       );
     END IF;
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,query pg_stat_archiver,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,collect object stats}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+	server_properties := log_sample_timings(server_properties, 'query pg_stat_archiver', 'end');
+	server_properties := log_sample_timings(server_properties, 'collect object stats', 'start');
 
     -- Collecting stat info for objects of all databases
     IF COALESCE((server_properties #> '{collect,objects}')::boolean, true) THEN
@@ -1344,10 +1322,8 @@ BEGIN
       ASSERT server_properties IS NOT NULL, 'lost properties';
     END IF;
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,collect object stats,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,processing subsamples}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+	server_properties := log_sample_timings(server_properties, 'collect object stats', 'end');
+	server_properties := log_sample_timings(server_properties, 'processing subsamples', 'start');
 
     -- Process subsamples if enabled
     IF (server_properties #>> '{properties,subsample_enabled}')::boolean THEN
@@ -1377,18 +1353,14 @@ BEGIN
         sserver_id);
     END IF;
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,processing subsamples,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,disconnect}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+	server_properties := log_sample_timings(server_properties, 'processing subsamples', 'end');
+	server_properties := log_sample_timings(server_properties, 'disconnect', 'start');
 
     PERFORM dblink('server_connection', 'COMMIT');
     PERFORM dblink_disconnect('server_connection');
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,disconnect,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,maintain repository}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+	server_properties := log_sample_timings(server_properties, 'disconnect', 'end');
+	server_properties := log_sample_timings(server_properties, 'maintain repository', 'start');
 
     -- Updating dictionary table in case of object renaming:
     -- Databases
@@ -1416,10 +1388,8 @@ BEGIN
       AND (fl.schemaname, fl.funcname, fl.funcargs) !=
         (lst.schemaname, lst.funcname, lst.funcargs);
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,maintain repository,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,calculate tablespace stats}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+	server_properties := log_sample_timings(server_properties, 'maintain repository', 'end');
+	server_properties := log_sample_timings(server_properties, 'calculate tablespace stats', 'start');
 
     INSERT INTO tablespaces_list AS itl (
         server_id,
@@ -1466,10 +1436,8 @@ BEGIN
         (sserver_id, s_id - 1, lst.tablespaceid)
     WHERE (cur.server_id, cur.sample_id) = ( sserver_id, s_id);
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,calculate tablespace stats,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,calculate object stats}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+	server_properties := log_sample_timings(server_properties, 'calculate tablespace stats', 'end');
+	server_properties := log_sample_timings(server_properties, 'calculate object stats', 'start');
 
     -- collect databases objects stats
     IF COALESCE((server_properties #> '{collect,objects}')::boolean, true) THEN
@@ -1481,10 +1449,8 @@ BEGIN
 
     DELETE FROM last_stat_database WHERE server_id = sserver_id AND sample_id != s_id;
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,calculate object stats,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,calculate cluster stats}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+	server_properties := log_sample_timings(server_properties, 'calculate object stats', 'end');
+	server_properties := log_sample_timings(server_properties, 'calculate cluster stats', 'start');
 
     -- Calc stat cluster diff
     INSERT INTO sample_stat_cluster(
@@ -1565,10 +1531,8 @@ BEGIN
 
     DELETE FROM last_stat_cluster WHERE server_id = sserver_id AND sample_id != s_id;
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,calculate cluster stats,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,calculate IO stats}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+	server_properties := log_sample_timings(server_properties, 'calculate cluster stats', 'end');
+	server_properties := log_sample_timings(server_properties, 'calculate IO stats', 'start');
 
     -- Calc I/O stat diff
     INSERT INTO sample_stat_io(
@@ -1640,10 +1604,8 @@ BEGIN
 
     DELETE FROM last_stat_io WHERE server_id = sserver_id AND sample_id != s_id;
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,calculate IO stats,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,calculate SLRU stats}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+	server_properties := log_sample_timings(server_properties, 'calculate IO stats', 'end');
+	server_properties := log_sample_timings(server_properties, 'calculate SLRU stats', 'start');
 
     -- Calc SLRU stat diff
     INSERT INTO sample_stat_slru(
@@ -1690,10 +1652,8 @@ BEGIN
 
     DELETE FROM last_stat_slru WHERE server_id = sserver_id AND sample_id != s_id;
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,calculate SLRU stats,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,calculate WAL stats}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+	server_properties := log_sample_timings(server_properties, 'calculate SLRU stats', 'end');
+	server_properties := log_sample_timings(server_properties, 'calculate WAL stats', 'start');
 
     -- Calc WAL stat diff
     INSERT INTO sample_stat_wal(
@@ -1729,10 +1689,8 @@ BEGIN
 
     DELETE FROM last_stat_wal WHERE server_id = sserver_id AND sample_id != s_id;
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,calculate WAL stats,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,calculate archiver stats}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+	server_properties := log_sample_timings(server_properties, 'calculate WAL stats', 'end');
+	server_properties := log_sample_timings(server_properties, 'calculate archiver stats', 'start');
 
     -- Calc stat archiver diff
     INSERT INTO sample_stat_archiver(
@@ -1765,10 +1723,8 @@ BEGIN
 
     DELETE FROM last_stat_archiver WHERE server_id = sserver_id AND sample_id != s_id;
 
-    IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,calculate archiver stats,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,delete obsolete samples}',jsonb_build_object('start',clock_timestamp()));
-    END IF;
+	server_properties := log_sample_timings(server_properties, 'calculate archiver stats', 'end');
+	server_properties := log_sample_timings(server_properties, 'delete obsolete samples', 'start');
 
     -- Updating dictionary tables setting last_sample_id
     UPDATE tablespaces_list utl SET last_sample_id = s_id - 1
@@ -1846,13 +1802,13 @@ BEGIN
         AND s.sample_time < now() - (COALESCE(n.max_sample_age,ret) || ' days')::interval
         AND (s.server_id,s.sample_id) NOT IN (SELECT server_id,sample_id FROM bl_samples WHERE server_id = sserver_id);
 
+	server_properties := log_sample_timings(server_properties, 'delete obsolete samples', 'end');
+	server_properties := log_sample_timings(server_properties, 'total', 'start');
     IF (server_properties #>> '{collect_timings}')::boolean THEN
-      server_properties := jsonb_set(server_properties,'{timings,delete obsolete samples,end}',to_jsonb(clock_timestamp()));
-      server_properties := jsonb_set(server_properties,'{timings,total,end}',to_jsonb(clock_timestamp()));
       -- Save timing statistics of sample
-      INSERT INTO sample_timings
-      SELECT sserver_id, s_id, key,(value::jsonb #>> '{end}')::timestamp with time zone - (value::jsonb #>> '{start}')::timestamp with time zone as time_spent
-      FROM jsonb_each_text(server_properties #> '{timings}');
+      INSERT INTO sample_timings (server_id, sample_id, "event", exec_point, event_ts)
+      SELECT sserver_id, s_id, t.sampling_event, t.exec_point, t.event_tm
+      FROM jsonb_to_recordset(server_properties -> 'timings') as t (sampling_event text, exec_point text, event_tm timestamptz);
     END IF;
     ASSERT server_properties IS NOT NULL, 'lost properties';
 
