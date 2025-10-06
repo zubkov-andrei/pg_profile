@@ -77,7 +77,9 @@ SELECT gs.id, gs.id FROM generate_series(1,100) as gs(id);
 SELECT * FROM profile.dummy_func();
 /* Taking next sample */
 -- (sample 2)
-SELECT pg_sleep(1);
+
+\c
+
 SELECT server,result FROM profile.take_sample();
 
 /* Check collected data */
