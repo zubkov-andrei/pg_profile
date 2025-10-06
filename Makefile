@@ -59,8 +59,21 @@ export_funcs = \
 sample = \
 	sample/sample_pg_stat_statements.sql \
 	sample/pg_wait_sampling.sql \
-	sample/sample.sql \
-	sample/subsample.sql \
+	sample/collect_obj_stats.sql \
+	sample/collect_subsamples.sql \
+	sample/get_sized_bounds.sql \
+	sample/init_sample.sql \
+	sample/sample_dbobj_delta.sql \
+	sample/show_samples.0.sql \
+	sample/show_samples.1.sql \
+	sample/take_sample.0.sql \
+	sample/take_sample.1.sql \
+	sample/take_sample.2.sql \
+	sample/take_sample_subset.sql \
+	sample/take_subsample.0.sql \
+	sample/take_subsample.1.sql \
+	sample/take_subsample.2.sql \
+	sample/take_subsample_subset.sql \
 	sample/compat.sql
 
 report = report/report_build.sql
