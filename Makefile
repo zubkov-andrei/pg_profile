@@ -59,23 +59,39 @@ export_funcs = \
 sample = \
 	sample/log_sample_timings.sql \
 	sample/sample_pg_stat_statements.sql \
-	sample/pg_wait_sampling.sql \
+	sample/get_sp_setting.sql \
+	sample/calculate_archiver_stats.sql \
+	sample/calculate_cluster_stats.sql \
+	sample/calculate_database_stats.sql \
+	sample/calculate_io_stats.sql \
+	sample/calculate_slru_stats.sql \
+	sample/calculate_tablespace_stats.sql \
+	sample/calculate_wal_stats.sql \
+	sample/collect_database_stats.sql \
 	sample/collect_obj_stats.sql \
 	sample/collect_subsamples.sql \
+	sample/collect_tablespace_stats.sql \
+	sample/delete_obsolete_samples.sql \
 	sample/get_sized_bounds.sql \
 	sample/init_sample.sql \
+	sample/pg_wait_sampling.sql \
+	sample/query_pg_stat_archiver.sql \
+	sample/query_pg_stat_bgwriter.sql \
+	sample/query_pg_stat_io.sql \
+	sample/query_pg_stat_slru.sql \
+	sample/query_pg_stat_wal.sql \
 	sample/sample_dbobj_delta.sql \
 	sample/show_samples.0.sql \
 	sample/show_samples.1.sql \
+	sample/take_sample_subset.sql \
 	sample/take_sample.0.sql \
 	sample/take_sample.1.sql \
 	sample/take_sample.2.sql \
-	sample/take_sample_subset.sql \
+	sample/compat.sql \
+	sample/take_subsample_subset.sql \
 	sample/take_subsample.0.sql \
 	sample/take_subsample.1.sql \
-	sample/take_subsample.2.sql \
-	sample/take_subsample_subset.sql \
-	sample/compat.sql
+	sample/take_subsample.2.sql
 
 report = report/report_build.sql
 

@@ -53,9 +53,7 @@ BEGIN
 
   s_id := (properties #>> '{properties,last_sample_id}')::integer;
 
-  SELECT reset_val::integer INTO STRICT srv_version FROM jsonb_to_recordset(properties #> '{settings}')
-    AS x(name text, reset_val text)
-  WHERE name = 'server_version_num';
+  srv_version := (get_sp_setting(properties, 'server_version_num')).reset_val::integer;
 
   -- Current session states collection
   -- collect sessions and their states

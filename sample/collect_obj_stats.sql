@@ -21,6 +21,7 @@ DECLARE
     analyze_list  text[] := array[]::text[];
     analyze_obj   text;
     result      jsonb := collect_obj_stats.properties;
+    pg_version int := (get_sp_setting(properties, 'server_version_num')).reset_val::integer;
 BEGIN
     -- Adding dblink extension schema to search_path if it does not already there
     IF (SELECT count(*) = 0 FROM pg_catalog.pg_extension WHERE extname = 'dblink') THEN
@@ -95,13 +96,7 @@ BEGIN
 
       -- Generate Table stats query
       CASE
-        WHEN (
-          SELECT count(*) = 1 FROM jsonb_to_recordset(properties #> '{settings}')
-            AS x(name text, reset_val text)
-          WHERE name = 'server_version_num'
-            AND reset_val::integer < 130000
-        )
-        THEN
+        WHEN pg_version < 130000 THEN
           t_query := 'SELECT '
             'st.relid,'
             'st.schemaname,'
@@ -242,13 +237,7 @@ BEGIN
           '{lock_join}'
           ;
 
-        WHEN (
-          SELECT count(*) = 1 FROM jsonb_to_recordset(properties #> '{settings}')
-            AS x(name text, reset_val text)
-          WHERE name = 'server_version_num'
-            AND reset_val::integer < 160000
-        )
-        THEN
+        WHEN pg_version < 160000 THEN
           t_query := 'SELECT '
             'st.relid,'
             'st.schemaname,'
@@ -304,13 +293,7 @@ BEGIN
           '{lock_join}'
           ;
 
-        WHEN (
-          SELECT count(*) = 1 FROM jsonb_to_recordset(properties #> '{settings}')
-            AS x(name text, reset_val text)
-          WHERE name = 'server_version_num'
-            AND reset_val::integer < 180000
-        )
-        THEN
+        WHEN pg_version < 180000 THEN
           t_query := 'SELECT '
             'st.relid,'
             'st.schemaname,'
@@ -366,13 +349,7 @@ BEGIN
           '{lock_join}'
           ;
 
-        WHEN (
-          SELECT count(*) = 1 FROM jsonb_to_recordset(properties #> '{settings}')
-            AS x(name text, reset_val text)
-          WHERE name = 'server_version_num'
-            AND reset_val::integer >= 180000
-        )
-        THEN
+        WHEN pg_version >= 180000 THEN
           t_query := 'SELECT '
             'st.relid,'
             'st.schemaname,'
