@@ -953,6 +953,7 @@ BEGIN
       isp IS NULL;
 
     result := log_sample_timings(result, 'merge new relation storage parameters', 'end');
+    result := log_sample_timings(result, 'clear last_ tables', 'start');
 
     -- Clear data in last_ tables, holding data only for next diff sample
     DELETE FROM last_stat_tables WHERE server_id=sserver_id AND sample_id != s_id;
@@ -962,6 +963,8 @@ BEGIN
     DELETE FROM last_stat_user_functions WHERE server_id=sserver_id AND sample_id != s_id;
 
     DELETE FROM last_extension_versions WHERE server_id = sserver_id AND sample_id != s_id;
+
+    result := log_sample_timings(result, 'clear last_ tables', 'end');
 
     RETURN result;
 END;
