@@ -1,5 +1,6 @@
 SET track_functions TO 'all';
 SET client_min_messages = WARNING;
+SET pg_profile.relsize_collect_mode = 'on';
 /* === Initialize some structures === */
 DROP TABLE IF EXISTS profile.grow_table;
 CREATE TABLE profile.grow_table (
@@ -79,6 +80,9 @@ SELECT * FROM profile.dummy_func();
 -- (sample 2)
 
 \c
+SET track_functions TO 'all';
+SET client_min_messages = WARNING;
+SET pg_profile.relsize_collect_mode = 'on';
 
 SELECT server,result FROM profile.take_sample();
 

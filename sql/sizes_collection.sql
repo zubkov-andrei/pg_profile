@@ -1,4 +1,5 @@
 SET client_min_messages = WARNING;
+SET pg_profile.relsize_collect_mode = 'on';
 /* Test size collection sampling settings */
 INSERT INTO profile.grow_table (short_str,long_str)
 SELECT array_to_string(array
@@ -39,8 +40,6 @@ SELECT server,result FROM profile.take_sample();
 SET pg_profile.relsize_collect_mode = 'off';
 -- (sample 8)
 SELECT server,result FROM profile.take_sample();
--- Reset relation sizes collection configuration parameter
-RESET pg_profile.relsize_collect_mode;
 -- check show_samples()
 SELECT sample, sizes_collected FROM profile.show_samples() WHERE NOT sizes_collected;
 -- check tables sizes collection

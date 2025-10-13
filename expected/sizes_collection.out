@@ -1,4 +1,5 @@
 SET client_min_messages = WARNING;
+SET pg_profile.relsize_collect_mode = 'on';
 /* Test size collection sampling settings */
 INSERT INTO profile.grow_table (short_str,long_str)
 SELECT array_to_string(array
@@ -91,18 +92,14 @@ SELECT server,result FROM profile.take_sample();
  local  | OK
 (1 row)
 
--- Reset relation sizes collection configuration parameter
-RESET pg_profile.relsize_collect_mode;
 -- check show_samples()
 SELECT sample, sizes_collected FROM profile.show_samples() WHERE NOT sizes_collected;
  sample | sizes_collected 
 --------+-----------------
-      1 | f
-      2 | f
-      3 | f
+      4 | f
       5 | f
       8 | f
-(5 rows)
+(3 rows)
 
 -- check tables sizes collection
 SELECT
@@ -115,10 +112,10 @@ FROM profile.sample_stat_tables GROUP BY sample_id
 ORDER BY sample_id;
  sample_id | relsize | relsize_diff | relpages | relpages_diff 
 -----------+---------+--------------+----------+---------------
-         1 | f       | f            | t        | t
-         2 | f       | f            | t        | t
-         3 | f       | f            | t        | t
-         4 | t       | t            | t        | t
+         1 | t       | t            | t        | t
+         2 | t       | t            | t        | t
+         3 | t       | t            | t        | t
+         4 | f       | f            | t        | t
          5 | f       | f            | t        | t
          6 | t       | t            | t        | t
          7 | t       | t            | t        | t
@@ -136,10 +133,10 @@ FROM profile.sample_stat_indexes GROUP BY sample_id
 ORDER BY sample_id;
  sample_id | relsize | relsize_diff | relpages | relpages_diff 
 -----------+---------+--------------+----------+---------------
-         1 | f       | f            | t        | t
-         2 | f       | f            | t        | t
-         3 | f       | f            | t        | t
-         4 | t       | t            | t        | t
+         1 | t       | t            | t        | t
+         2 | t       | t            | t        | t
+         3 | t       | t            | t        | t
+         4 | f       | f            | t        | t
          5 | f       | f            | t        | t
          6 | t       | t            | t        | t
          7 | t       | t            | t        | t
