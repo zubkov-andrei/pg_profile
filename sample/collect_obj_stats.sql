@@ -814,9 +814,9 @@ BEGIN
         END IF;
       END IF; -- functions collection condition
 
+      result := log_sample_timings(result, format('db:%s collect functions stats',qres.datname), 'end');
       PERFORM dblink('server_db_connection', 'COMMIT');
       PERFORM dblink_disconnect('server_db_connection');
-      result := log_sample_timings(result, format('db:%s collect functions stats',qres.datname), 'end');
     END LOOP; -- over databases
 
     -- Now we should preform ANALYZE on collected data
