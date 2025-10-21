@@ -78,6 +78,8 @@ begin
               'fsyncs'
             ') > 0'
           ;
+      ELSE
+        server_query := NULL;
     END CASE;
 
     IF server_query IS NOT NULL THEN

@@ -17,6 +17,8 @@ begin
           'last_failed_time,'
           'stats_reset '
           'FROM pg_catalog.pg_stat_archiver';
+      ELSE
+        server_query := NULL;
     END CASE;
 
     IF server_query IS NOT NULL THEN
