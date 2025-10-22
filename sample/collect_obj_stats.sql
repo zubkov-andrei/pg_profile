@@ -97,7 +97,20 @@ BEGIN
       -- Generate Table stats query
       CASE
         WHEN pg_version < 130000 THEN
-          t_query := 'SELECT '
+          t_query :=
+          'WITH ixstat AS ( '
+            'SELECT '
+              'indrelid, '
+              'sum(pg_catalog.pg_stat_get_blocks_fetched(indexrelid) -'
+                  'pg_catalog.pg_stat_get_blocks_hit(indexrelid))::bigint '
+                  'AS idx_blks_read,'
+              'sum(pg_stat_get_blocks_hit(indexrelid))::bigint '
+                  'AS idx_blks_hit '
+            'FROM '
+              'pg_catalog.pg_index '
+            'GROUP BY indrelid'
+          ') '
+          'SELECT '
             'st.relid,'
             'st.schemaname,'
             'st.relname,'
@@ -157,13 +170,7 @@ BEGIN
           '{lock_join}'
           ;
 
-        WHEN (
-          SELECT count(*) = 1 FROM jsonb_to_recordset(properties #> '{settings}')
-            AS x(name text, reset_val text)
-          WHERE name = 'server_version_num'
-            AND reset_val::integer < 150000
-        )
-        THEN
+        WHEN pg_version < 150000 THEN
           t_query :=
           'WITH ixstat AS ( '
             'SELECT '
