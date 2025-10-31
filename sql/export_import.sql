@@ -2,7 +2,10 @@ SET client_min_messages = WARNING;
 /* === Create regular export table === */
 CREATE TABLE profile.export AS SELECT * FROM profile.export_data();
 /* === Create obfuscated export table === */
-CREATE TABLE profile.blind_export AS SELECT * FROM profile.export_data(NULL,NULL,NULL,TRUE);
+CREATE TABLE profile.blind_export AS
+  SELECT * FROM profile.export_data(obfuscate_queries => true);
+CREATE TABLE profile.connstr_export AS
+  SELECT * FROM profile.export_data(hide_connstr => true);
 BEGIN;
 /* === rename local server === */
 SELECT profile.rename_server('local','src_local');
@@ -60,7 +63,17 @@ FROM profile.servers s_src
 WHERE
   s_src.server_name = 'src_local' AND s_blind.server_name = 'local'
   AND q_src.query = q_blind.query;
+/* === ensure connstrings was in original data === */
+SELECT count(connstr) > 0 FROM profile.servers WHERE server_name = 'src_local';
+/* === check that blind export excludes connection strings === */
+SELECT count(connstr) = 0 FROM profile.servers WHERE server_name = 'local';
+/* === perform hidden connstr load === */
+SELECT profile.drop_server('local');
+SELECT profile.import_data('profile.connstr_export') > 0;
+/* === check that hidden connstr export excludes connection strings === */
+SELECT count(connstr) = 0 FROM profile.servers WHERE server_name = 'local';
 ROLLBACK;
 /* === drop export tables === */
 DROP TABLE profile.export;
 DROP TABLE profile.blind_export;
+DROP TABLE profile.connstr_export;

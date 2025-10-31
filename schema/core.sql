@@ -1,5 +1,8 @@
 /* ========= Core tables ========= */
 
+/* This table has custom processing in export_data() function - review
+of export_data() should be performed after any fiels change */
+
 CREATE TABLE servers (
     server_id           SERIAL PRIMARY KEY,
     server_name         name UNIQUE NOT NULL,

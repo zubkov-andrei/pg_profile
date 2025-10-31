@@ -2,7 +2,8 @@
 
 DROP FUNCTION IF EXISTS export_data(name, integer, integer, boolean);
 CREATE FUNCTION export_data(IN server_name name = NULL, IN min_sample_id integer = NULL,
-  IN max_sample_id integer = NULL, IN obfuscate_queries boolean = FALSE)
+  IN max_sample_id integer = NULL, IN obfuscate_queries boolean = FALSE,
+  IN hide_connstr boolean = FALSE)
 RETURNS TABLE(
     section_id  bigint,
     row_data    json
@@ -193,6 +194,35 @@ BEGIN
           min_sample_id,
           max_sample_id,
           obfuscate_queries;
+      WHEN r_result.relname = 'servers' THEN
+        RETURN QUERY EXECUTE format(
+            $sql$SELECT $1,row_to_json(dt) FROM
+              (SELECT
+                rows.server_id,
+                rows.server_name,
+                rows.server_description,
+                rows.server_created,
+                rows.db_exclude,
+                rows.enabled,
+                CASE $3 OR $4
+                  WHEN TRUE THEN
+                    NULL
+                  ELSE rows.connstr
+                END AS connstr,
+                rows.max_sample_age,
+                rows.last_sample_id,
+                rows.size_smp_wnd_start,
+                rows.size_smp_wnd_dur,
+                rows.size_smp_interval,
+                rows.srv_settings
+               FROM %I AS rows WHERE $2 IS NULL OR server_id = $2) dt$sql$,
+            r_result.relname
+          )
+        USING
+          section_counter,
+          sserver_id,
+          obfuscate_queries,
+          hide_connstr;
       ELSE
         RETURN QUERY EXECUTE format(
             $q$SELECT $1,row_to_json(dt) FROM (SELECT * FROM %I WHERE $2 IS NULL OR $2 = server_id) dt$q$,
@@ -207,7 +237,8 @@ END;
 $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION export_data(IN server_name name, IN min_sample_id integer,
-  IN max_sample_id integer, IN obfuscate_queries boolean) IS 'Export collected data as a table';
+  IN max_sample_id integer, IN obfuscate_queries boolean,
+  IN hide_connstr boolean) IS 'Export collected data as a table';
 
 CREATE FUNCTION import_data(data regclass, server_name_prefix text = NULL) RETURNS bigint
 SET search_path=@extschema@ AS $$

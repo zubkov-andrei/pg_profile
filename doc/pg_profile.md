@@ -527,7 +527,8 @@ By default *export_data()* function will export all samples of all configured se
 * **export_data([server name, [min_sample_id integer,] [max_sample_id integer]] [, obfuscate_queries boolean])** - export collected data
   * *server* is a server name. All servers is assumed if omitted
   * *min_sample_id* and *max_sample_id* - export bounding sample identifiers (inclusive). Null value of *min_sample_id* bound cause export of all samples till *max_sample_id*, and null value of *max_sample_id* cause export of all samples since *min_sample_id*.
-  * *obfuscate_queries* - use this parameter only when you want to hide query texts - they will be exported as MD5 hash.
+  * *obfuscate_queries* - use this parameter only when you want to hide query texts - they will be exported as MD5 hash. Also server connection strings will be excluded from dump.
+  * *hide_connstr* - setting this parameter will exclude server connection strings from export.
 
 #### Data import
 Data can be imported from local table only, thus previously exported data is need to be loaded first. In our case with *copy* command:
