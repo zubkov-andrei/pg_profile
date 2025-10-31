@@ -210,7 +210,14 @@ BEGIN
           SELECT COUNT(*) > 0
           FROM sample_stat_cluster
           WHERE server_id = sserver_id AND
-            slru_checkpoint + checkpoints_done > 0 AND
+            greatest(slru_checkpoint, checkpoints_done) > 0 AND
+            sample_id BETWEEN start1_id AND end1_id
+          ),
+        'restartpoints', (
+          SELECT COUNT(*) > 0
+          FROM sample_stat_cluster
+          WHERE server_id = sserver_id AND
+            greatest(restartpoints_timed, restartpoints_req, restartpoints_done) > 0 AND
             sample_id BETWEEN start1_id AND end1_id
         )
       ),
@@ -508,7 +515,16 @@ BEGIN
           SELECT COUNT(*) > 0
           FROM sample_stat_cluster
           WHERE server_id = sserver_id AND
-            slru_checkpoint + checkpoints_done > 0 AND (
+            greatest(slru_checkpoint, checkpoints_done) > 0 AND (
+              sample_id BETWEEN start1_id AND end1_id OR
+              sample_id BETWEEN start2_id AND end2_id
+            )
+          ),
+        'restartpoints', (
+          SELECT COUNT(*) > 0
+          FROM sample_stat_cluster
+          WHERE server_id = sserver_id AND
+            greatest(restartpoints_timed, restartpoints_req, restartpoints_done) > 0 AND (
               sample_id BETWEEN start1_id AND end1_id OR
               sample_id BETWEEN start2_id AND end2_id
             )

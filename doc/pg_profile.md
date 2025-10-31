@@ -792,7 +792,10 @@ This table contains data from *pg_stat_bgwriter* and *pg_stat_checkpointer* view
 
 * *Scheduled checkpoints* - total number of checkpoints, completed on schedule due to *checkpoint_timeout* parameter (*checkpoints_timed* field)
 * *Requested checkpoints* - total number of other checkpoints: due to values of *max_wal_size*, *archive_timeout* and CHECKPOINT commands (*checkpoints_req* field)
-* *Checkpoints done* - number of restartpoints that have been performed
+* *Checkpoints done* - number of checkpoints that have been performed
+* *Scheduled restartpoints* - number of scheduled restartpoints due to timeout or after a failed attempt to perform it (*restartpoints_timed* field)
+* *Requested restartpoints* - number of requested restartpoints (*restartpoints_req* field)
+* *Restartpoints done* - number of restartpoints that have been performed (*restartpoints_done* field)
 * *Checkpoint write time (s)* - total time spent writing checkpoints in seconds (*checkpoint_write_time* field)
 * *Checkpoint sync time (s)* - total time spent syncing checkpoints in seconds (*checkpoint_sync_time* field)
 * *Checkpoints buffers written* - total number of buffers, written by checkpointer (*buffers_checkpoint* field)

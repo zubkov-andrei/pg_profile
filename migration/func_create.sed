@@ -21,3 +21,5 @@
 /^CREATE[[:space:]]\+FUNCTION[[:space:]]\+get_sp_setting(.*$/,/\$\$[[:space:]]*LANGUAGE[[:space:]]\+\(plpg\)\?sql[[:space:]]*IMMUTABLE[[:space:]]*;[[:space:]]*$/p
 /^CREATE[[:space:]]\+FUNCTION[[:space:]]\+query_pg_stat_.*$/,/\$\$[[:space:]]*LANGUAGE[[:space:]]\+\(plpg\)\?sql[[:space:]]*;[[:space:]]*$/p
 /^CREATE FUNCTION take_subsample(IN sserver_id integer.*$/,/'Take a sub-sample for a server by server_id';$/p
+/^CREATE FUNCTION export_data(.*$/,/\$\$[[:space:]]*LANGUAGE[[:space:]]\+\(plpg\)\?sql[[:space:]]*;[[:space:]]*$/p
+/^COMMENT ON FUNCTION export_data(.*$/,/';$/p
