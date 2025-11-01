@@ -794,11 +794,11 @@ This table contains data from *pg_stat_bgwriter* and *pg_stat_checkpointer* view
 * *Requested checkpoints* - total number of other checkpoints: due to values of *max_wal_size*, *archive_timeout* and CHECKPOINT commands (*checkpoints_req* field)
 * *Checkpoints done* - number of checkpoints that have been performed
 * *Scheduled restartpoints* - number of scheduled restartpoints due to timeout or after a failed attempt to perform it (*restartpoints_timed* field)
-* *Requested restartpoints* - number of requested restartpoints (*restartpoints_req* field)
-* *Restartpoints done* - number of restartpoints that have been performed (*restartpoints_done* field)
-* *Checkpoint write time (s)* - total time spent writing checkpoints in seconds (*checkpoint_write_time* field)
-* *Checkpoint sync time (s)* - total time spent syncing checkpoints in seconds (*checkpoint_sync_time* field)
-* *Checkpoints buffers written* - total number of buffers, written by checkpointer (*buffers_checkpoint* field)
+* *Requested restartpoints* - number of requested restartpoints if any (*restartpoints_req* field)
+* *Restartpoints done* - number of restartpoints that have been performed if any (*restartpoints_done* field)
+* *Checkpoint write time (s)* - total time spent writing checkpoints and restartpoints in seconds (*checkpoint_write_time* field)
+* *Checkpoint sync time (s)* - total time spent syncing checkpoints and restartpoints in seconds (*checkpoint_sync_time* field)
+* *Checkpoints buffers written* - total number of shared buffers written during checkpoints and restartpoints (*buffers_checkpoint* field)
 * *SLRU buffers written by checkpoint* - number of SLRU buffers written during checkpoints and restartpoints
 * *Background buffers written* - total number of buffers, written by background writer process (*buffers_clean* field)
 * *Backend buffers written* - total number of buffers, written by backends (*buffers_backend* field). Won't shown since PostgreSQL 17
