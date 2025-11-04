@@ -7,6 +7,7 @@
           "uid": "${ProfileDB}"
         },
         "enable": true,
+        "hide": false,
         "iconColor": "semi-dark-green",
         "name": "Server starts",
         "target": {
@@ -14,39 +15,6 @@
           "format": "table",
           "rawQuery": true,
           "rawSql": "SELECT\n  setting::timestamptz as time,\n  'postmaster started' as text\nFROM sample_settings \nWHERE \n  server_id = $profile_servers AND\n  name = 'pg_postmaster_start_time' AND \n  setting::timestamptz BETWEEN $__timeFrom() AND $__timeTo() \nORDER BY time ASC",
-          "refId": "Anno",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      },
-      {
-        "datasource": {
-          "type": "postgres",
-          "uid": "${ProfileDB}"
-        },
-        "enable": true,
-        "iconColor": "semi-dark-yellow",
-        "name": "Configuration loads",
-        "target": {
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  setting::timestamptz as time,\n  'configuration loaded' as text\nFROM sample_settings \nWHERE \n  server_id = $profile_servers AND\n  name = 'pg_conf_load_time' AND \n  setting::timestamptz BETWEEN $__timeFrom() AND $__timeTo() \nORDER BY time ASC",
           "refId": "Anno",
           "sql": {
             "columns": [
@@ -87,11 +55,10 @@
       }
     ]
   },
-  "description": "",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 19,
+  "id": null,
   "links": [
     {
       "asDropdown": false,
@@ -120,7 +87,6 @@
       "url": ""
     }
   ],
-  "liveNow": false,
   "panels": [
     {
       "collapsed": false,
@@ -136,10 +102,6 @@
       "type": "row"
     },
     {
-      "datasource": {
-        "type": "postgres",
-        "uid": "${ProfileDB}"
-      },
       "description": "Use provided pg_profile function call to get report of observable interval",
       "gridPos": {
         "h": 3,
@@ -157,66 +119,7 @@
         "content": "get_report(${profile_servers},${startid},${endid})\n",
         "mode": "markdown"
       },
-      "pluginVersion": "10.4.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "${ProfileDB}"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COALESCE(\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time < '${__from:date:iso}'\n  ORDER BY sample_id DESC\n  LIMIT 1),\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time > '${__from:date:iso}'\n  ORDER BY sample_id ASC\n  LIMIT 1)\n) as StartID",
-          "refId": "StartID",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        },
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "${ProfileDB}"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "hide": false,
-          "rawQuery": true,
-          "rawSql": "SELECT COALESCE(\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time < '${__to:date:iso}'\n  ORDER BY sample_id DESC\n  LIMIT 1),\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time > '${__to:date:iso}'\n  ORDER BY sample_id ASC\n  LIMIT 1)\n) as StartID",
-          "refId": "EndID",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
+      "pluginVersion": "12.2.1",
       "title": "Report generation",
       "type": "text"
     },
@@ -236,6 +139,9 @@
             "cellOptions": {
               "type": "auto"
             },
+            "footer": {
+              "reducers": []
+            },
             "inspect": false
           },
           "mappings": [],
@@ -244,7 +150,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               }
             ]
           }
@@ -260,17 +166,9 @@
       "id": 47,
       "options": {
         "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
         "showHeader": false
       },
-      "pluginVersion": "10.4.1",
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -334,7 +232,7 @@
             "steps": [
               {
                 "color": "text",
-                "value": null
+                "value": 0
               }
             ]
           },
@@ -378,7 +276,7 @@
                   "steps": [
                     {
                       "color": "green",
-                      "value": null
+                      "value": 0
                     },
                     {
                       "color": "red",
@@ -403,6 +301,7 @@
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
+        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -414,7 +313,7 @@
         "textMode": "value_and_name",
         "wideLayout": true
       },
-      "pluginVersion": "10.4.1",
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -453,7 +352,7 @@
         "type": "postgres",
         "uid": "${ProfileDB}"
       },
-      "description": "Summary pg_stat_statements  extension data",
+      "description": "Summary transaction data from pg_stat_database view",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -465,22 +364,33 @@
             "steps": [
               {
                 "color": "text",
-                "value": null
+                "value": 0
               }
             ]
-          },
-          "unit": "none"
+          }
         },
         "overrides": [
           {
             "matcher": {
               "id": "byName",
-              "options": "Elapsed (s)"
+              "options": "Deadlocks"
             },
             "properties": [
               {
-                "id": "unit",
-                "value": "none"
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
               }
             ]
           }
@@ -488,16 +398,17 @@
       },
       "gridPos": {
         "h": 3,
-        "w": 4,
+        "w": 7,
         "x": 6,
         "y": 5
       },
-      "id": 62,
+      "id": 35,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
+        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -506,10 +417,10 @@
           "values": false
         },
         "showPercentChange": false,
-        "textMode": "value_and_name",
+        "textMode": "auto",
         "wideLayout": true
       },
-      "pluginVersion": "10.4.1",
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -519,8 +430,8 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  (coalesce(sum(total_plan_time), 0) + sum(total_exec_time)) / 1000 as \"Elapsed (s)\",\n  (sum(shared_blk_read_time) + sum(shared_blk_write_time)) / 1000 as \"I/O time (s)\"\nFROM sample_statements_total sst\nWHERE\n  sst.server_id = ${profile_servers}\n  AND sample_id BETWEEN $startid + 1 AND $endid \n",
-          "refId": "stmts_agg",
+          "rawSql": "SELECT\n  sum(xact_commit) as \"Commit\",\n  sum(xact_rollback) as \"Rollback\",\n  sum(deadlocks) as \"Deadlocks\"\nFROM sample_stat_database sc\nWHERE\n  sc.server_id = ${profile_servers}\n  AND sample_id BETWEEN $startid + 1 AND $endid \n",
+          "refId": "xact",
           "sql": {
             "columns": [
               {
@@ -540,7 +451,7 @@
           }
         }
       ],
-      "title": "Overall statement times",
+      "title": "Transactions",
       "type": "stat"
     },
     {
@@ -561,7 +472,7 @@
             "steps": [
               {
                 "color": "red",
-                "value": null
+                "value": 0
               },
               {
                 "color": "orange",
@@ -583,8 +494,8 @@
       },
       "gridPos": {
         "h": 6,
-        "w": 3,
-        "x": 10,
+        "w": 6,
+        "x": 13,
         "y": 5
       },
       "id": 37,
@@ -603,7 +514,7 @@
         "showThresholdMarkers": true,
         "sizing": "auto"
       },
-      "pluginVersion": "10.4.1",
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -654,7 +565,7 @@
             "steps": [
               {
                 "color": "text",
-                "value": null
+                "value": 0
               }
             ]
           }
@@ -686,6 +597,7 @@
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
+        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -697,7 +609,7 @@
         "textMode": "value_and_name",
         "wideLayout": true
       },
-      "pluginVersion": "10.4.1",
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -736,7 +648,7 @@
         "type": "postgres",
         "uid": "${ProfileDB}"
       },
-      "description": "Summary transaction data from pg_stat_database view",
+      "description": "Summary pg_stat_statements  extension data",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -748,33 +660,22 @@
             "steps": [
               {
                 "color": "text",
-                "value": null
+                "value": 0
               }
             ]
-          }
+          },
+          "unit": "none"
         },
         "overrides": [
           {
             "matcher": {
               "id": "byName",
-              "options": "Deadlocks"
+              "options": "Elapsed (s)"
             },
             "properties": [
               {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": null
-                    },
-                    {
-                      "color": "red",
-                      "value": 1
-                    }
-                  ]
-                }
+                "id": "unit",
+                "value": "none"
               }
             ]
           }
@@ -782,16 +683,17 @@
       },
       "gridPos": {
         "h": 3,
-        "w": 6,
+        "w": 5,
         "x": 4,
         "y": 8
       },
-      "id": 35,
+      "id": 62,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
+        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -800,10 +702,10 @@
           "values": false
         },
         "showPercentChange": false,
-        "textMode": "auto",
+        "textMode": "value_and_name",
         "wideLayout": true
       },
-      "pluginVersion": "10.4.1",
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -813,8 +715,8 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  sum(xact_commit) as \"Commit\",\n  sum(xact_rollback) as \"Rollback\",\n  sum(deadlocks) as \"Deadlocks\"\nFROM sample_stat_database sc\nWHERE\n  sc.server_id = ${profile_servers}\n  AND sample_id BETWEEN $startid + 1 AND $endid \n",
-          "refId": "xact",
+          "rawSql": "SELECT\n  (coalesce(sum(total_plan_time), 0) + sum(total_exec_time)) / 1000 as \"Elapsed (s)\",\n  (sum(shared_blk_read_time) + sum(shared_blk_write_time)) / 1000 as \"I/O time (s)\"\nFROM sample_statements_total sst\nWHERE\n  sst.server_id = ${profile_servers}\n  AND sample_id BETWEEN $startid + 1 AND $endid \n",
+          "refId": "stmts_agg",
           "sql": {
             "columns": [
               {
@@ -834,8 +736,117 @@
           }
         }
       ],
-      "title": "Transactions",
+      "title": "Overall statement times",
       "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Transactions per second",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Elapsed (s)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 9,
+        "y": 8
+      },
+      "id": 83,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.2.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  (sum(xact_commit) + sum(xact_rollback)) /(SELECT EXTRACT( EPOCH FROM (select sample_time from samples where sample_id = $endid and server_id = $profile_servers ) - (select sample_time from samples where sample_id = $startid and server_id = $profile_servers))) as \"tps\"\nFROM sample_stat_database sc\nWHERE\n  sc.server_id = ${profile_servers}\n  AND sample_id BETWEEN $startid + 1 AND $endid ",
+          "refId": "stmts_agg",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Tps",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 11
+      },
+      "id": 12,
+      "panels": [],
+      "title": "Transactions",
+      "type": "row"
     },
     {
       "datasource": {
@@ -855,6 +866,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 52,
             "gradientMode": "opacity",
@@ -871,6 +883,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -886,7 +899,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "red",
@@ -902,21 +915,29 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 11
+        "y": 12
       },
       "id": 81,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "sortBy": "Last *",
+          "sortDesc": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -951,24 +972,11 @@
       "type": "timeseries"
     },
     {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 19
-      },
-      "id": 41,
-      "panels": [],
-      "title": "Database Sizes",
-      "type": "row"
-    },
-    {
       "datasource": {
         "type": "postgres",
         "uid": "${ProfileDB}"
       },
-      "description": "Sum of cluster database sizes",
+      "description": "Commit rate data from pg_stat_database view",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -981,6 +989,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 52,
             "gradientMode": "opacity",
@@ -997,6 +1006,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -1006,40 +1016,51 @@
               "mode": "off"
             }
           },
-          "displayName": "Cluster size",
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
               }
             ]
           },
-          "unit": "bytes"
+          "unit": "si:tps"
         },
         "overrides": []
       },
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 20
+        "x": 12,
+        "y": 12
       },
-      "id": 45,
+      "id": 84,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
+          "calcs": [
+            "last",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "sortBy": "Last",
+          "sortDesc": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -1049,8 +1070,8 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sum(sd.datsize)\nFROM sample_stat_database sd JOIN samples smpe USING (server_id, sample_id)\nWHERE\n  sd.server_id = ${profile_servers}\n  AND NOT datistemplate\n  AND sd.sample_id BETWEEN $startid + 1 AND $endid \nGROUP BY smpe.sample_time\nORDER BY time",
-          "refId": "A",
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sum(xact_rollback + xact_commit) / extract(epoch from smpe.sample_time - smps.sample_time) as \":\",\n  sd.datname\nFROM sample_stat_database sd JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  sd.server_id = ${profile_servers}\n  AND NOT datistemplate\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY smpe.sample_time, smps.sample_time, sd.datname\nORDER BY time",
+          "refId": "xact",
           "sql": {
             "columns": [
               {
@@ -1070,21 +1091,8 @@
           }
         }
       ],
-      "title": "Cluster size",
+      "title": "Transactions by database",
       "type": "timeseries"
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 28
-      },
-      "id": 12,
-      "panels": [],
-      "title": "Transactions",
-      "type": "row"
     },
     {
       "datasource": {
@@ -1104,6 +1112,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 52,
             "gradientMode": "opacity",
@@ -1120,6 +1129,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -1136,7 +1146,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "red",
@@ -1152,21 +1162,27 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 29
+        "y": 20
       },
       "id": 8,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
+          "calcs": [
+            "last",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -1209,7 +1225,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "continuous-RdYlGr"
           },
           "custom": {
             "axisBorderShow": false,
@@ -1218,6 +1234,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 52,
             "gradientMode": "opacity",
@@ -1234,6 +1251,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -1250,7 +1268,7 @@
             "steps": [
               {
                 "color": "yellow",
-                "value": null
+                "value": 0
               }
             ]
           },
@@ -1262,21 +1280,27 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 29
+        "y": 20
       },
       "id": 10,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -1328,6 +1352,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -1344,6 +1369,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -1359,7 +1385,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "red",
@@ -1375,21 +1401,27 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 37
+        "y": 28
       },
       "id": 79,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "right",
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -1441,6 +1473,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -1457,6 +1490,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -1472,7 +1506,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "red",
@@ -1488,21 +1522,27 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 37
+        "y": 28
       },
       "id": 80,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -1538,7 +1578,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-postgresql-datasource",
+        "type": "postgres",
         "uid": "${ProfileDB}"
       },
       "description": "Parallel workers from pg_stat_database view. Available since Postgres 18",
@@ -1554,6 +1594,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -1570,6 +1611,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -1585,7 +1627,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "red",
@@ -1601,21 +1643,27 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 45
+        "y": 36
       },
       "id": 82,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -1655,7 +1703,969 @@
         "h": 1,
         "w": 24,
         "x": 0,
+        "y": 44
+      },
+      "id": 41,
+      "panels": [],
+      "title": "Database sizes",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Sum of cluster database sizes",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 52,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "Cluster size",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 45
+      },
+      "id": 45,
+      "options": {
+        "legend": {
+          "calcs": [
+            "last",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.2.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sum(sd.datsize)\nFROM sample_stat_database sd JOIN samples smpe USING (server_id, sample_id)\nWHERE\n  sd.server_id = ${profile_servers}\n  AND NOT datistemplate\n  AND sd.sample_id BETWEEN $startid + 1 AND $endid \nGROUP BY smpe.sample_time\nORDER BY time",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Cluster size",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Sum of cluster database sizes",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 52,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 45
+      },
+      "id": 85,
+      "options": {
+        "legend": {
+          "calcs": [
+            "last",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "sortBy": "Last",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.2.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sd.datname as database,\n  sum(sd.datsize) as \":\"\nFROM sample_stat_database sd JOIN samples smpe USING (server_id, sample_id)\nWHERE\n  sd.server_id = ${profile_servers}\n  AND NOT datistemplate\n  AND sd.sample_id BETWEEN $startid + 1 AND $endid \nGROUP BY smpe.sample_time, sd.datname\nORDER BY time",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Cluster size by database",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
         "y": 53
+      },
+      "id": 87,
+      "panels": [],
+      "title": "Vacuum stats",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Number of dead tuples by databases",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 43,
+            "gradientMode": "hue",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineStyle": {
+              "fill": "solid"
+            },
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 18,
+        "x": 0,
+        "y": 54
+      },
+      "id": 86,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.2.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "WITH last_stat AS (\n  SELECT \n    datid, \n    sum(n_dead_tup) AS sum_dead_tup \n  FROM sample_stat_tables \n  WHERE sample_id BETWEEN $startid + 1 AND $endid\n  GROUP BY datid\n  ORDER BY sum_dead_tup DESC\n  LIMIT 20\n)\nSELECT \n  smpe.sample_time AS time,\n  db.datname AS database, \n  sum(st.n_dead_tup) AS \":\"\nFROM sample_stat_tables AS st \nJOIN samples smpe USING (server_id, sample_id)\nJOIN pg_database AS db ON db.oid = st.datid\nJOIN last_stat AS ls ON ls.datid = st.datid\nGROUP BY database, time\nORDER BY smpe.sample_time;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Top databases by dead tuples",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Top 20 databases by sum of dead tuples generated in period",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 54
+      },
+      "id": 91,
+      "options": {
+        "displayLabels": [
+          "percent"
+        ],
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/",
+          "values": true
+        },
+        "sort": "desc",
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.2.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT \n  db.datname AS database, \n  sum(st.n_dead_tup) AS sum_dead_tup\nFROM sample_stat_tables AS st \nJOIN samples smpe USING (server_id, sample_id)\nJOIN pg_database AS db ON db.oid = st.datid\nWHERE sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY database\nORDER BY sum_dead_tup DESC\nLIMIT 20;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Dead tuples by database",
+      "type": "piechart"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Number of dead tuples by tables",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 43,
+            "gradientMode": "hue",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineStyle": {
+              "fill": "solid"
+            },
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 18,
+        "x": 0,
+        "y": 62
+      },
+      "id": 93,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.2.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "WITH last_stat AS (\n  SELECT \n    relid,\n    sum(n_dead_tup) AS sum_dead_tup \n  FROM sample_stat_tables \n  WHERE sample_id BETWEEN $startid + 1 AND $endid\n  GROUP BY relid\n  ORDER BY sum_dead_tup DESC\n  LIMIT 20\n)\nSELECT \n  smpe.sample_time AS time,\n  lst.relname,\n  sum(st.n_dead_tup) AS \":\"\nFROM sample_stat_tables AS st \nJOIN samples smpe USING (server_id, sample_id)\nJOIN last_stat AS ls ON ls.relid = st.relid\nJOIN last_stat_tables AS lst ON lst.relid = st.relid\nGROUP BY lst.relname, time\nORDER BY smpe.sample_time;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Top tables by dead tuples",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Top 20 tables by sum of dead tuples generated in period",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 62
+      },
+      "id": 90,
+      "options": {
+        "displayLabels": [
+          "percent"
+        ],
+        "legend": {
+          "calcs": [],
+          "displayMode": "hidden",
+          "placement": "right",
+          "showLegend": false,
+          "values": []
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "sort": "desc",
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.2.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT \n  lst.relname AS relname, \n  sum(st.n_dead_tup) AS sum_dead_tup\nFROM sample_stat_tables AS st \nJOIN samples smpe USING (server_id, sample_id)\nJOIN last_stat_tables AS lst ON lst.relid = st.relid\nWHERE st.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY relname\nORDER BY sum_dead_tup DESC\nLIMIT 20;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Dead tuples by tables",
+      "type": "piechart"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Cluster vacuum runs",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 52,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": [
+          {
+            "__systemRef": "hideSeriesFrom",
+            "matcher": {
+              "id": "byNames",
+              "options": {
+                "mode": "exclude",
+                "names": [
+                  "Autovacuum"
+                ],
+                "prefix": "All except:",
+                "readOnly": true
+              }
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": false,
+                  "tooltip": true,
+                  "viz": true
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 70
+      },
+      "id": 88,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.2.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sum(vacuum_count) / extract(epoch from smpe.sample_time - smps.sample_time) / 60 as \"Vacuum\",\n  sum(autovacuum_count) / extract(epoch from smpe.sample_time - smps.sample_time) / 60 as \"Autovacuum\"\nFROM sample_stat_tables_total st JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  st.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY smpe.sample_time, smps.sample_time\nORDER BY time",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Vacuum runs per minute",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "${ProfileDB}"
+      },
+      "description": "Cluster vacuum runs",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 52,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 70
+      },
+      "id": 89,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.2.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "${ProfileDB}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  smpe.sample_time as time,\n  sum(analyze_count) / extract(epoch from smpe.sample_time - smps.sample_time) / 60 as \"Analyze\",\n  sum(autoanalyze_count) / extract(epoch from smpe.sample_time - smps.sample_time) / 60 as \"Autoanalyze\"\nFROM sample_stat_tables_total st JOIN samples smpe USING (server_id, sample_id)\n  JOIN samples smps ON (smpe.server_id, smpe.sample_id -1) = (smps.server_id, smps.sample_id)\nWHERE\n  st.server_id = ${profile_servers}\n  AND smpe.sample_id BETWEEN $startid + 1 AND $endid\nGROUP BY smpe.sample_time, smps.sample_time\nORDER BY time",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Analyze runs per minute",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 78
       },
       "id": 6,
       "panels": [],
@@ -1680,6 +2690,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 70,
             "gradientMode": "opacity",
@@ -1699,6 +2710,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -1714,7 +2726,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "red",
@@ -1730,21 +2742,27 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 54
+        "y": 79
       },
       "id": 4,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -1796,6 +2814,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 52,
             "gradientMode": "opacity",
@@ -1812,6 +2831,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -1828,7 +2848,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               }
             ]
           },
@@ -1840,21 +2860,27 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 54
+        "y": 79
       },
       "id": 26,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -1906,6 +2932,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 52,
             "gradientMode": "opacity",
@@ -1922,6 +2949,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -1938,7 +2966,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "red",
@@ -1954,7 +2982,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 62
+        "y": 87
       },
       "id": 14,
       "options": {
@@ -1965,10 +2993,12 @@
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -2020,6 +3050,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 52,
             "gradientMode": "opacity",
@@ -2036,6 +3067,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -2052,7 +3084,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "red",
@@ -2068,7 +3100,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 62
+        "y": 87
       },
       "id": 31,
       "options": {
@@ -2079,10 +3111,12 @@
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -2134,6 +3168,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 52,
             "gradientMode": "opacity",
@@ -2150,6 +3185,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -2166,7 +3202,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "red",
@@ -2182,7 +3218,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 70
+        "y": 95
       },
       "id": 18,
       "options": {
@@ -2193,10 +3229,12 @@
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -2249,6 +3287,7 @@
             "axisPlacement": "auto",
             "axisSoftMin": 0,
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -2265,6 +3304,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -2283,7 +3323,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "red",
@@ -2299,7 +3339,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 70
+        "y": 95
       },
       "id": 16,
       "options": {
@@ -2310,10 +3350,12 @@
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -2353,7 +3395,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 78
+        "y": 103
       },
       "id": 20,
       "panels": [],
@@ -2378,6 +3420,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -2394,6 +3437,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -2409,7 +3453,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               }
             ]
           },
@@ -2421,21 +3465,27 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 79
+        "y": 104
       },
       "id": 2,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -2516,6 +3566,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -2532,6 +3583,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -2547,7 +3599,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "red",
@@ -2579,21 +3631,27 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 79
+        "y": 104
       },
       "id": 22,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -2645,6 +3703,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -2661,6 +3720,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -2676,7 +3736,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "red",
@@ -2692,7 +3752,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 87
+        "y": 112
       },
       "id": 57,
       "options": {
@@ -2703,10 +3763,12 @@
           "showLegend": false
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -2758,6 +3820,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -2774,6 +3837,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -2789,7 +3853,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "red",
@@ -2805,21 +3869,27 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 87
+        "y": 112
       },
       "id": 58,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -2855,7 +3925,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-postgresql-datasource",
+        "type": "postgres",
         "uid": "${ProfileDB}"
       },
       "description": "WAL write and sync rate from pg_stat_wal view. Available since Postgres 14",
@@ -2871,6 +3941,7 @@
             "axisLabel": "",
             "axisPlacement": "left",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -2887,6 +3958,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -2902,7 +3974,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               }
             ]
           },
@@ -2914,7 +3986,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 95
+        "y": 120
       },
       "id": 59,
       "options": {
@@ -2925,10 +3997,12 @@
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -2964,7 +4038,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-postgresql-datasource",
+        "type": "postgres",
         "uid": "${ProfileDB}"
       },
       "description": "WAL write and sync time elapsed from pg_stat_wal view. Available since Postgres 14 if track_wal_io_timing setting is on.",
@@ -2980,6 +4054,7 @@
             "axisLabel": "",
             "axisPlacement": "left",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -2996,6 +4071,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -3011,7 +4087,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               }
             ]
           },
@@ -3023,7 +4099,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 95
+        "y": 120
       },
       "id": 60,
       "options": {
@@ -3034,10 +4110,12 @@
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -3077,7 +4155,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 103
+        "y": 128
       },
       "id": 49,
       "panels": [],
@@ -3102,6 +4180,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "opacity",
@@ -3118,6 +4197,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -3134,7 +4214,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               }
             ]
           },
@@ -3146,21 +4226,27 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 104
+        "y": 129
       },
       "id": 51,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -3212,6 +4298,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "opacity",
@@ -3228,6 +4315,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -3244,7 +4332,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               }
             ]
           },
@@ -3256,21 +4344,27 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 104
+        "y": 129
       },
       "id": 53,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -3310,7 +4404,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 112
+        "y": 137
       },
       "id": 66,
       "panels": [],
@@ -3335,6 +4429,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -3351,6 +4446,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -3366,7 +4462,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               }
             ]
           },
@@ -3378,21 +4474,29 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 113
+        "y": 138
       },
       "id": 68,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "sortBy": "Last *",
+          "sortDesc": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -3444,6 +4548,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -3460,6 +4565,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -3475,7 +4581,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "red",
@@ -3491,21 +4597,27 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 113
+        "y": 138
       },
       "id": 70,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -3557,6 +4669,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -3573,6 +4686,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -3588,7 +4702,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "red",
@@ -3604,21 +4718,27 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 121
+        "y": 146
       },
       "id": 72,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -3670,6 +4790,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -3686,6 +4807,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -3701,7 +4823,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "red",
@@ -3717,21 +4839,27 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 121
+        "y": 146
       },
       "id": 73,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -3783,6 +4911,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -3799,6 +4928,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -3814,7 +4944,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "red",
@@ -3830,21 +4960,27 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 129
+        "y": 154
       },
       "id": 71,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -3884,7 +5020,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 137
+        "y": 162
       },
       "id": 75,
       "panels": [],
@@ -3909,6 +5045,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -3925,6 +5062,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -3941,7 +5079,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               }
             ]
           },
@@ -3953,21 +5091,27 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 138
+        "y": 163
       },
       "id": 76,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -4019,6 +5163,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -4035,6 +5180,7 @@
               "type": "linear"
             },
             "showPoints": "auto",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -4051,7 +5197,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               }
             ]
           },
@@ -4063,21 +5209,27 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 138
+        "y": 163
       },
       "id": 77,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.2.1",
       "targets": [
         {
           "datasource": {
@@ -4113,46 +5265,42 @@
     }
   ],
   "refresh": "",
-  "schemaVersion": 39,
+  "schemaVersion": 42,
   "tags": [
     "pg_profile"
   ],
   "templating": {
     "list": [
       {
-        "hide": 0,
+        "current": {},
         "includeAll": false,
         "label": "Database with pg_profile extension",
-        "multi": false,
         "name": "ProfileDB",
         "options": [],
         "query": "postgres",
-        "queryValue": "",
         "refresh": 1,
         "regex": "",
-        "skipUrlSync": false,
         "type": "datasource"
       },
       {
+        "current": {},
         "datasource": {
           "type": "postgres",
           "uid": "${ProfileDB}"
         },
         "definition": "select server_id as __value, server_name as __text FROM servers",
-        "hide": 0,
         "includeAll": false,
         "label": "Server",
-        "multi": false,
         "name": "profile_servers",
         "options": [],
         "query": "select server_id as __value, server_name as __text FROM servers",
         "refresh": 1,
         "regex": "",
-        "skipUrlSync": false,
         "sort": 1,
         "type": "query"
       },
       {
+        "current": {},
         "datasource": {
           "type": "postgres",
           "uid": "${ProfileDB}"
@@ -4162,17 +5310,15 @@
         "hide": 2,
         "includeAll": false,
         "label": "StartID",
-        "multi": false,
         "name": "startid",
         "options": [],
         "query": "SELECT COALESCE(\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time < '${__from:date:iso}'\n  ORDER BY sample_id DESC\n  LIMIT 1),\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time > '${__from:date:iso}'\n  ORDER BY sample_id ASC\n  LIMIT 1)\n) as StartID",
         "refresh": 2,
         "regex": "",
-        "skipUrlSync": false,
-        "sort": 0,
         "type": "query"
       },
       {
+        "current": {},
         "datasource": {
           "type": "postgres",
           "uid": "${ProfileDB}"
@@ -4182,17 +5328,15 @@
         "hide": 2,
         "includeAll": false,
         "label": "EndID",
-        "multi": false,
         "name": "endid",
         "options": [],
         "query": "SELECT COALESCE(\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time < '${__to:date:iso}'\n  ORDER BY sample_id DESC\n  LIMIT 1),\n  (SELECT sample_id\n  FROM samples\n  WHERE\n    server_id = $profile_servers AND\n    sample_time > '${__to:date:iso}'\n  ORDER BY sample_id ASC\n  LIMIT 1)\n) as StartID",
         "refresh": 2,
         "regex": "",
-        "skipUrlSync": false,
-        "sort": 0,
         "type": "query"
       },
       {
+        "current": {},
         "datasource": {
           "type": "postgres",
           "uid": "${ProfileDB}"
@@ -4201,17 +5345,15 @@
         "description": "Minimal time for the current server",
         "hide": 2,
         "includeAll": false,
-        "multi": false,
         "name": "min_from",
         "options": [],
         "query": "SELECT extract(epoch from min(sample_time))*1000 + 1 as min_from\nFROM samples\nWHERE\n  server_id = $profile_servers",
         "refresh": 2,
         "regex": "",
-        "skipUrlSync": false,
-        "sort": 0,
         "type": "query"
       },
       {
+        "current": {},
         "datasource": {
           "type": "postgres",
           "uid": "${ProfileDB}"
@@ -4220,17 +5362,18 @@
         "description": "Maximum time for the current server",
         "hide": 2,
         "includeAll": false,
-        "multi": false,
         "name": "max_to",
         "options": [],
         "query": "SELECT extract(epoch from max(sample_time))*1000 + 1 as max_to\nFROM samples\nWHERE\n  server_id = $profile_servers",
         "refresh": 2,
         "regex": "",
-        "skipUrlSync": false,
-        "sort": 0,
         "type": "query"
       }
     ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
   },
   "timepicker": {
     "refresh_intervals": [
@@ -4243,7 +5386,7 @@
   },
   "timezone": "",
   "title": "pg_profile summary",
-  "uid": "5ClQqjK4l",
-  "version": 11,
+  "uid": "5ClQqjK4lqwe",
+  "version": 13,
   "weekStart": ""
 }
