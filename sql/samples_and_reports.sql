@@ -299,6 +299,10 @@ BEGIN
 	END LOOP;
 END $$;
 
+-- Check for zero-length reports
+SELECT profile.get_report(1,1);
+SELECT profile.get_diffreport('local',1,2,2,2);
+
 /* Testing diffreport */
 -- (sample 3)
 SELECT server,result FROM profile.take_sample();

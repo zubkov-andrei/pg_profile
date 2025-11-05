@@ -312,6 +312,20 @@ BEGIN
 		END IF;
 	END LOOP;
 END $$;
+-- Check for zero-length reports
+SELECT profile.get_report(1,1);
+ERROR:  First interval doesn't have positive duration
+HINT:  end1_id must be greater than start1_id
+CONTEXT:  PL/pgSQL function get_report_context(integer,integer,integer,text,integer,integer) line 24 at RAISE
+PL/pgSQL function get_report(integer,integer,integer,text,boolean,name[]) line 20 at assignment
+SQL function "get_report" statement 1
+SQL function "get_report" statement 1
+SELECT profile.get_diffreport('local',1,2,2,2);
+ERROR:  Second interval doesn't have positive duration
+HINT:  end2_id must be greater than start2_id
+CONTEXT:  PL/pgSQL function get_report_context(integer,integer,integer,text,integer,integer) line 28 at RAISE
+PL/pgSQL function get_diffreport(integer,integer,integer,integer,integer,text,boolean,name[]) line 28 at assignment
+SQL function "get_diffreport" statement 1
 /* Testing diffreport */
 -- (sample 3)
 SELECT server,result FROM profile.take_sample();

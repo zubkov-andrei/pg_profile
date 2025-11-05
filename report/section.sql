@@ -18,7 +18,19 @@ DECLARE
   start2_time_ut numeric;
   end2_time_ut   numeric;
 BEGIN
-    ASSERT num_nulls(start1_id, end1_id) = 0, 'At least first interval bounds is necessary';
+    IF num_nulls(start1_id, end1_id) > 0 THEN
+        RAISE 'At least first interval bounds is necessary';
+    END IF;
+
+    -- Check for zero-length intervals
+    IF num_nulls(start1_id, end1_id) = 0 AND start1_id >= end1_id THEN
+        RAISE 'First interval doesn''t have positive duration'
+            USING HINT = 'end1_id must be greater than start1_id';
+    END IF;
+    IF num_nulls(start2_id, end2_id) = 0 AND start2_id >= end2_id THEN
+        RAISE 'Second interval doesn''t have positive duration'
+            USING HINT = 'end2_id must be greater than start2_id';
+    END IF;
 
     -- Getting query length limit setting
     BEGIN
