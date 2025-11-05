@@ -1,4 +1,17 @@
 # pg_profile changelog
+
+## 4.11
+- pg_profile dump import optimization
+- Fixed #133, #142, #145, #138
+- Implemented #146
+- Avoid *take_sample()* failure due to error in *pg_stat_all_tables* before PostgreSQL 15
+- Fixed error while importing dump from PostgreSQL 18
+- Improvement in *take_sample()* time tracking feature
+- Connection strings can be excluded from dumps now
+- Restartpoints stats added to the reports (when available)
+- Improvements in summary dashboard
+- Other fixes and improvements
+
 ## 4.10
 - Support of *pg_stat_kcache* 2.3.1
 - Support of PostgreSQL 18 statistics
