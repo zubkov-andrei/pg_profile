@@ -23,3 +23,4 @@
 /^CREATE FUNCTION take_subsample(IN sserver_id integer.*$/,/'Take a sub-sample for a server by server_id';$/p
 /^CREATE FUNCTION export_data(.*$/,/\$\$[[:space:]]*LANGUAGE[[:space:]]\+\(plpg\)\?sql[[:space:]]*;[[:space:]]*$/p
 /^COMMENT ON FUNCTION export_data(.*$/,/';$/p
+/^CREATE FUNCTION set_server_setting(.*$/,/\$\$[[:space:]]*LANGUAGE[[:space:]]\+\(plpg\)\?sql[[:space:]]*;[[:space:]]*$/p

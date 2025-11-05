@@ -10,6 +10,7 @@ SELECT profile.set_server_db_exclude('srvtestrenamed',ARRAY['db1','db2','db3']);
 SELECT profile.set_server_max_sample_age('srvtestrenamed',3);
 -- settings validation test
 SELECT profile.set_server_setting('srvtestrenamed','name_failure','test');
+SELECT profile.set_server_size_sampling( server => 'srvtestrenamed', collect_mode => 'on' );
 SELECT profile.set_server_setting('srvtestrenamed','collect_vacuum_stats','value_failure');
 SELECT profile.set_server_setting('srvtestrenamed','collect_vacuum_stats','on');
 SELECT srv_settings::text FROM profile.servers ORDER BY server_id;

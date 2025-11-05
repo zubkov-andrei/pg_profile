@@ -403,7 +403,7 @@ DECLARE
     etext    text := '';
     edetail  text := '';
     econtext text := '';
-    settings_template CONSTANT jsonb := '{"collect": {}}'::jsonb;
+    collect_node jsonb;
 BEGIN
     IF set_server_setting.setting IN (
         'collect_pg_stat_statements',
@@ -427,12 +427,24 @@ BEGIN
                         USING DETAIL = edetail;
                 END;
         END;
+        SELECT
+          COALESCE(srv_settings #> ARRAY['collect'], '{}'::jsonb)
+            INTO collect_node
+        FROM servers
+        WHERE server_name = server;
+
+        collect_node := jsonb_set(
+                          collect_node,
+                          ARRAY[substr(set_server_setting.setting, 9)],
+                          to_jsonb(set_server_setting.value::boolean)
+        );
+
         UPDATE servers SET srv_settings =
-          jsonb_strip_nulls(jsonb_set(
-            COALESCE(srv_settings, settings_template),
-            ARRAY['collect', substr(set_server_setting.setting, 9)],
-            to_jsonb(set_server_setting.value::boolean)
-          ))
+          jsonb_set(
+            COALESCE(srv_settings, '{}'::jsonb),
+            ARRAY['collect'],
+            collect_node
+          )
           WHERE server_name = server;
         GET DIAGNOSTICS upd_rows = ROW_COUNT;
         RETURN upd_rows;

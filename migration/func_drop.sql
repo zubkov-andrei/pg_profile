@@ -12,3 +12,4 @@ DROP FUNCTION top_tables;
 DROP FUNCTION top_toasts;
 DROP FUNCTION take_subsample(integer, jsonb);
 DROP FUNCTION export_data;
+DROP FUNCTION set_server_setting;
