@@ -151,7 +151,8 @@ BEGIN
           'WHERE extname IN ('
             '''pg_stat_statements'','
             '''pg_wait_sampling'','
-            '''pg_stat_kcache'''
+            '''pg_stat_kcache'','
+            '''hostname'''
           ')')
         AS dbl(extname name, extnamespace name, extversion text)
     LOOP
@@ -350,7 +351,9 @@ BEGIN
     topn := (server_properties #>> '{properties,topn}')::integer;
 
     -- Creating a new sample record
-    UPDATE servers SET last_sample_id = last_sample_id + 1 WHERE server_id = sserver_id
+    UPDATE servers SET
+      last_sample_id = last_sample_id + 1
+    WHERE server_id = sserver_id
       RETURNING last_sample_id INTO s_id;
     INSERT INTO samples(sample_time,server_id,sample_id)
       VALUES (now(),sserver_id,s_id);
@@ -1865,6 +1868,30 @@ BEGIN
 
     IF (server_properties #>> '{collect_timings}')::boolean THEN
       server_properties := jsonb_set(server_properties,'{timings,calculate archiver stats,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,collect network buffer stats}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
+    -- Collect network buffer statistics (Linux only)
+    PERFORM collect_net_buffer_stats(sserver_id, s_id, server_properties);
+
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,collect network buffer stats,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,collect auth stats}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
+    -- Collect authentication statistics (if pg_auth_mon is available)
+    PERFORM collect_auth_stats(sserver_id, s_id, server_properties);
+
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,collect auth stats,end}',to_jsonb(clock_timestamp()));
+      server_properties := jsonb_set(server_properties,'{timings,collect system info}',jsonb_build_object('start',clock_timestamp()));
+    END IF;
+
+    -- Collect system information (hostname, IP, CPU, etc.)
+    PERFORM collect_system_info(server_properties, sserver_id, s_id);
+
+    IF (server_properties #>> '{collect_timings}')::boolean THEN
+      server_properties := jsonb_set(server_properties,'{timings,collect system info,end}',to_jsonb(clock_timestamp()));
       server_properties := jsonb_set(server_properties,'{timings,delete obsolete samples}',jsonb_build_object('start',clock_timestamp()));
     END IF;
 

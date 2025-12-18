@@ -501,12 +501,30 @@ BEGIN
       RAISE 'Two bounds must be specified for second interval';
     END IF;
 
-    -- Server name and description
-    SELECT server_name, server_description INTO STRICT r_result
+    -- Server name, hostname, IP, port, and description
+    SELECT server_name, server_hostname, server_ip, server_port, server_description INTO STRICT r_result
     FROM servers WHERE server_id = sserver_id;
     report_context := jsonb_set(report_context, '{report_properties,server_name}',
       to_jsonb(r_result.server_name)
     );
+    IF r_result.server_hostname IS NOT NULL AND r_result.server_hostname != ''
+    THEN
+      report_context := jsonb_set(report_context, '{report_properties,server_hostname}',
+        to_jsonb(r_result.server_hostname)
+      );
+    END IF;
+    IF r_result.server_ip IS NOT NULL
+    THEN
+      report_context := jsonb_set(report_context, '{report_properties,server_ip}',
+        to_jsonb(host(r_result.server_ip))
+      );
+    END IF;
+    IF r_result.server_port IS NOT NULL
+    THEN
+      report_context := jsonb_set(report_context, '{report_properties,server_port}',
+        to_jsonb(r_result.server_port)
+      );
+    END IF;
     IF r_result.server_description IS NOT NULL AND r_result.server_description != ''
     THEN
       report_context := jsonb_set(report_context, '{report_properties,server_description}',

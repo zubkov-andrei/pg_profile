@@ -431,21 +431,21 @@ COMMENT ON FUNCTION set_server_size_sampling(IN server name, IN window_start tim
 IS 'Set relation sizes sampling settings for a server';
 
 CREATE FUNCTION show_servers()
-RETURNS TABLE(server_name name, connstr text, enabled boolean, max_sample_age integer, description text)
+RETURNS TABLE(server_name name, server_hostname text, server_ip inet, server_port integer, connstr text, enabled boolean, max_sample_age integer, description text)
 SET search_path=@extschema@ AS $$
 DECLARE
   c_priv CURSOR FOR
-    SELECT server_name, connstr, enabled, max_sample_age, server_description FROM servers;
+    SELECT server_name, server_hostname, server_ip, server_port, connstr, enabled, max_sample_age, server_description FROM servers;
 
   c_unpriv CURSOR FOR
-    SELECT server_name, '<hidden>' as connstr, enabled, max_sample_age, server_description FROM servers;
+    SELECT server_name, server_hostname, server_ip, server_port, '<hidden>' as connstr, enabled, max_sample_age, server_description FROM servers;
 BEGIN
   IF has_column_privilege('servers', 'connstr', 'SELECT') THEN
-    FOR server_name, connstr, enabled, max_sample_age, description IN SELECT s.server_name, s.connstr, s.enabled, s.max_sample_age, s.server_description FROM servers s LOOP
+    FOR server_name, server_hostname, server_ip, server_port, connstr, enabled, max_sample_age, description IN SELECT s.server_name, s.server_hostname, s.server_ip, s.server_port, s.connstr, s.enabled, s.max_sample_age, s.server_description FROM servers s LOOP
       RETURN NEXT;
     END LOOP;
   ELSE
-    FOR server_name, connstr, enabled, max_sample_age, description IN SELECT s.server_name, '<hidden>' as connstr, s.enabled, s.max_sample_age, s.server_description FROM servers s LOOP
+    FOR server_name, server_hostname, server_ip, server_port, connstr, enabled, max_sample_age, description IN SELECT s.server_name, s.server_hostname, s.server_ip, s.server_port, '<hidden>' as connstr, s.enabled, s.max_sample_age, s.server_description FROM servers s LOOP
       RETURN NEXT;
     END LOOP;
   END IF;
@@ -453,6 +453,32 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 COMMENT ON FUNCTION show_servers() IS 'Displays all servers';
+
+CREATE FUNCTION show_servers_by_hostname(IN hostname_filter text)
+RETURNS TABLE(server_name name, server_hostname text, server_ip inet, server_port integer, connstr text, enabled boolean, max_sample_age integer, description text)
+SET search_path=@extschema@ AS $$
+BEGIN
+  IF has_column_privilege('servers', 'connstr', 'SELECT') THEN
+    FOR server_name, server_hostname, server_ip, server_port, connstr, enabled, max_sample_age, description IN
+      SELECT s.server_name, s.server_hostname, s.server_ip, s.server_port, s.connstr, s.enabled, s.max_sample_age, s.server_description
+      FROM servers s
+      WHERE s.server_hostname = hostname_filter OR hostname_filter IS NULL
+    LOOP
+      RETURN NEXT;
+    END LOOP;
+  ELSE
+    FOR server_name, server_hostname, server_ip, server_port, connstr, enabled, max_sample_age, description IN
+      SELECT s.server_name, s.server_hostname, s.server_ip, s.server_port, '<hidden>' as connstr, s.enabled, s.max_sample_age, s.server_description
+      FROM servers s
+      WHERE s.server_hostname = hostname_filter OR hostname_filter IS NULL
+    LOOP
+      RETURN NEXT;
+    END LOOP;
+  END IF;
+  RETURN;
+END;
+$$ LANGUAGE plpgsql;
+COMMENT ON FUNCTION show_servers_by_hostname(text) IS 'Displays servers filtered by hostname';
 
 CREATE FUNCTION show_servers_size_sampling()
 RETURNS TABLE (
