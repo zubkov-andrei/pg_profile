@@ -26,7 +26,19 @@ VALUES
         ']}'
     ']}'
   ']'::jsonb),
-(1, 'rep_settings', NULL, 11, NULL, NULL, NULL, NULL, NULL,
+(1, 'cpu_info', NULL, 11, 'CPU Information', 'CPU Information', NULL, NULL, NULL,
+  '[{'
+    '"type": "row_table",'
+    '"source": "properties",'
+    '"columns": ['
+        '{"id": "cpu_cores", "class": "table_obj_value", "caption": "CPU Cores"},'
+        '{"id": "cpu_model", "class": "table_obj_value", "caption": "CPU Model"},'
+        '{"id": "cpu_mhz", "class": "table_obj_value", "caption": "CPU MHz"},'
+        '{"id": "cpu_sockets", "class": "table_obj_value", "caption": "CPU Sockets"},'
+        '{"id": "memory_total_mb", "class": "table_obj_value", "caption": "Memory (MB)"}'
+    ']'
+  '}]'::jsonb),
+(1, 'rep_settings', NULL, 12, NULL, NULL, NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "settings",'
@@ -2037,7 +2049,19 @@ VALUES
           '{"id": ["report_end1", "report_end2"], "class": "table_obj_value", "caption": "end"}'
         ']}'
     ']}]'::jsonb),
-(2, 'rep_settings', NULL, 11, NULL, NULL, NULL, NULL, NULL,
+(2, 'cpu_info', NULL, 11, 'CPU Information', 'CPU Information', NULL, NULL, NULL,
+  '[{'
+    '"type": "row_table",'
+    '"source": "properties",'
+    '"columns": ['
+        '{"id": "cpu_cores", "class": "hdr table_obj_value", "caption": "CPU Cores", "rowspan": true},'
+        '{"id": "cpu_model", "class": "hdr table_obj_value", "caption": "CPU Model", "rowspan": true},'
+        '{"id": "cpu_mhz", "class": "hdr table_obj_value", "caption": "CPU MHz", "rowspan": true},'
+        '{"id": "cpu_sockets", "class": "hdr table_obj_value", "caption": "CPU Sockets", "rowspan": true},'
+        '{"id": "memory_total_mb", "class": "hdr table_obj_value", "caption": "Memory (MB)", "rowspan": true}'
+    ']'
+  '}]'::jsonb),
+(2, 'rep_settings', NULL, 12, NULL, NULL, NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "settings",'

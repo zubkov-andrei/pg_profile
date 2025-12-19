@@ -501,8 +501,8 @@ BEGIN
       RAISE 'Two bounds must be specified for second interval';
     END IF;
 
-    -- Server name, hostname, IP, port, and description
-    SELECT server_name, server_hostname, server_ip, server_port, server_description INTO STRICT r_result
+    -- Server name, hostname, IP, port, CPU, memory, and description
+    SELECT server_name, server_hostname, server_ip, server_port, cpu_cores, cpu_model, cpu_mhz, cpu_sockets, memory_total_mb, server_description INTO STRICT r_result
     FROM servers WHERE server_id = sserver_id;
     report_context := jsonb_set(report_context, '{report_properties,server_name}',
       to_jsonb(r_result.server_name)
@@ -523,6 +523,36 @@ BEGIN
     THEN
       report_context := jsonb_set(report_context, '{report_properties,server_port}',
         to_jsonb(r_result.server_port)
+      );
+    END IF;
+    IF r_result.cpu_cores IS NOT NULL
+    THEN
+      report_context := jsonb_set(report_context, '{report_properties,cpu_cores}',
+        to_jsonb(r_result.cpu_cores)
+      );
+    END IF;
+    IF r_result.cpu_model IS NOT NULL AND r_result.cpu_model != ''
+    THEN
+      report_context := jsonb_set(report_context, '{report_properties,cpu_model}',
+        to_jsonb(r_result.cpu_model)
+      );
+    END IF;
+    IF r_result.cpu_mhz IS NOT NULL
+    THEN
+      report_context := jsonb_set(report_context, '{report_properties,cpu_mhz}',
+        to_jsonb(r_result.cpu_mhz)
+      );
+    END IF;
+    IF r_result.cpu_sockets IS NOT NULL
+    THEN
+      report_context := jsonb_set(report_context, '{report_properties,cpu_sockets}',
+        to_jsonb(r_result.cpu_sockets)
+      );
+    END IF;
+    IF r_result.memory_total_mb IS NOT NULL
+    THEN
+      report_context := jsonb_set(report_context, '{report_properties,memory_total_mb}',
+        to_jsonb(r_result.memory_total_mb)
       );
     END IF;
     IF r_result.server_description IS NOT NULL AND r_result.server_description != ''
