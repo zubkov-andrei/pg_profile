@@ -81,7 +81,24 @@ VALUES
         '{"id": "sample_time", "class": "table_obj_value", "caption": "Sample Time"}, '
         '{"id": "stmt_cnt", "class": "table_obj_value", "caption": "Stmts Captured"}, '
         '{"id": "max_cnt", "class": "table_obj_value", "caption": "pg_stat_statements.max"}'
-    ']}]'::jsonb)
+    ']}]'::jsonb),
+(1, 'system_load', NULL, 15, 'System Load & CPU', 'System Load Averages and CPU Utilization', NULL, NULL, NULL,
+  '[{
+    "type": "row_table",
+    "source": "properties",
+    "columns": [
+        {"caption": "Load Averages", "columns": [
+            {"id": "load_avg_1min", "class": "table_obj_value", "caption": "1min"},
+            {"id": "load_avg_5min", "class": "table_obj_value", "caption": "5min"},
+            {"id": "load_avg_15min", "class": "table_obj_value", "caption": "15min"}
+        ]},
+        {"caption": "CPU Utilization", "columns": [
+            {"id": "cpu_user_pct", "class": "table_obj_value", "caption": "%user"},
+            {"id": "cpu_system_pct", "class": "table_obj_value", "caption": "%system"},
+            {"id": "cpu_idle_pct", "class": "table_obj_value", "caption": "%idle"}
+        ]}
+    ]
+  }]'::jsonb)
 ;
 
 -- Server section of regular report
@@ -2061,6 +2078,25 @@ VALUES
         '{"id": "memory_total_mb", "class": "hdr table_obj_value", "caption": "Memory (MB)", "rowspan": true}'
     ']'
   '}]'::jsonb),
+(2, 'system_load', NULL, 15, 'System Load & CPU', 'System Load Averages and CPU Utilization', NULL, NULL, NULL,
+  '[{
+    "type": "row_table",
+    "source": "properties",
+    "columns": [
+        {"id": "server_name", "class": "hdr", "caption": "Server", "rowspan": true},
+        {"id": ["1", "2"], "class": "interval", "title":["properties.timePeriod1", "properties.timePeriod2"], "caption": "I"},
+        {"caption": "Load Averages", "columns": [
+            {"id": ["load_avg_1min", "load_avg_1min"], "class": "table_obj_value", "caption": "1min"},
+            {"id": ["load_avg_5min", "load_avg_5min"], "class": "table_obj_value", "caption": "5min"},
+            {"id": ["load_avg_15min", "load_avg_15min"], "class": "table_obj_value", "caption": "15min"}
+        ]},
+        {"caption": "CPU Utilization", "columns": [
+            {"id": ["cpu_user_pct", "cpu_user_pct"], "class": "table_obj_value", "caption": "%user"},
+            {"id": ["cpu_system_pct", "cpu_system_pct"], "class": "table_obj_value", "caption": "%system"},
+            {"id": ["cpu_idle_pct", "cpu_idle_pct"], "class": "table_obj_value", "caption": "%idle"}
+        ]}
+    ]
+  }]'::jsonb),
 (2, 'rep_settings', NULL, 12, NULL, NULL, NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'

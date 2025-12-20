@@ -501,8 +501,8 @@ BEGIN
       RAISE 'Two bounds must be specified for second interval';
     END IF;
 
-    -- Server name, hostname, IP, port, CPU, memory, and description
-    SELECT server_name, server_hostname, server_ip, server_port, cpu_cores, cpu_model, cpu_mhz, cpu_sockets, memory_total_mb, server_description INTO STRICT r_result
+    -- Server name, hostname, IP, port, CPU, memory, load averages, and description
+    SELECT server_name, server_hostname, server_ip, server_port, cpu_cores, cpu_model, cpu_mhz, cpu_sockets, memory_total_mb, load_avg_1min, load_avg_5min, load_avg_15min, cpu_user_pct, cpu_system_pct, cpu_idle_pct, server_description INTO STRICT r_result
     FROM servers WHERE server_id = sserver_id;
     report_context := jsonb_set(report_context, '{report_properties,server_name}',
       to_jsonb(r_result.server_name)
@@ -553,6 +553,42 @@ BEGIN
     THEN
       report_context := jsonb_set(report_context, '{report_properties,memory_total_mb}',
         to_jsonb(r_result.memory_total_mb)
+      );
+    END IF;
+    IF r_result.load_avg_1min IS NOT NULL
+    THEN
+      report_context := jsonb_set(report_context, '{report_properties,load_avg_1min}',
+        to_jsonb(r_result.load_avg_1min)
+      );
+    END IF;
+    IF r_result.load_avg_5min IS NOT NULL
+    THEN
+      report_context := jsonb_set(report_context, '{report_properties,load_avg_5min}',
+        to_jsonb(r_result.load_avg_5min)
+      );
+    END IF;
+    IF r_result.load_avg_15min IS NOT NULL
+    THEN
+      report_context := jsonb_set(report_context, '{report_properties,load_avg_15min}',
+        to_jsonb(r_result.load_avg_15min)
+      );
+    END IF;
+    IF r_result.cpu_user_pct IS NOT NULL
+    THEN
+      report_context := jsonb_set(report_context, '{report_properties,cpu_user_pct}',
+        to_jsonb(r_result.cpu_user_pct)
+      );
+    END IF;
+    IF r_result.cpu_system_pct IS NOT NULL
+    THEN
+      report_context := jsonb_set(report_context, '{report_properties,cpu_system_pct}',
+        to_jsonb(r_result.cpu_system_pct)
+      );
+    END IF;
+    IF r_result.cpu_idle_pct IS NOT NULL
+    THEN
+      report_context := jsonb_set(report_context, '{report_properties,cpu_idle_pct}',
+        to_jsonb(r_result.cpu_idle_pct)
       );
     END IF;
     IF r_result.server_description IS NOT NULL AND r_result.server_description != ''

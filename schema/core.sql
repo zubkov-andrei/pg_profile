@@ -20,7 +20,13 @@ CREATE TABLE servers (
     cpu_model           text,
     cpu_mhz             numeric,
     cpu_sockets         integer,
-    memory_total_mb     bigint
+    memory_total_mb     bigint,
+    load_avg_1min       numeric,
+    load_avg_5min       numeric,
+    load_avg_15min      numeric,
+    cpu_user_pct        numeric,
+    cpu_system_pct      numeric,
+    cpu_idle_pct        numeric
 );
 COMMENT ON TABLE servers IS 'Monitored servers (Postgres clusters) list';
 COMMENT ON COLUMN servers.server_hostname IS 'Physical server hostname from hostname() extension. NULL when hostname extension is not installed or when connected via Unix socket.';
@@ -31,6 +37,12 @@ COMMENT ON COLUMN servers.cpu_model IS 'CPU model name from /proc/cpuinfo (Linux
 COMMENT ON COLUMN servers.cpu_mhz IS 'CPU frequency in MHz from /proc/cpuinfo (Linux only)';
 COMMENT ON COLUMN servers.cpu_sockets IS 'Number of physical CPU sockets from system detection (Linux only)';
 COMMENT ON COLUMN servers.memory_total_mb IS 'Total system memory in MB from /proc/meminfo (Linux only)';
+COMMENT ON COLUMN servers.load_avg_1min IS 'System load average over 1 minute from /proc/loadavg (Linux only)';
+COMMENT ON COLUMN servers.load_avg_5min IS 'System load average over 5 minutes from /proc/loadavg (Linux only)';
+COMMENT ON COLUMN servers.load_avg_15min IS 'System load average over 15 minutes from /proc/loadavg (Linux only)';
+COMMENT ON COLUMN servers.cpu_user_pct IS 'CPU user percentage from /proc/stat (Linux only)';
+COMMENT ON COLUMN servers.cpu_system_pct IS 'CPU system percentage from /proc/stat (Linux only)';
+COMMENT ON COLUMN servers.cpu_idle_pct IS 'CPU idle percentage from /proc/stat (Linux only)';
 
 CREATE INDEX ix_servers_hostname ON servers(server_hostname) WHERE server_hostname IS NOT NULL;
 CREATE INDEX ix_servers_ip ON servers(server_ip) WHERE server_ip IS NOT NULL;
@@ -49,6 +61,12 @@ CREATE TABLE samples (
     cpu_mhz numeric,
     cpu_sockets integer,
     memory_total_mb bigint,
+    load_avg_1min numeric,
+    load_avg_5min numeric,
+    load_avg_15min numeric,
+    cpu_user_pct numeric,
+    cpu_system_pct numeric,
+    cpu_idle_pct numeric,
     CONSTRAINT pk_samples PRIMARY KEY (server_id, sample_id)
 );
 
@@ -65,6 +83,12 @@ COMMENT ON COLUMN samples.cpu_model IS 'CPU model name at time of sample collect
 COMMENT ON COLUMN samples.cpu_mhz IS 'CPU frequency in MHz at time of sample collection (Linux only)';
 COMMENT ON COLUMN samples.cpu_sockets IS 'Number of physical CPU sockets at time of sample collection (Linux only)';
 COMMENT ON COLUMN samples.memory_total_mb IS 'Total system memory in MB at time of sample collection (Linux only)';
+COMMENT ON COLUMN samples.load_avg_1min IS 'System load average over 1 minute at time of sample collection (Linux only)';
+COMMENT ON COLUMN samples.load_avg_5min IS 'System load average over 5 minutes at time of sample collection (Linux only)';
+COMMENT ON COLUMN samples.load_avg_15min IS 'System load average over 15 minutes at time of sample collection (Linux only)';
+COMMENT ON COLUMN samples.cpu_user_pct IS 'CPU user percentage at time of sample collection (Linux only)';
+COMMENT ON COLUMN samples.cpu_system_pct IS 'CPU system percentage at time of sample collection (Linux only)';
+COMMENT ON COLUMN samples.cpu_idle_pct IS 'CPU idle percentage at time of sample collection (Linux only)';
 
 CREATE TABLE baselines (
     server_id   integer NOT NULL REFERENCES servers(server_id) ON DELETE CASCADE DEFERRABLE INITIALLY IMMEDIATE,

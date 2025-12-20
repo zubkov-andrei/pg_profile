@@ -65,7 +65,13 @@ RETURNS TABLE(
     cpu_model text,
     cpu_mhz numeric,
     cpu_sockets integer,
-    memory_total_mb bigint
+    memory_total_mb bigint,
+    load_avg_1min numeric,
+    load_avg_5min numeric,
+    load_avg_15min numeric,
+    cpu_user_pct numeric,
+    cpu_system_pct numeric,
+    cpu_idle_pct numeric
 )
 SET search_path=@extschema@ AS $$
 DECLARE
@@ -77,7 +83,14 @@ DECLARE
     current_cpu_mhz numeric := NULL;
     current_cpu_sockets integer := NULL;
     current_memory_total_mb bigint := NULL;
+    current_load_avg_1min numeric := NULL;
+    current_load_avg_5min numeric := NULL;
+    current_load_avg_15min numeric := NULL;
+    current_cpu_user_pct numeric := NULL;
+    current_cpu_system_pct numeric := NULL;
+    current_cpu_idle_pct numeric := NULL;
     temp_table_name text;
+    cpu_stat_table_name text;
     is_linux boolean := false;
 BEGIN
     -- Detect if running on Linux by checking PostgreSQL version string
@@ -289,7 +302,13 @@ BEGIN
         current_cpu_model,
         current_cpu_mhz,
         current_cpu_sockets,
-        current_memory_total_mb;
+        current_memory_total_mb,
+        current_load_avg_1min,
+        current_load_avg_5min,
+        current_load_avg_15min,
+        current_cpu_user_pct,
+        current_cpu_system_pct,
+        current_cpu_idle_pct;
 END;
 $$ LANGUAGE plpgsql;
 

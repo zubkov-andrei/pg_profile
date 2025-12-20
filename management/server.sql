@@ -431,21 +431,21 @@ COMMENT ON FUNCTION set_server_size_sampling(IN server name, IN window_start tim
 IS 'Set relation sizes sampling settings for a server';
 
 CREATE FUNCTION show_servers()
-RETURNS TABLE(server_name name, server_hostname text, server_ip inet, server_port integer, cpu_cores integer, cpu_model text, cpu_mhz numeric, cpu_sockets integer, memory_total_mb bigint, connstr text, enabled boolean, max_sample_age integer, description text)
+RETURNS TABLE(server_name name, server_hostname text, server_ip inet, server_port integer, cpu_cores integer, cpu_model text, cpu_mhz numeric, cpu_sockets integer, memory_total_mb bigint, load_avg_1min numeric, load_avg_5min numeric, load_avg_15min numeric, cpu_user_pct numeric, cpu_system_pct numeric, cpu_idle_pct numeric, connstr text, enabled boolean, max_sample_age integer, description text)
 SET search_path=@extschema@ AS $$
 DECLARE
   c_priv CURSOR FOR
-    SELECT server_name, server_hostname, server_ip, server_port, cpu_cores, cpu_model, cpu_mhz, cpu_sockets, memory_total_mb, connstr, enabled, max_sample_age, server_description FROM servers;
+    SELECT server_name, server_hostname, server_ip, server_port, cpu_cores, cpu_model, cpu_mhz, cpu_sockets, memory_total_mb, load_avg_1min, load_avg_5min, load_avg_15min, cpu_user_pct, cpu_system_pct, cpu_idle_pct, connstr, enabled, max_sample_age, server_description FROM servers;
 
   c_unpriv CURSOR FOR
-    SELECT server_name, server_hostname, server_ip, server_port, cpu_cores, cpu_model, cpu_mhz, cpu_sockets, memory_total_mb, '<hidden>' as connstr, enabled, max_sample_age, server_description FROM servers;
+    SELECT server_name, server_hostname, server_ip, server_port, cpu_cores, cpu_model, cpu_mhz, cpu_sockets, memory_total_mb, load_avg_1min, load_avg_5min, load_avg_15min, cpu_user_pct, cpu_system_pct, cpu_idle_pct, '<hidden>' as connstr, enabled, max_sample_age, server_description FROM servers;
 BEGIN
   IF has_column_privilege('servers', 'connstr', 'SELECT') THEN
-    FOR server_name, server_hostname, server_ip, server_port, cpu_cores, cpu_model, cpu_mhz, cpu_sockets, memory_total_mb, connstr, enabled, max_sample_age, description IN SELECT s.server_name, s.server_hostname, s.server_ip, s.server_port, s.cpu_cores, s.cpu_model, s.cpu_mhz, s.cpu_sockets, s.memory_total_mb, s.connstr, s.enabled, s.max_sample_age, s.server_description FROM servers s LOOP
+    FOR server_name, server_hostname, server_ip, server_port, cpu_cores, cpu_model, cpu_mhz, cpu_sockets, memory_total_mb, load_avg_1min, load_avg_5min, load_avg_15min, cpu_user_pct, cpu_system_pct, cpu_idle_pct, connstr, enabled, max_sample_age, description IN SELECT s.server_name, s.server_hostname, s.server_ip, s.server_port, s.cpu_cores, s.cpu_model, s.cpu_mhz, s.cpu_sockets, s.memory_total_mb, s.load_avg_1min, s.load_avg_5min, s.load_avg_15min, s.cpu_user_pct, s.cpu_system_pct, s.cpu_idle_pct, s.connstr, s.enabled, s.max_sample_age, s.server_description FROM servers s LOOP
       RETURN NEXT;
     END LOOP;
   ELSE
-    FOR server_name, server_hostname, server_ip, server_port, cpu_cores, cpu_model, cpu_mhz, cpu_sockets, memory_total_mb, connstr, enabled, max_sample_age, description IN SELECT s.server_name, s.server_hostname, s.server_ip, s.server_port, s.cpu_cores, s.cpu_model, s.cpu_mhz, s.cpu_sockets, s.memory_total_mb, '<hidden>' as connstr, s.enabled, s.max_sample_age, s.server_description FROM servers s LOOP
+    FOR server_name, server_hostname, server_ip, server_port, cpu_cores, cpu_model, cpu_mhz, cpu_sockets, memory_total_mb, load_avg_1min, load_avg_5min, load_avg_15min, cpu_user_pct, cpu_system_pct, cpu_idle_pct, connstr, enabled, max_sample_age, description IN SELECT s.server_name, s.server_hostname, s.server_ip, s.server_port, s.cpu_cores, s.cpu_model, s.cpu_mhz, s.cpu_sockets, s.memory_total_mb, s.load_avg_1min, s.load_avg_5min, s.load_avg_15min, s.cpu_user_pct, s.cpu_system_pct, s.cpu_idle_pct, '<hidden>' as connstr, s.enabled, s.max_sample_age, s.server_description FROM servers s LOOP
       RETURN NEXT;
     END LOOP;
   END IF;
