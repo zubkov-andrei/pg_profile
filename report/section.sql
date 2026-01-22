@@ -813,6 +813,18 @@ BEGIN
     END LOOP;
     datasets := jsonb_set(datasets, '{cluster_stats}', dataset);
 
+    -- network buffer statistics dataset (Linux only)
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM net_buffer_stats_format(sserver_id, start1_id, end1_id)
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    IF jsonb_array_length(dataset) > 0 THEN
+      datasets := jsonb_set(datasets, '{net_buffers}', dataset);
+    END IF;
+
     IF (report_context #>> '{report_features,cluster_stats_reset}')::boolean THEN
       -- cluster stats reset dataset
       dataset := '[]'::jsonb;
@@ -1255,6 +1267,19 @@ BEGIN
       dataset := dataset || to_jsonb(r_result);
     END LOOP;
     datasets := jsonb_set(datasets, '{cluster_stats}', dataset);
+
+    -- network buffer statistics dataset (Linux only)
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM net_buffer_stats_format_diff(sserver_id, start1_id, end1_id,
+                 start2_id, end2_id)
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    IF jsonb_array_length(dataset) > 0 THEN
+      datasets := jsonb_set(datasets, '{net_buffers}', dataset);
+    END IF;
 
     IF (report_context #>> '{report_features,cluster_stats_reset}')::boolean THEN
       -- cluster stats reset dataset

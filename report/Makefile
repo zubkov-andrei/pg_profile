@@ -2,6 +2,7 @@ report_files = \
 	functions/clusterstat.sql \
 	functions/stat_io.sql \
 	functions/stat_slru.sql \
+	functions/net_buffer_stats.sql \
 	functions/dbstat.sql \
 	functions/dead_mods_ix_unused.sql \
 	functions/functionstat.sql \

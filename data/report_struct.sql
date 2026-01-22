@@ -98,6 +98,15 @@ VALUES
             {"id": "cpu_idle_pct", "class": "table_obj_value", "caption": "%idle"}
         ]}
     ]
+  }]'::jsonb),
+(1, 'net_buffers', NULL, 16, 'Network Buffer Configuration', 'Linux Network Buffer Settings (net.core.*mem)', NULL, NULL, NULL,
+  '[{
+    "type": "row_table",
+    "source": "net_buffers",
+    "columns": [
+        {"id": "parameter", "class": "table_obj_name", "caption": "Parameter"},
+        {"id": "value", "class": "table_obj_value", "caption": "Value"}
+    ]
   }]'::jsonb)
 ;
 
@@ -2108,6 +2117,16 @@ VALUES
       '{"caption": "Value", "id": "reset_val", "class": "table_obj_value"}'
     ']'
   '}]'::jsonb),
+(2, 'net_buffers', NULL, 16, 'Network Buffer Configuration', 'Linux Network Buffer Settings (net.core.*mem)', NULL, NULL, NULL,
+  '[{
+    "type": "row_table",
+    "source": "net_buffers",
+    "columns": [
+        {"id": "parameter", "class": "hdr", "caption": "Parameter", "rowspan": true},
+        {"id": ["1", "2"], "class": "interval", "title": ["properties.timePeriod1", "properties.timePeriod2"], "caption": "I"},
+        {"id": ["value1", "value2"], "class": "table_obj_value", "caption": "Value"}
+    ]
+  }]'::jsonb),
 (2, 'stmt_cmt1', NULL, 100, NULL, NULL, 'stmt_cnt_range', NULL,
   '{"class": "warning", "text": "Report interval contains sample(s) with captured statements count more than 90% of pg_stat_statements.max. '
   'Consider increasing pg_stat_statements.max parameter."}',

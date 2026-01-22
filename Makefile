@@ -60,6 +60,7 @@ sample = \
 	sample/sample_pg_stat_statements.sql \
 	sample/pg_wait_sampling.sql \
 	sample/hostname.sql \
+	sample/net_buffers.sql \
 	sample/sample.sql \
 	sample/subsample.sql \
 	sample/compat.sql
