@@ -107,6 +107,32 @@ VALUES
         {"id": "parameter", "class": "table_obj_name", "caption": "Parameter"},
         {"id": "value", "class": "table_obj_value", "caption": "Value"}
     ]
+  }]'::jsonb),
+(1, 'auth_summary', NULL, 17, 'Authentication Statistics Summary', 'Authentication Activity Summary (pg_auth_mon)', NULL, NULL, NULL,
+  '[{
+    "type": "row_table",
+    "source": "auth_summary",
+    "columns": [
+        {"id": "metric", "class": "table_obj_name", "caption": "Metric"},
+        {"id": "value", "class": "table_obj_value", "caption": "Value"}
+    ]
+  }]'::jsonb),
+(1, 'auth_details', NULL, 18, 'Authentication Statistics by User', 'Detailed Authentication Statistics per User (pg_auth_mon)', NULL, NULL, NULL,
+  '[{
+    "type": "row_table",
+    "source": "auth_stats",
+    "ordering": "total_attempts",
+    "limit": "topn",
+    "columns": [
+        {"id": "username", "class": "table_obj_name", "caption": "Username"},
+        {"id": "successful_logins", "class": "table_obj_value", "caption": "Successful"},
+        {"id": "failed_logins", "class": "table_obj_value", "caption": "Failed"},
+        {"id": "total_attempts", "class": "table_obj_value", "caption": "Total"},
+        {"id": "success_rate_pct", "class": "table_obj_value", "caption": "Success %"},
+        {"id": "logins_per_sec", "class": "table_obj_value", "caption": "Logins/sec"},
+        {"id": "failures_per_sec", "class": "table_obj_value", "caption": "Failures/sec"},
+        {"id": "attempts_per_sec", "class": "table_obj_value", "caption": "Attempts/sec"}
+    ]
   }]'::jsonb)
 ;
 
@@ -2125,6 +2151,25 @@ VALUES
         {"id": "parameter", "class": "hdr", "caption": "Parameter", "rowspan": true},
         {"id": ["1", "2"], "class": "interval", "title": ["properties.timePeriod1", "properties.timePeriod2"], "caption": "I"},
         {"id": ["value1", "value2"], "class": "table_obj_value", "caption": "Value"}
+    ]
+  }]'::jsonb),
+(2, 'auth_details', NULL, 17, 'Authentication Statistics by User', 'Authentication Statistics by User (if pg_auth_mon extension is installed)', NULL, NULL, NULL,
+  '[{
+    "type": "row_table",
+    "source": "auth_stats",
+    "limit": "topn",
+    "columns": [
+        {"id": "username", "class": "hdr", "caption": "Username", "rowspan": true},
+        {"id": ["1", "2"], "class": "interval", "title": ["properties.timePeriod1", "properties.timePeriod2"], "caption": "I"},
+        {"caption": "Authentication Attempts", "columns": [
+            {"id": ["successful_logins1", "successful_logins2"], "class": "table_obj_value", "caption": "Successful"},
+            {"id": ["failed_logins1", "failed_logins2"], "class": "table_obj_value", "caption": "Failed"},
+            {"id": ["total_attempts1", "total_attempts2"], "class": "table_obj_value", "caption": "Total"}
+        ]},
+        {"caption": "Rates", "columns": [
+            {"id": ["logins_per_sec1", "logins_per_sec2"], "class": "table_obj_value", "caption": "Logins/s"},
+            {"id": ["success_rate_pct1", "success_rate_pct2"], "class": "table_obj_value", "caption": "Success %"}
+        ]}
     ]
   }]'::jsonb),
 (2, 'stmt_cmt1', NULL, 100, NULL, NULL, 'stmt_cnt_range', NULL,

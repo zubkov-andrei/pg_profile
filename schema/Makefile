@@ -16,7 +16,8 @@ schema_files = \
 	smpl_timing.sql \
 	reports.sql \
 	extension_versions.sql \
-	net_buffers.sql
+	net_buffers.sql \
+	auth_stats.sql
 
 schema.sql: $(schema_files)
 	cat $(schema_files) \

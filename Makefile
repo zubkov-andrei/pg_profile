@@ -61,6 +61,7 @@ sample = \
 	sample/pg_wait_sampling.sql \
 	sample/hostname.sql \
 	sample/net_buffers.sql \
+	sample/auth_stats.sql \
 	sample/sample.sql \
 	sample/subsample.sql \
 	sample/compat.sql

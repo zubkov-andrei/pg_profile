@@ -825,6 +825,32 @@ BEGIN
       datasets := jsonb_set(datasets, '{net_buffers}', dataset);
     END IF;
 
+    -- authentication statistics dataset (if pg_auth_mon available)
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM auth_stats_total_format(sserver_id, start1_id, end1_id,
+          (report_context #>> '{report_properties,interval_duration_sec}')::numeric)
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    IF jsonb_array_length(dataset) > 0 THEN
+      datasets := jsonb_set(datasets, '{auth_summary}', dataset);
+    END IF;
+
+    -- per-user authentication statistics
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM auth_stats_format(sserver_id, start1_id, end1_id,
+          (report_context #>> '{report_properties,interval_duration_sec}')::numeric)
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    IF jsonb_array_length(dataset) > 0 THEN
+      datasets := jsonb_set(datasets, '{auth_stats}', dataset);
+    END IF;
+
     IF (report_context #>> '{report_features,cluster_stats_reset}')::boolean THEN
       -- cluster stats reset dataset
       dataset := '[]'::jsonb;
@@ -1279,6 +1305,20 @@ BEGIN
     END LOOP;
     IF jsonb_array_length(dataset) > 0 THEN
       datasets := jsonb_set(datasets, '{net_buffers}', dataset);
+    END IF;
+
+    -- authentication statistics dataset (if pg_auth_mon available)
+    dataset := '[]'::jsonb;
+    FOR r_result IN (
+        SELECT *
+        FROM auth_stats_format_diff(sserver_id, start1_id, end1_id, start2_id, end2_id,
+          (report_context #>> '{report_properties,interval1_duration_sec}')::numeric,
+          (report_context #>> '{report_properties,interval2_duration_sec}')::numeric)
+      ) LOOP
+      dataset := dataset || to_jsonb(r_result);
+    END LOOP;
+    IF jsonb_array_length(dataset) > 0 THEN
+      datasets := jsonb_set(datasets, '{auth_stats}', dataset);
     END IF;
 
     IF (report_context #>> '{report_features,cluster_stats_reset}')::boolean THEN
