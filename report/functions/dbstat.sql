@@ -92,12 +92,17 @@ SET search_path=@extschema@ AS $$
     GROUP BY st.server_id, st.datid, st.datname
 $$ LANGUAGE sql;
 
-CREATE FUNCTION dbstats_format(IN sserver_id integer, IN start_id integer, IN end_id integer)
+CREATE FUNCTION dbstats_format(IN sserver_id integer, IN start_id integer, IN end_id integer,
+  IN interval_duration_sec numeric)
 RETURNS TABLE(
     datid                 oid,
     dbname                name,
     xact_commit           numeric,
     xact_rollback         numeric,
+    commits_per_sec       numeric,
+    rollbacks_per_sec     numeric,
+    total_xacts           numeric,
+    xacts_per_sec         numeric,
     blks_read             numeric,
     blks_hit              numeric,
     tup_returned          numeric,
@@ -130,6 +135,10 @@ RETURNS TABLE(
         COALESCE(st.dbname,'Total') AS dbname,
         NULLIF(sum(st.xact_commit), 0) AS xact_commit,
         NULLIF(sum(st.xact_rollback), 0) AS xact_rollback,
+        round(NULLIF(sum(st.xact_commit), 0)::numeric / NULLIF(interval_duration_sec, 0), 3) AS commits_per_sec,
+        round(NULLIF(sum(st.xact_rollback), 0)::numeric / NULLIF(interval_duration_sec, 0), 3) AS rollbacks_per_sec,
+        NULLIF(sum(st.xact_commit) + sum(st.xact_rollback), 0) AS total_xacts,
+        round((NULLIF(sum(st.xact_commit) + sum(st.xact_rollback), 0))::numeric / NULLIF(interval_duration_sec, 0), 3) AS xacts_per_sec,
         NULLIF(sum(st.blks_read), 0) AS blks_read,
         NULLIF(sum(st.blks_hit), 0) AS blks_hit,
         NULLIF(sum(st.tup_returned), 0) AS tup_returned,
@@ -164,12 +173,17 @@ RETURNS TABLE(
 $$ LANGUAGE sql;
 
 CREATE FUNCTION dbstats_format_diff(IN sserver_id integer, IN start1_id integer, IN end1_id integer,
-  IN start2_id integer, IN end2_id integer)
+  IN start2_id integer, IN end2_id integer,
+  IN interval1_duration_sec numeric, IN interval2_duration_sec numeric)
 RETURNS TABLE(
     datid                   oid,
     dbname                  name,
     xact_commit1            numeric,
     xact_rollback1          numeric,
+    commits_per_sec1        numeric,
+    rollbacks_per_sec1      numeric,
+    total_xacts1            numeric,
+    xacts_per_sec1          numeric,
     blks_read1              numeric,
     blks_hit1               numeric,
     tup_returned1           numeric,
@@ -196,6 +210,10 @@ RETURNS TABLE(
     sessions_killed1        numeric,
     xact_commit2            numeric,
     xact_rollback2          numeric,
+    commits_per_sec2        numeric,
+    rollbacks_per_sec2      numeric,
+    total_xacts2            numeric,
+    xacts_per_sec2          numeric,
     blks_read2              numeric,
     blks_hit2               numeric,
     tup_returned2           numeric,
@@ -228,6 +246,10 @@ RETURNS TABLE(
         COALESCE(COALESCE(dbs1.dbname,dbs2.dbname),'Total') AS dbname,
         NULLIF(sum(dbs1.xact_commit), 0) AS xact_commit1,
         NULLIF(sum(dbs1.xact_rollback), 0) AS xact_rollback1,
+        round(NULLIF(sum(dbs1.xact_commit), 0)::numeric / NULLIF(interval1_duration_sec, 0), 3) AS commits_per_sec1,
+        round(NULLIF(sum(dbs1.xact_rollback), 0)::numeric / NULLIF(interval1_duration_sec, 0), 3) AS rollbacks_per_sec1,
+        NULLIF(sum(dbs1.xact_commit) + sum(dbs1.xact_rollback), 0) AS total_xacts1,
+        round((NULLIF(sum(dbs1.xact_commit) + sum(dbs1.xact_rollback), 0))::numeric / NULLIF(interval1_duration_sec, 0), 3) AS xacts_per_sec1,
         NULLIF(sum(dbs1.blks_read), 0) AS blks_read1,
         NULLIF(sum(dbs1.blks_hit), 0) AS blks_hit1,
         NULLIF(sum(dbs1.tup_returned), 0) AS tup_returned1,
@@ -254,6 +276,10 @@ RETURNS TABLE(
         NULLIF(sum(dbs1.sessions_killed), 0) AS sessions_killed1,
         NULLIF(sum(dbs2.xact_commit), 0) AS xact_commit2,
         NULLIF(sum(dbs2.xact_rollback), 0) AS xact_rollback2,
+        round(NULLIF(sum(dbs2.xact_commit), 0)::numeric / NULLIF(interval2_duration_sec, 0), 3) AS commits_per_sec2,
+        round(NULLIF(sum(dbs2.xact_rollback), 0)::numeric / NULLIF(interval2_duration_sec, 0), 3) AS rollbacks_per_sec2,
+        NULLIF(sum(dbs2.xact_commit) + sum(dbs2.xact_rollback), 0) AS total_xacts2,
+        round((NULLIF(sum(dbs2.xact_commit) + sum(dbs2.xact_rollback), 0))::numeric / NULLIF(interval2_duration_sec, 0), 3) AS xacts_per_sec2,
         NULLIF(sum(dbs2.blks_read), 0) AS blks_read2,
         NULLIF(sum(dbs2.blks_hit), 0) AS blks_hit2,
         NULLIF(sum(dbs2.tup_returned), 0) AS tup_returned2,
