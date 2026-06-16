@@ -34,6 +34,19 @@ REGRESS += \
 	kcache_drop_extension
 endif
 
+# hostname extension tests
+ifdef USE_HOSTNAME
+REGRESS += \
+	hostname_create_extension \
+	server_management \
+	samples_and_reports \
+	sizes_collection \
+	hostname_feature \
+	export_import \
+	retention_and_baselines \
+	hostname_drop_extension
+endif
+
 PG_CONFIG ?= pg_config
 
 ifdef USE_PGXS
@@ -75,6 +88,7 @@ sample = \
 	sample/get_sized_bounds.sql \
 	sample/init_sample.sql \
 	sample/pg_wait_sampling.sql \
+	sample/hostname.sql \
 	sample/query_pg_stat_archiver.sql \
 	sample/query_pg_stat_bgwriter.sql \
 	sample/query_pg_stat_io.sql \

@@ -174,6 +174,13 @@ BEGIN
             sample_id BETWEEN start1_id AND end1_id AND
             (first_seen > start1_time OR last_sample_id < end1_id)
           ),
+        'server_hostname', (
+          SELECT count(*) > 0
+          FROM samples
+          WHERE server_id = sserver_id AND
+            sample_id BETWEEN start1_id AND end1_id AND
+            server_hostname IS NOT NULL
+          ),
         'table_storage_parameters', (
           SELECT count(*) > 0
           FROM v_table_storage_parameters
@@ -473,6 +480,14 @@ BEGIN
             sample_id BETWEEN start2_id AND end2_id) AND
             (first_seen > least(start1_time, start2_time) OR last_sample_id < greatest(end1_id, end2_id))
           ),
+        'server_hostname', (
+          SELECT count(*) > 0
+          FROM samples
+          WHERE server_id = sserver_id AND
+            (sample_id BETWEEN start1_id AND end1_id OR
+            sample_id BETWEEN start2_id AND end2_id) AND
+            server_hostname IS NOT NULL
+          ),
         'table_storage_parameters', (
           SELECT count(*) > 0
           FROM v_table_storage_parameters
@@ -741,6 +756,16 @@ BEGIN
 
   IF num_nulls(start1_id, end1_id) = 0 AND num_nulls(start2_id, end2_id) > 0 THEN
     -- Regular report
+
+    -- network information dataset (only when hostname extension populated data)
+    IF (report_context #>> '{report_features,server_hostname}')::boolean THEN
+      SELECT jsonb_set(datasets, '{netinfo}', jsonb_build_array(jsonb_build_object(
+        'server_hostname', server_hostname,
+        'server_ip', server_ip,
+        'server_port', server_port
+      ))) INTO datasets
+      FROM samples WHERE server_id = sserver_id AND sample_id = end1_id;
+    END IF;
 
     -- database statistics dataset
     SELECT coalesce(jsonb_set(datasets, '{dbstat}', jsonb_agg(to_jsonb(dt))), datasets)
@@ -1028,6 +1053,16 @@ BEGIN
 
   ELSIF num_nulls(start1_id, end1_id, start2_id, end2_id) = 0 THEN
     -- Differential report
+
+    -- network information dataset (only when hostname extension populated data)
+    IF (report_context #>> '{report_features,server_hostname}')::boolean THEN
+      SELECT jsonb_set(datasets, '{netinfo}', jsonb_build_array(jsonb_build_object(
+        'server_hostname', server_hostname,
+        'server_ip', server_ip,
+        'server_port', server_port
+      ))) INTO datasets
+      FROM samples WHERE server_id = sserver_id AND sample_id = end2_id;
+    END IF;
 
     -- database statistics dataset
     SELECT coalesce(jsonb_set(datasets, '{dbstat}', jsonb_agg(to_jsonb(dt))), datasets)

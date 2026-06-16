@@ -6,6 +6,20 @@ DELETE FROM report_struct;
 DELETE FROM report;
 DELETE FROM report_static;
 
+-- Add server network identity columns
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS server_hostname text;
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS server_ip text;
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS server_port integer;
+
+ALTER TABLE samples ADD COLUMN IF NOT EXISTS server_hostname text;
+ALTER TABLE samples ADD COLUMN IF NOT EXISTS server_ip text;
+ALTER TABLE samples ADD COLUMN IF NOT EXISTS server_port integer;
+
+CREATE INDEX IF NOT EXISTS ix_servers_hostname ON servers(server_hostname) WHERE server_hostname IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_servers_ip ON servers(server_ip) WHERE server_ip IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_samples_hostname ON samples(server_id, server_hostname) WHERE server_hostname IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_samples_ip ON samples(server_id, server_ip) WHERE server_ip IS NOT NULL;
+
 -- PWR-238
 truncate table sample_timings;
 drop VIEW v_sample_timings;

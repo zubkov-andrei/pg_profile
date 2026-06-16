@@ -21,7 +21,7 @@ VALUES
         ']}'
     ']}'
   ']'::jsonb),
-(1, 'rep_settings', NULL, 11, NULL, NULL, NULL, NULL, NULL,
+(1, 'rep_settings', NULL, 12, NULL, NULL, NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "settings",'
@@ -45,6 +45,16 @@ VALUES
       '{"id": "stmt_cnt", "class": "table_obj_value", "caption": "Stmts Captured"}, '
       '{"id": "max_cnt", "class": "table_obj_value", "caption": "pg_stat_statements.max"}'
   ']}]'::jsonb),
+(1, 'netinfo', NULL, 11, NULL, NULL, 'server_hostname', NULL, NULL,
+  '[{
+    "type": "row_table",
+    "source": "netinfo",
+    "columns": [
+        {"id": "server_hostname", "class": "table_obj_value", "caption": "Hostname"},
+        {"id": "server_ip", "class": "table_obj_value", "caption": "IP Address"},
+        {"id": "server_port", "class": "table_obj_value", "caption": "Port"}
+    ]
+  }]'::jsonb),
 (1, 'srvstat', NULL, 200, 'Server statistics', 'Server statistics', NULL, NULL, NULL, NULL),
 (1, 'actsesshdr', NULL, 250, 'Session states', 'Session states observed by subsamples', 'act_backend', NULL,
   '{"class": "notice", "text": "Statistics about session states exceeding capturing thresholds."}', NULL),
@@ -2225,7 +2235,7 @@ VALUES
           '{"id": ["report_end1", "report_end2"], "class": "table_obj_value", "caption": "end"}'
         ']}'
     ']}]'::jsonb),
-(2, 'rep_settings', NULL, 11, NULL, NULL, NULL, NULL, NULL,
+(2, 'rep_settings', NULL, 12, NULL, NULL, NULL, NULL, NULL,
   '[{'
     '"type": "row_table",'
     '"source": "settings",'
@@ -2249,6 +2259,16 @@ VALUES
         '{"id": "stmt_cnt", "class": "table_obj_value", "caption": "Stmts Captured"}, '
         '{"id": "max_cnt", "class": "table_obj_value", "caption": "pg_stat_statements.max"}'
     ']}]'::jsonb),
+(2, 'netinfo', NULL, 11, NULL, NULL, 'server_hostname', NULL, NULL,
+  '[{
+    "type": "row_table",
+    "source": "netinfo",
+    "columns": [
+        {"id": "server_hostname", "class": "table_obj_value", "caption": "Hostname"},
+        {"id": "server_ip", "class": "table_obj_value", "caption": "IP Address"},
+        {"id": "server_port", "class": "table_obj_value", "caption": "Port"}
+    ]
+  }]'::jsonb),
 (2, 'srvstat', NULL, 300, 'Server statistics', 'Server statistics', NULL, NULL, NULL, NULL),
 (2, 'actsesshdr', NULL, 350, 'Session states', 'Session states observed by subsamples', 'act_backend', NULL,
   '{"class": "notice", "text": "Statistics about session states exceeding capturing thresholds."}', NULL),

@@ -310,6 +310,28 @@ BEGIN
 
     server_properties := log_sample_timings(server_properties, 'processing subsamples', 'end');
 
+    -- Collect hostname (when remote has the hostname extension) and
+    -- network identity (always attempted; gracefully NULL on failure).
+    server_properties := log_sample_timings(server_properties, 'collect system info', 'start');
+    PERFORM collect_system_info(server_properties, sserver_id, s_id);
+    -- For the local server, prefer the calling session's
+    -- inet_server_addr()/inet_server_port() over whatever dblink saw,
+    -- since dblink connects via Unix-socket loopback and reports NULL
+    -- (which falls back to listen_addresses, often '*' / 0.0.0.0).
+    -- The take_sample() session reflects the IP/port the operator
+    -- connected to, which is the meaningful value.
+    IF (SELECT server_name = 'local' FROM servers WHERE server_id = sserver_id) THEN
+      UPDATE servers SET
+        server_ip   = COALESCE(host(inet_server_addr()), server_ip),
+        server_port = COALESCE(inet_server_port(), server_port)
+      WHERE server_id = sserver_id;
+      UPDATE samples SET
+        server_ip   = COALESCE(host(inet_server_addr()), server_ip),
+        server_port = COALESCE(inet_server_port(), server_port)
+      WHERE server_id = sserver_id AND sample_id = s_id;
+    END IF;
+    server_properties := log_sample_timings(server_properties, 'collect system info', 'end');
+
     server_properties := log_sample_timings(server_properties, 'disconnect', 'start');
     PERFORM dblink('server_connection', 'COMMIT');
     PERFORM dblink_disconnect('server_connection');
