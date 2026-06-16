@@ -214,7 +214,10 @@ BEGIN
                 rows.size_smp_wnd_start,
                 rows.size_smp_wnd_dur,
                 rows.size_smp_interval,
-                rows.srv_settings
+                rows.srv_settings,
+                rows.server_hostname,
+                rows.server_ip,
+                rows.server_port
                FROM %I AS rows WHERE $2 IS NULL OR server_id = $2) dt$sql$,
             r_result.relname
           )
@@ -333,7 +336,10 @@ BEGIN
       imp_srv.size_smp_wnd_start  imp_size_smp_wnd_start,
       imp_srv.size_smp_wnd_dur    imp_size_smp_wnd_dur,
       imp_srv.size_smp_interval   imp_size_smp_interval,
-      imp_srv.srv_settings        imp_srv_settings
+      imp_srv.srv_settings        imp_srv_settings,
+      imp_srv.server_hostname     imp_server_hostname,
+      imp_srv.server_ip           imp_server_ip,
+      imp_srv.server_port         imp_server_port
     FROM
       jsonb_to_recordset($1) as
         imp_srv(
@@ -349,7 +355,10 @@ BEGIN
           size_smp_wnd_start  time with time zone,
           size_smp_wnd_dur    interval hour to second,
           size_smp_interval   interval day to minute,
-          srv_settings        jsonb
+          srv_settings        jsonb,
+          server_hostname     text,
+          server_ip           text,
+          server_port         integer
         )
       JOIN %s d ON
         (d.section_id = $2 AND d.row_data->>'name' = 'system_identifier'
@@ -392,7 +401,10 @@ BEGIN
           size_smp_wnd_start,
           size_smp_wnd_dur,
           size_smp_interval,
-          srv_settings
+          srv_settings,
+          server_hostname,
+          server_ip,
+          server_port
         ) = (
           r_result.imp_server_db_exclude,
           r_result.imp_server_connstr,
@@ -401,7 +413,10 @@ BEGIN
           r_result.imp_size_smp_wnd_start,
           r_result.imp_size_smp_wnd_dur,
           r_result.imp_size_smp_interval,
-          r_result.imp_srv_settings
+          r_result.imp_srv_settings,
+          r_result.imp_server_hostname,
+          r_result.imp_server_ip,
+          r_result.imp_server_port
         )
       WHERE server_id = r_result.local_server_id
         AND last_sample_id < r_result.imp_server_last_sample_id;
@@ -425,7 +440,10 @@ BEGIN
         size_smp_wnd_start,
         size_smp_wnd_dur,
         size_smp_interval,
-        srv_settings)
+        srv_settings,
+        server_hostname,
+        server_ip,
+        server_port)
       VALUES (
         r_result.imp_server_name,
         r_result.imp_server_description,
@@ -438,7 +456,10 @@ BEGIN
         r_result.imp_size_smp_wnd_start,
         r_result.imp_size_smp_wnd_dur,
         r_result.imp_size_smp_interval,
-        r_result.imp_srv_settings
+        r_result.imp_srv_settings,
+        r_result.imp_server_hostname,
+        r_result.imp_server_ip,
+        r_result.imp_server_port
       )
       RETURNING server_id INTO new_server_id;
       tmp_srv_map := jsonb_set(
@@ -657,15 +678,22 @@ BEGIN
       LOOP
         FETCH data INTO datarow;
         EXIT WHEN NOT FOUND;
-        INSERT INTO samples(server_id, sample_id, sample_time)
+        INSERT INTO samples(server_id, sample_id, sample_time,
+          server_hostname, server_ip, server_port)
         SELECT
           (srv_map ->> dr.server_id::text)::integer,
           dr.sample_id,
-          dr.sample_time
+          dr.sample_time,
+          dr.server_hostname,
+          dr.server_ip,
+          dr.server_port
         FROM json_to_record(datarow.row_data) AS dr(
             server_id       integer,
             sample_id       integer,
-            sample_time     timestamp(0) with time zone
+            sample_time     timestamp(0) with time zone,
+            server_hostname text,
+            server_ip       text,
+            server_port     integer
           )
         JOIN
           servers s_ctl ON

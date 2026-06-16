@@ -10,6 +10,12 @@
 - Connection strings can be excluded from dumps now
 - Restartpoints stats added to the reports (when available)
 - Improvements in summary dashboard
+- Server network identity collection (server_hostname, server_ip, server_port)
+  via dblink. Hostname is populated when the *hostname* extension is present
+  on the monitored server; IP/port are populated via *inet_server_addr()*
+  /*inet_server_port()* with a *pg_settings* fallback. Reports show a
+  "Network Information" section when data is available. Enable regression
+  tests with *make installcheck USE_HOSTNAME=1*.
 - Other fixes and improvements
 
 ## 4.10
