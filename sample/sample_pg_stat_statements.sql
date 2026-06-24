@@ -340,7 +340,7 @@ BEGIN
           'st.stats_since, '
           'st.minmax_stats_since '
         );
-      WHEN '1.12'
+      WHEN '1.12','1.13'
       THEN
         st_query := replace(st_query, '{statements_fields}',
           'st.toplevel,'
@@ -828,7 +828,7 @@ BEGIN
           $o$regexp_replace(query,$i$\s+$i$,$i$ $i$,$i$g$i$) AS query $o$ ||
           'FROM %1$I.pg_stat_statements(true) '
           'WHERE queryid IN (%s)';
-      WHEN '1.9', '1.10', '1.11', '1.12'
+      WHEN '1.9', '1.10', '1.11', '1.12', '1.13'
       THEN
         st_query :=
           'SELECT userid, dbid, toplevel, queryid, '||
@@ -1002,7 +1002,7 @@ BEGIN
         IF (properties #> '{properties,statements_reset}') = to_jsonb(true) THEN
           st_query := 'SELECT %1$I.pg_stat_statements_reset() IS NULL';
         END IF;
-      WHEN '1.11','1.12'
+      WHEN '1.11','1.12','1.13'
       THEN
         IF (properties #> '{properties,statements_reset}')::boolean THEN
           st_query := 'SELECT %1$I.pg_stat_statements_reset() IS NULL';
