@@ -48,12 +48,12 @@ RETURNS TABLE(
         jit_emission_time   double precision,
         jit_deform_count    bigint,
         jit_deform_time     double precision,
-        mean_max_plan_time  double precision,
-        mean_max_exec_time  double precision,
-        mean_min_plan_time  double precision,
-        mean_min_exec_time  double precision,
-        min_max_plan_delta  double precision,
-        min_max_exec_delta  double precision
+        mean_max_plan_time_summary  double precision,
+        mean_max_exec_time_summary  double precision,
+        mean_min_plan_time_summary  double precision,
+        mean_min_exec_time_summary  double precision,
+        min_max_plan_delta_summary  double precision,
+        min_max_exec_delta_summary  double precision
 )
 SET search_path=@extschema@ AS $$
     SELECT
@@ -93,18 +93,16 @@ SET search_path=@extschema@ AS $$
         sum(st.jit_emission_time)/1000::double precision AS jit_emission_time,
         sum(st.jit_deform_count)::bigint AS jit_deform_count,
         sum(st.jit_deform_time)/1000::double precision AS jit_deform_time,
-        sum(st.mean_max_plan_time * st.statements)::double precision /
-          NULLIF(sum(st.statements), 0) AS mean_max_plan_time,
-        sum(st.mean_max_exec_time * st.statements)::double precision /
-          NULLIF(sum(st.statements), 0) AS mean_max_exec_time,
-        sum(st.mean_min_plan_time * st.statements)::double precision /
-          NULLIF(sum(st.statements), 0) AS mean_min_plan_time,
-        sum(st.mean_min_exec_time * st.statements)::double precision /
-          NULLIF(sum(st.statements), 0) AS mean_min_exec_time,
-        sum(st.mean_max_plan_time - st.mean_min_plan_time)::double precision * 100 /
-          NULLIF(sum(st.mean_min_plan_time), 0.0) AS min_max_plan_delta,
-        sum(st.mean_max_exec_time - st.mean_min_exec_time)::double precision * 100 /
-          NULLIF(sum(st.mean_min_exec_time), 0.0) AS min_max_exec_delta
+        sum(st.mean_max_plan_time * st.statements)::double precision AS mean_max_plan_time_summary,
+        sum(st.mean_max_exec_time * st.statements)::double precision AS mean_max_exec_time_summary,
+        sum(st.mean_min_plan_time * st.statements)::double precision AS mean_min_plan_time_summary,
+        sum(st.mean_min_exec_time * st.statements)::double precision AS mean_min_exec_time_summary,
+        sum(st.mean_max_plan_time - st.mean_min_plan_time)::double precision * 100 *
+          sum(st.statements) /
+          NULLIF(sum(st.mean_min_plan_time), 0.0) AS min_max_plan_delta_summary,
+        sum(st.mean_max_exec_time - st.mean_min_exec_time)::double precision * 100 *
+          sum(st.statements) /
+          NULLIF(sum(st.mean_min_exec_time), 0.0) AS min_max_exec_delta_summary
     FROM sample_statements_total st
         LEFT OUTER JOIN sample_stat_user_func_total trg
           ON (st.server_id = trg.server_id AND st.sample_id = trg.sample_id AND st.datid = trg.datid AND trg.trg_fn)
@@ -201,17 +199,17 @@ RETURNS TABLE(
     round(CAST(NULLIF(sum(jit_emission_time), 0.0) AS numeric),2) AS jit_emission_time,
     NULLIF(sum(jit_deform_count), 0) AS jit_deform_count,
     round(CAST(NULLIF(sum(jit_deform_time), 0.0) AS numeric),2) AS jit_deform_time,
-    round(CAST(NULLIF(sum(mean_max_plan_time * statements) /
+    round(CAST(NULLIF(sum(mean_max_plan_time_summary) /
       NULLIF(sum(statements), 0.0), 0.0) AS numeric),2) AS mean_max_plan_time,
-    round(CAST(NULLIF(sum(mean_max_exec_time * statements) /
+    round(CAST(NULLIF(sum(mean_max_exec_time_summary) /
       NULLIF(sum(statements), 0.0), 0.0) AS numeric),2) AS mean_max_exec_time,
-    round(CAST(NULLIF(sum(mean_min_plan_time * statements) /
+    round(CAST(NULLIF(sum(mean_min_plan_time_summary) /
       NULLIF(sum(statements), 0.0), 0.0) AS numeric),2) AS mean_min_plan_time,
-    round(CAST(NULLIF(sum(mean_min_exec_time * statements) /
+    round(CAST(NULLIF(sum(mean_min_exec_time_summary) /
       NULLIF(sum(statements), 0.0), 0.0) AS numeric),2) AS mean_min_exec_time,
-    round(CAST(NULLIF(sum(min_max_plan_delta * statements) /
+    round(CAST(NULLIF(sum(min_max_plan_delta_summary) /
       NULLIF(sum(statements), 0.0), 0.0) AS numeric),2) AS min_max_plan_delta,
-    round(CAST(NULLIF(sum(min_max_exec_delta * statements) /
+    round(CAST(NULLIF(sum(min_max_exec_delta_summary) /
       NULLIF(sum(statements), 0.0), 0.0) AS numeric),2) AS min_max_exec_delta,
     -- ordering fields
     row_number() OVER (ORDER BY dbname NULLS LAST)::integer AS ord_db
@@ -349,17 +347,17 @@ RETURNS TABLE(
     round(CAST(NULLIF(sum(st1.jit_emission_time), 0.0) AS numeric),2) AS jit_emission_time1,
     NULLIF(sum(st1.jit_deform_count), 0) AS jit_deform_count1,
     round(CAST(NULLIF(sum(st1.jit_deform_time), 0.0) AS numeric),2) AS jit_deform_time1,
-    round(CAST(NULLIF(sum(st1.mean_max_plan_time * st1.statements) /
+    round(CAST(NULLIF(sum(st1.mean_max_plan_time_summary) /
       NULLIF(sum(st1.statements), 0.0), 0.0) AS numeric),2) AS mean_max_plan_time1,
-    round(CAST(NULLIF(sum(st1.mean_max_exec_time * st1.statements) /
+    round(CAST(NULLIF(sum(st1.mean_max_exec_time_summary) /
       NULLIF(sum(st1.statements), 0.0), 0.0) AS numeric),2) AS mean_max_exec_time1,
-    round(CAST(NULLIF(sum(st1.mean_min_plan_time * st1.statements) /
+    round(CAST(NULLIF(sum(st1.mean_min_plan_time_summary) /
       NULLIF(sum(st1.statements), 0.0), 0.0) AS numeric),2) AS mean_min_plan_time1,
-    round(CAST(NULLIF(sum(st1.mean_min_exec_time * st1.statements) /
+    round(CAST(NULLIF(sum(st1.mean_min_exec_time_summary) /
       NULLIF(sum(st1.statements), 0.0), 0.0) AS numeric),2) AS mean_min_exec_time1,
-    round(CAST(NULLIF(sum(st1.min_max_plan_delta * st1.statements) /
+    round(CAST(NULLIF(sum(st1.min_max_plan_delta_summary) /
       NULLIF(sum(st1.statements), 0.0), 0.0) AS numeric),2) AS min_max_plan_delta1,
-    round(CAST(NULLIF(sum(st1.min_max_exec_delta * st1.statements) /
+    round(CAST(NULLIF(sum(st1.min_max_exec_delta_summary) /
       NULLIF(sum(st1.statements), 0.0), 0.0) AS numeric),2) AS min_max_exec_delta1,
 
     NULLIF(sum(st2.calls), 0) AS calls2,
@@ -397,17 +395,17 @@ RETURNS TABLE(
     round(CAST(NULLIF(sum(st2.jit_emission_time), 0.0) AS numeric),2) AS jit_emission_time2,
     NULLIF(sum(st2.jit_deform_count), 0) AS jit_deform_count2,
     round(CAST(NULLIF(sum(st2.jit_deform_time), 0.0) AS numeric),2) AS jit_deform_time2,
-    round(CAST(NULLIF(sum(st2.mean_max_plan_time * st2.statements) /
+    round(CAST(NULLIF(sum(st2.mean_max_plan_time_summary) /
       NULLIF(sum(st2.statements), 0.0), 0.0) AS numeric),2) AS mean_max_plan_time2,
-    round(CAST(NULLIF(sum(st2.mean_max_exec_time * st2.statements) /
+    round(CAST(NULLIF(sum(st2.mean_max_exec_time_summary) /
       NULLIF(sum(st2.statements), 0.0), 0.0) AS numeric),2) AS mean_max_exec_time2,
-    round(CAST(NULLIF(sum(st2.mean_min_plan_time * st2.statements) /
+    round(CAST(NULLIF(sum(st2.mean_min_plan_time_summary) /
       NULLIF(sum(st2.statements), 0.0), 0.0) AS numeric),2) AS mean_min_plan_time2,
-    round(CAST(NULLIF(sum(st2.mean_min_exec_time * st2.statements) /
+    round(CAST(NULLIF(sum(st2.mean_min_exec_time_summary) /
       NULLIF(sum(st2.statements), 0.0), 0.0) AS numeric),2) AS mean_min_exec_time2,
-    round(CAST(NULLIF(sum(st2.min_max_plan_delta * st2.statements) /
+    round(CAST(NULLIF(sum(st2.min_max_plan_delta_summary) /
       NULLIF(sum(st2.statements), 0.0), 0.0) AS numeric),2) AS min_max_plan_delta2,
-    round(CAST(NULLIF(sum(st2.min_max_exec_delta * st2.statements) /
+    round(CAST(NULLIF(sum(st2.min_max_exec_delta_summary) /
       NULLIF(sum(st2.statements), 0.0), 0.0) AS numeric),2) AS min_max_exec_delta2,
     -- ordering fields
     row_number() OVER (ORDER BY COALESCE(st1.dbname,st2.dbname) NULLS LAST)::integer AS ord_db

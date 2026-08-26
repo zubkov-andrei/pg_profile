@@ -10,9 +10,9 @@ RETURNS TABLE(
     queryid                  bigint,
     toplevel                 boolean,
     exec_user_time           double precision, --  User CPU time used
-    user_time_pct            float, --  User CPU time used percentage
+    user_time                double precision, --  User CPU time used percentage
     exec_system_time         double precision, --  System CPU time used
-    system_time_pct          float, --  System CPU time used percentage
+    system_time              double precision, --  System CPU time used percentage
     exec_minflts             bigint, -- Number of page reclaims (soft page faults)
     exec_majflts             bigint, -- Number of page faults (hard page faults)
     exec_nswaps              bigint, -- Number of swaps
@@ -23,8 +23,8 @@ RETURNS TABLE(
     exec_nsignals            bigint, -- Number of signals received
     exec_nvcsws              bigint, -- Number of voluntary context switches
     exec_nivcsws             bigint,
-    reads_total_pct          float,
-    writes_total_pct         float,
+    reads                    numeric,
+    writes                   numeric,
     plan_user_time           double precision, --  User CPU time used
     plan_system_time         double precision, --  System CPU time used
     plan_minflts             bigint, -- Number of page reclaims (soft page faults)
@@ -37,24 +37,8 @@ RETURNS TABLE(
     plan_nsignals            bigint, -- Number of signals received
     plan_nvcsws              bigint, -- Number of voluntary context switches
     plan_nivcsws             bigint,
-    rusage_cover             double precision
+    skipped_time             double precision
 ) SET search_path=@extschema@ AS $$
-    WITH
-      tot AS (
-        SELECT
-            COALESCE(sum(exec_user_time), 0.0) + COALESCE(sum(plan_user_time), 0.0) AS user_time,
-            COALESCE(sum(exec_system_time), 0.0) + COALESCE(sum(plan_system_time), 0.0)  AS system_time,
-            COALESCE(sum(exec_reads), 0) + COALESCE(sum(plan_reads), 0) AS reads,
-            COALESCE(sum(exec_writes), 0) + COALESCE(sum(plan_writes), 0) AS writes
-        FROM sample_kcache_total
-        WHERE server_id = sserver_id AND sample_id BETWEEN start_id + 1 AND end_id),
-      r_samples AS (
-        SELECT e.sample_time - s.sample_time AS duration
-        FROM samples s, samples e
-        WHERE
-          (s.server_id, s.sample_id) = (sserver_id, start_id) AND
-          (e.server_id, e.sample_id) = (sserver_id, end_id)
-      )
     SELECT
         kc.server_id AS server_id,
         kc.datid AS datid,
@@ -63,54 +47,46 @@ RETURNS TABLE(
         rl.username AS username,
         kc.queryid AS queryid,
         kc.toplevel AS toplevel,
-        sum(kc.exec_user_time) AS exec_user_time,
-        ((COALESCE(sum(kc.exec_user_time), 0.0) + COALESCE(sum(kc.plan_user_time), 0.0))
-          *100/NULLIF(min(tot.user_time),0.0))::float AS user_time_pct,
-        sum(kc.exec_system_time) AS exec_system_time,
-        ((COALESCE(sum(kc.exec_system_time), 0.0) + COALESCE(sum(kc.plan_system_time), 0.0))
-          *100/NULLIF(min(tot.system_time), 0.0))::float AS system_time_pct,
-        sum(kc.exec_minflts)::bigint AS exec_minflts,
-        sum(kc.exec_majflts)::bigint AS exec_majflts,
-        sum(kc.exec_nswaps)::bigint AS exec_nswaps,
-        sum(kc.exec_reads)::bigint AS exec_reads,
-        sum(kc.exec_writes)::bigint AS exec_writes,
-        sum(kc.exec_msgsnds)::bigint AS exec_msgsnds,
-        sum(kc.exec_msgrcvs)::bigint AS exec_msgrcvs,
-        sum(kc.exec_nsignals)::bigint AS exec_nsignals,
-        sum(kc.exec_nvcsws)::bigint AS exec_nvcsws,
-        sum(kc.exec_nivcsws)::bigint AS exec_nivcsws,
-        ((COALESCE(sum(kc.exec_reads), 0) + COALESCE(sum(kc.plan_reads), 0))
-          *100/NULLIF(min(tot.reads),0))::float AS reads_total_pct,
-        ((COALESCE(sum(kc.exec_writes), 0) + COALESCE(sum(kc.plan_writes), 0))
-          *100/NULLIF(min(tot.writes),0))::float AS writes_total_pct,
-        sum(kc.plan_user_time) AS plan_user_time,
-        sum(kc.plan_system_time) AS plan_system_time,
-        sum(kc.plan_minflts)::bigint AS plan_minflts,
-        sum(kc.plan_majflts)::bigint AS plan_majflts,
-        sum(kc.plan_nswaps)::bigint AS plan_nswaps,
-        sum(kc.plan_reads)::bigint AS plan_reads,
-        sum(kc.plan_writes)::bigint AS plan_writes,
-        sum(kc.plan_msgsnds)::bigint AS plan_msgsnds,
-        sum(kc.plan_msgrcvs)::bigint AS plan_msgrcvs,
-        sum(kc.plan_nsignals)::bigint AS plan_nsignals,
-        sum(kc.plan_nvcsws)::bigint AS plan_nvcsws,
-        sum(kc.plan_nivcsws)::bigint AS plan_nivcsws,
-        100 - extract(epoch from sum(CASE
+        COALESCE(sum(kc.exec_user_time), 0) AS exec_user_time,
+        COALESCE(sum(kc.exec_user_time), 0.0) + COALESCE(sum(kc.plan_user_time), 0.0) as user_time,
+        COALESCE(sum(kc.exec_system_time), 0) AS exec_system_time,
+        COALESCE(sum(kc.exec_system_time), 0.0) + COALESCE(sum(kc.plan_system_time), 0.0) as system_time,
+        COALESCE(sum(kc.exec_minflts), 0)::bigint AS exec_minflts,
+        COALESCE(sum(kc.exec_majflts), 0)::bigint AS exec_majflts,
+        COALESCE(sum(kc.exec_nswaps), 0)::bigint AS exec_nswaps,
+        COALESCE(sum(kc.exec_reads), 0)::bigint AS exec_reads,
+        COALESCE(sum(kc.exec_writes), 0)::bigint AS exec_writes,
+        COALESCE(sum(kc.exec_msgsnds), 0)::bigint AS exec_msgsnds,
+        COALESCE(sum(kc.exec_msgrcvs), 0)::bigint AS exec_msgrcvs,
+        COALESCE(sum(kc.exec_nsignals), 0)::bigint AS exec_nsignals,
+        COALESCE(sum(kc.exec_nvcsws), 0)::bigint AS exec_nvcsws,
+        COALESCE(sum(kc.exec_nivcsws), 0)::bigint AS exec_nivcsws,
+        COALESCE(sum(kc.exec_reads), 0) + COALESCE(sum(kc.plan_reads), 0) as reads,
+        COALESCE(sum(kc.exec_writes), 0) + COALESCE(sum(kc.plan_writes), 0) as writes,
+        COALESCE(sum(kc.plan_user_time), 0) AS plan_user_time,
+        COALESCE(sum(kc.plan_system_time), 0) AS plan_system_time,
+        COALESCE(sum(kc.plan_minflts), 0)::bigint AS plan_minflts,
+        COALESCE(sum(kc.plan_majflts), 0)::bigint AS plan_majflts,
+        COALESCE(sum(kc.plan_nswaps), 0)::bigint AS plan_nswaps,
+        COALESCE(sum(kc.plan_reads), 0)::bigint AS plan_reads,
+        COALESCE(sum(kc.plan_writes), 0)::bigint AS plan_writes,
+        COALESCE(sum(kc.plan_msgsnds), 0)::bigint AS plan_msgsnds,
+        COALESCE(sum(kc.plan_msgrcvs), 0)::bigint AS plan_msgrcvs,
+        COALESCE(sum(kc.plan_nsignals), 0)::bigint AS plan_nsignals,
+        COALESCE(sum(kc.plan_nvcsws), 0)::bigint AS plan_nvcsws,
+        COALESCE(sum(kc.plan_nivcsws), 0)::bigint AS plan_nivcsws,
+        extract(epoch from sum(CASE
             WHEN kc.stats_since <= s_prev.sample_time THEN '0'::interval
             ELSE kc.stats_since - s_prev.sample_time
-          END)) * 100 / -- Possibly lost stats time intervel
-          extract(epoch from min(r_samples.duration)) AS rusage_cover
+          END)) AS skipped_time
    FROM sample_kcache kc
         -- User name
         JOIN roles_list rl USING (server_id, userid)
         -- Database name
         JOIN sample_stat_database sample_db
         USING (server_id, sample_id, datid)
-        -- Total stats
-        CROSS JOIN tot
         -- Prev sample is needed to calc stat coverage
         JOIN samples s_prev ON (s_prev.server_id, s_prev.sample_id) = (sserver_id, kc.sample_id - 1)
-        CROSS JOIN r_samples
     WHERE kc.server_id = sserver_id AND kc.sample_id BETWEEN start_id + 1 AND end_id
     GROUP BY
       kc.server_id,
@@ -164,7 +140,7 @@ RETURNS TABLE(
     rusage_cover             numeric,
 
     sum_cpu_time             numeric,
-    sum_io_bytes             bigint,
+    sum_io_bytes             numeric,
     ord_cpu_time             bigint,
     ord_io_bytes             bigint
 )
@@ -182,9 +158,11 @@ SET search_path=@extschema@ AS $$
       'UTF8')
     ), 'hex'), 10) AS hashed_ids,
     round(CAST(NULLIF(st.exec_user_time, 0.0) AS numeric), 2),
-    round(CAST(NULLIF(st.user_time_pct, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st.user_time * 100 /
+      NULLIF(tot.user_time, 0), 0.0) AS numeric), 2),
     round(CAST(NULLIF(st.exec_system_time, 0.0) AS numeric), 2),
-    round(CAST(NULLIF(st.system_time_pct, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st.system_time * 100 /
+      NULLIF(tot.system_time, 0), 0.0) AS numeric), 2),
     NULLIF(st.exec_minflts, 0),
     NULLIF(st.exec_majflts, 0),
     NULLIF(st.exec_nswaps, 0),
@@ -195,8 +173,10 @@ SET search_path=@extschema@ AS $$
     NULLIF(st.exec_nsignals, 0),
     NULLIF(st.exec_nvcsws, 0),
     NULLIF(st.exec_nivcsws, 0),
-    round(CAST(NULLIF(st.reads_total_pct, 0.0) AS numeric), 2),
-    round(CAST(NULLIF(st.writes_total_pct, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st.reads * 100 /
+      NULLIF(tot.reads, 0), 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st.writes * 100 /
+      NULLIF(tot.writes, 0), 0.0) AS numeric), 2),
     round(CAST(NULLIF(st.plan_user_time, 0.0) AS numeric), 2),
     round(CAST(NULLIF(st.plan_system_time, 0.0) AS numeric), 2),
     NULLIF(st.plan_minflts, 0),
@@ -209,27 +189,27 @@ SET search_path=@extschema@ AS $$
     NULLIF(st.plan_nsignals, 0),
     NULLIF(st.plan_nvcsws, 0),
     NULLIF(st.plan_nivcsws, 0),
-    round(CAST(NULLIF(st.rusage_cover, 0.0) AS numeric)) AS rusage_cover,
+    round(CAST(NULLIF(100 - st.skipped_time * 100 /
+      extract(epoch from r_samples_dur.duration), 0.0) AS numeric))
+      as rusage_cover,
 
-    (COALESCE(st.plan_user_time, 0.0) + COALESCE(st.plan_system_time, 0.0) +
-      COALESCE(st.exec_user_time, 0.0) + COALESCE(st.exec_system_time, 0.0))::numeric AS sum_cpu_time,
-    COALESCE(st.plan_reads, 0) + COALESCE(st.plan_writes, 0) +
-      COALESCE(st.exec_reads, 0) + COALESCE(st.exec_writes, 0) AS sum_io_bytes,
-    CASE WHEN COALESCE(st.plan_user_time, 0.0) + COALESCE(st.plan_system_time, 0.0) +
-        COALESCE(st.exec_user_time, 0.0) + COALESCE(st.exec_system_time, 0.0) > 0 THEN
-      row_number() OVER (ORDER BY COALESCE(st.plan_user_time, 0.0) +
-        COALESCE(st.plan_system_time, 0.0) + COALESCE(st.exec_user_time, 0.0) +
-        COALESCE(st.exec_system_time, 0.0) DESC NULLS LAST,
+    (st.user_time + st.system_time)::numeric AS sum_cpu_time,
+    st.reads + st.writes AS sum_io_bytes,
+    CASE WHEN st.user_time + st.system_time > 0 THEN
+      row_number() OVER (ORDER BY
+        st.user_time + st.system_time
+      DESC NULLS LAST,
         datid, userid, queryid, toplevel)
     ELSE NULL END AS ord_cpu_time,
-    CASE WHEN COALESCE(st.plan_reads, 0) + COALESCE(st.plan_writes, 0) +
-        COALESCE(st.exec_reads, 0) + COALESCE(st.exec_writes, 0) > 0 THEN
-      row_number() OVER (ORDER BY COALESCE(st.plan_reads, 0) + COALESCE(st.plan_writes, 0) +
-        COALESCE(st.exec_reads, 0) + COALESCE(st.exec_writes, 0) DESC NULLS LAST,
+    CASE WHEN st.reads + st.writes > 0 THEN
+      row_number() OVER (ORDER BY
+        st.reads + st.writes DESC NULLS LAST,
         datid, userid, queryid, toplevel)
     ELSE NULL END AS ord_io_bytes
   FROM
     top_kcache_statements(sserver_id, start_id, end_id) st
+    CROSS JOIN total_kcache_statements(sserver_id, start_id, end_id) tot
+    CROSS JOIN report_smpl_duration(sserver_id, start_id, end_id) r_samples_dur
 $$ LANGUAGE sql;
 
 CREATE FUNCTION top_rusage_statements_format_diff(IN sserver_id integer,
@@ -244,8 +224,7 @@ RETURNS TABLE(
     hexqueryid               text,
     toplevel                 boolean,
     hashed_ids               text,
-    -- First interval statistics
-    exec_user_time1          numeric,
+    exec_user_time1          numeric, --First interval
     user_time_pct1           numeric,
     exec_system_time1        numeric,
     system_time_pct1         numeric,
@@ -274,8 +253,7 @@ RETURNS TABLE(
     plan_nvcsws1             bigint,
     plan_nivcsws1            bigint,
     rusage_cover1            numeric,
-    -- Second interval
-    exec_user_time2          numeric,
+    exec_user_time2          numeric, -- Second interval
     user_time_pct2           numeric,
     exec_system_time2        numeric,
     system_time_pct2         numeric,
@@ -304,9 +282,8 @@ RETURNS TABLE(
     plan_nvcsws2             bigint,
     plan_nivcsws2            bigint,
     rusage_cover2            numeric,
-    -- Filter and ordering fields
-    sum_cpu_time             double precision,
-    sum_io_bytes             bigint,
+    sum_cpu_time             double precision, -- Filter and ordering fields
+    sum_io_bytes             numeric,
     ord_cpu_time             bigint,
     ord_io_bytes             bigint
 )
@@ -327,9 +304,11 @@ SET search_path=@extschema@ AS $$
     ), 'hex'), 10) AS hashed_ids,
     -- First interval
     round(CAST(NULLIF(st1.exec_user_time, 0.0) AS numeric), 2),
-    round(CAST(NULLIF(st1.user_time_pct, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st1.user_time * 100 /
+      NULLIF(tot1.user_time, 0), 0.0) AS numeric), 2),
     round(CAST(NULLIF(st1.exec_system_time, 0.0) AS numeric), 2),
-    round(CAST(NULLIF(st1.system_time_pct, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st1.system_time * 100 /
+      NULLIF(tot1.system_time, 0), 0.0) AS numeric), 2),
     NULLIF(st1.exec_minflts, 0),
     NULLIF(st1.exec_majflts, 0),
     NULLIF(st1.exec_nswaps, 0),
@@ -340,8 +319,10 @@ SET search_path=@extschema@ AS $$
     NULLIF(st1.exec_nsignals, 0),
     NULLIF(st1.exec_nvcsws, 0),
     NULLIF(st1.exec_nivcsws, 0),
-    round(CAST(NULLIF(st1.reads_total_pct, 0.0) AS numeric), 2),
-    round(CAST(NULLIF(st1.writes_total_pct, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st1.reads * 100 /
+      NULLIF(tot1.reads, 0), 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st1.writes * 100 /
+      NULLIF(tot1.writes, 0), 0.0) AS numeric), 2),
     round(CAST(NULLIF(st1.plan_user_time, 0.0) AS numeric), 2),
     round(CAST(NULLIF(st1.plan_system_time, 0.0) AS numeric), 2),
     NULLIF(st1.plan_minflts, 0),
@@ -354,12 +335,16 @@ SET search_path=@extschema@ AS $$
     NULLIF(st1.plan_nsignals, 0),
     NULLIF(st1.plan_nvcsws, 0),
     NULLIF(st1.plan_nivcsws, 0),
-    round(CAST(NULLIF(st1.rusage_cover, 0.0) AS numeric)),
+    round(CAST(NULLIF(100 - st1.skipped_time * 100 /
+      extract(epoch from r_samples_dur1.duration), 0.0) AS numeric))
+      as rusage_cover1,
     -- Second interval
     round(CAST(NULLIF(st2.exec_user_time, 0.0) AS numeric), 2),
-    round(CAST(NULLIF(st2.user_time_pct, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st2.user_time * 100 /
+      NULLIF(tot2.user_time, 0), 0.0) AS numeric), 2),
     round(CAST(NULLIF(st2.exec_system_time, 0.0) AS numeric), 2),
-    round(CAST(NULLIF(st2.system_time_pct, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st2.system_time * 100 /
+      NULLIF(tot2.system_time, 0), 0.0) AS numeric), 2),
     NULLIF(st2.exec_minflts, 0),
     NULLIF(st2.exec_majflts, 0),
     NULLIF(st2.exec_nswaps, 0),
@@ -370,8 +355,10 @@ SET search_path=@extschema@ AS $$
     NULLIF(st2.exec_nsignals, 0),
     NULLIF(st2.exec_nvcsws, 0),
     NULLIF(st2.exec_nivcsws, 0),
-    round(CAST(NULLIF(st2.reads_total_pct, 0.0) AS numeric), 2),
-    round(CAST(NULLIF(st2.writes_total_pct, 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st2.reads * 100 /
+      NULLIF(tot2.reads, 0), 0.0) AS numeric), 2),
+    round(CAST(NULLIF(st2.writes * 100 /
+      NULLIF(tot2.writes, 0), 0.0) AS numeric), 2),
     round(CAST(NULLIF(st2.plan_user_time, 0.0) AS numeric), 2),
     round(CAST(NULLIF(st2.plan_system_time, 0.0) AS numeric), 2),
     NULLIF(st2.plan_minflts, 0),
@@ -384,46 +371,32 @@ SET search_path=@extschema@ AS $$
     NULLIF(st2.plan_nsignals, 0),
     NULLIF(st2.plan_nvcsws, 0),
     NULLIF(st2.plan_nivcsws, 0),
-    round(CAST(NULLIF(st2.rusage_cover, 0.0) AS numeric)),
+    round(CAST(NULLIF(100 - st2.skipped_time * 100 /
+      extract(epoch from r_samples_dur2.duration), 0.0) AS numeric))
+      as rusage_cover2,
     -- Filter and ordering fields
-    COALESCE(st1.plan_user_time, 0.0) + COALESCE(st1.plan_system_time, 0.0) +
-      COALESCE(st1.exec_user_time, 0.0) + COALESCE(st1.exec_system_time, 0.0) +
-      COALESCE(st2.plan_user_time, 0.0) + COALESCE(st2.plan_system_time, 0.0) +
-      COALESCE(st2.exec_user_time, 0.0) + COALESCE(st2.exec_system_time, 0.0)
-        AS sum_cpu_time,
-    COALESCE(st1.plan_reads, 0) + COALESCE(st1.plan_writes, 0) +
-      COALESCE(st1.exec_reads, 0) + COALESCE(st1.exec_writes, 0) +
-      COALESCE(st2.plan_reads, 0) + COALESCE(st2.plan_writes, 0) +
-      COALESCE(st2.exec_reads, 0) + COALESCE(st2.exec_writes, 0)
-        AS sum_io_bytes,
-    CASE WHEN COALESCE(st1.plan_user_time, 0.0) + COALESCE(st1.plan_system_time, 0.0) +
-        COALESCE(st1.exec_user_time, 0.0) + COALESCE(st1.exec_system_time, 0.0) +
-        COALESCE(st2.plan_user_time, 0.0) + COALESCE(st2.plan_system_time, 0.0) +
-        COALESCE(st2.exec_user_time, 0.0) + COALESCE(st2.exec_system_time, 0.0) > 0
+    st1.user_time + st1.system_time +
+      st2.user_time + st2.system_time AS sum_cpu_time,
+    st1.reads + st1.writes + st2.reads + st2.writes AS sum_io_bytes,
+    CASE WHEN st1.user_time + st1.system_time +
+        st2.user_time + st2.system_time > 0
     THEN
-      row_number() OVER (ORDER BY COALESCE(st1.plan_user_time, 0.0) +
-        COALESCE(st1.plan_system_time, 0.0) +
-        COALESCE(st1.exec_user_time, 0.0) +
-        COALESCE(st1.exec_system_time, 0.0) +
-        COALESCE(st2.plan_user_time, 0.0) +
-        COALESCE(st2.plan_system_time, 0.0) +
-        COALESCE(st2.exec_user_time, 0.0) +
-        COALESCE(st2.exec_system_time, 0.0) DESC NULLS LAST,
+      row_number() OVER (ORDER BY st1.plan_user_time +
+        st1.user_time +
+        st1.system_time +
+        st2.user_time +
+        st2.system_time DESC NULLS LAST,
         COALESCE(st1.datid,st2.datid),
         COALESCE(st1.userid,st2.userid),
         COALESCE(st1.queryid,st2.queryid),
         COALESCE(st1.toplevel,st2.toplevel))
     ELSE NULL END AS ord_cpu_time,
-    CASE WHEN COALESCE(st1.plan_reads, 0) + COALESCE(st1.plan_writes, 0) +
-        COALESCE(st1.exec_reads, 0) + COALESCE(st1.exec_writes, 0) +
-        COALESCE(st2.plan_reads, 0) + COALESCE(st2.plan_writes, 0) +
-        COALESCE(st2.exec_reads, 0) + COALESCE(st2.exec_writes, 0) > 0
+    CASE WHEN st1.reads + st1.writes +
+        st2.reads + st2.writes > 0
     THEN
-      row_number() OVER (ORDER BY COALESCE(st1.plan_reads, 0) +
-        COALESCE(st1.plan_writes, 0) + COALESCE(st1.exec_reads, 0) +
-        COALESCE(st1.exec_writes, 0) + COALESCE(st2.plan_reads, 0) +
-        COALESCE(st2.plan_writes, 0) + COALESCE(st2.exec_reads, 0) +
-        COALESCE(st2.exec_writes, 0) DESC NULLS LAST,
+      row_number() OVER (ORDER BY st1.reads +
+        st1.writes + st2.reads +
+        st2.writes DESC NULLS LAST,
         COALESCE(st1.datid,st2.datid),
         COALESCE(st1.userid,st2.userid),
         COALESCE(st1.queryid,st2.queryid),
@@ -432,4 +405,8 @@ SET search_path=@extschema@ AS $$
   FROM top_kcache_statements(sserver_id, start1_id, end1_id) st1
       FULL OUTER JOIN top_kcache_statements(sserver_id, start2_id, end2_id) st2 USING
         (server_id, datid, userid, queryid, toplevel)
+    CROSS JOIN total_kcache_statements(sserver_id, start1_id, end1_id) tot1
+    CROSS JOIN report_smpl_duration(sserver_id, start1_id, end1_id) r_samples_dur1
+    CROSS JOIN total_kcache_statements(sserver_id, start2_id, end2_id) tot2
+    CROSS JOIN report_smpl_duration(sserver_id, start2_id, end2_id) r_samples_dur2
 $$ LANGUAGE sql;

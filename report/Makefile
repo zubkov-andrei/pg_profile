@@ -1,4 +1,5 @@
 report_files = \
+	functions/totals.sql \
 	functions/clusterstat.sql \
 	functions/stat_io.sql \
 	functions/stat_slru.sql \

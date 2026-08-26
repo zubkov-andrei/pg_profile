@@ -10,12 +10,10 @@ RETURNS TABLE(
     funcargs    text,
     trg_fn      boolean,
     calls       bigint,
-    total_time  double precision,
-    self_time   double precision,
-    m_time      double precision,
-    m_stime     double precision
+    total_time  numeric,
+    self_time   numeric
 )
-SET search_path=@extschema@ AS $$
+STABLE SET search_path=@extschema@ AS $$
     SELECT
         st.datid,
         st.funcid,
@@ -24,11 +22,9 @@ SET search_path=@extschema@ AS $$
         st.funcname,
         st.funcargs,
         st.trg_fn,
-        sum(st.calls)::bigint AS calls,
-        sum(st.total_time)/1000 AS total_time,
-        sum(st.self_time)/1000 AS self_time,
-        sum(st.total_time)/NULLIF(sum(st.calls),0)/1000 AS m_time,
-        sum(st.self_time)/NULLIF(sum(st.calls),0)/1000 AS m_stime
+        COALESCE(sum(st.calls), 0)::bigint AS calls,
+        COALESCE(sum(st.total_time), 0)::numeric / 1000 AS total_time,
+        COALESCE(sum(st.self_time), 0)::numeric / 1000 AS self_time
     FROM v_sample_stat_user_functions st
         -- Database name
         JOIN sample_stat_database sample_db
@@ -74,10 +70,10 @@ SET search_path=@extschema@ AS $$
     funcname,
     funcargs,
     NULLIF(calls, 0) AS calls,
-    round(CAST(NULLIF(total_time, 0.0) AS numeric), 2) AS total_time,
-    round(CAST(NULLIF(self_time, 0.0) AS numeric), 2) AS self_time,
-    round(CAST(NULLIF(m_time, 0.0) AS numeric), 2) AS m_time,
-    round(CAST(NULLIF(m_stime, 0.0) AS numeric), 2) AS m_stime,
+    round(NULLIF(total_time, 0.0)::numeric, 2) AS total_time,
+    round(NULLIF(self_time, 0.0)::numeric, 2) AS self_time,
+    round(NULLIF(total_time, 0.0)::numeric / NULLIF(calls, 0), 2) AS m_time,
+    round(NULLIF(self_time, 0.0)::numeric / NULLIF(calls, 0), 2) AS m_stime,
 
     CASE WHEN
       total_time > 0 AND NOT trg_fn
@@ -146,16 +142,16 @@ SET search_path=@extschema@ AS $$
     COALESCE(f1.funcargs, f2.funcargs),
 
     NULLIF(f1.calls, 0) AS calls1,
-    round(CAST(NULLIF(f1.total_time, 0.0) AS numeric), 2) AS total_time1,
-    round(CAST(NULLIF(f1.self_time, 0.0) AS numeric), 2) AS self_time1,
-    round(CAST(NULLIF(f1.m_time, 0.0) AS numeric), 2) AS m_time1,
-    round(CAST(NULLIF(f1.m_stime, 0.0) AS numeric), 2) AS m_stime1,
+    round(NULLIF(f1.total_time, 0.0)::numeric, 2) AS total_time1,
+    round(NULLIF(f1.self_time, 0.0)::numeric, 2) AS self_time1,
+    round(NULLIF(f1.total_time, 0.0)::numeric / NULLIF(f1.calls, 0), 2) AS m_time1,
+    round(NULLIF(f1.self_time, 0.0)::numeric / NULLIF(f1.calls, 0), 2) AS m_stime1,
 
     NULLIF(f2.calls, 0) AS calls2,
-    round(CAST(NULLIF(f2.total_time, 0.0) AS numeric), 2) AS total_time2,
-    round(CAST(NULLIF(f2.self_time, 0.0) AS numeric), 2) AS self_time2,
-    round(CAST(NULLIF(f2.m_time, 0.0) AS numeric), 2) AS m_time2,
-    round(CAST(NULLIF(f2.m_stime, 0.0) AS numeric), 2) AS m_stime2,
+    round(NULLIF(f2.total_time, 0.0)::numeric, 2) AS total_time2,
+    round(NULLIF(f2.self_time, 0.0)::numeric, 2) AS self_time2,
+    round(NULLIF(f2.total_time, 0.0)::numeric / NULLIF(f2.calls, 0), 2) AS m_time2,
+    round(NULLIF(f2.self_time, 0.0)::numeric / NULLIF(f2.calls, 0), 2) AS m_stime2,
 
     CASE WHEN
       COALESCE(f1.total_time, 0) + COALESCE(f2.total_time, 0) > 0

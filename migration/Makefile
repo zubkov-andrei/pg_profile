@@ -1,19 +1,19 @@
 MIGRATION = \
-	$(EXTENSION)--4.14--$(PGPROFILE_VERSION).sql
+	$(EXTENSION)--4.15--$(PGPROFILE_VERSION).sql
 
-$(EXTENSION)--4.14--4.15.sql: migration/func_drop.sql migration/func_create.sed \
+$(EXTENSION)--4.15--$(PGPROFILE_VERSION).sql: migration/func_drop.sql migration/func_create.sed \
 	migration/migration.sql data/report_templates.sql $(functions)
 	sed \
 	-e '1i \\\echo Use "ALTER EXTENSION $(EXTENSION) UPDATE" to load this file. \\quit' \
 	$(sed_extension) \
 	migration/func_drop.sql \
-	>> $(EXTENSION)--4.14--4.15.sql;
+	>> $(EXTENSION)--4.15--$(PGPROFILE_VERSION).sql;
 	sed -n \
 	$(sed_extension) \
 	-f migration/func_create.sed \
 	$(functions) \
-	>> $(EXTENSION)--4.14--4.15.sql;
+	>> $(EXTENSION)--4.15--$(PGPROFILE_VERSION).sql;
 	sed \
 	$(sed_extension) \
 	migration/migration.sql  data/report_templates.sql \
-	>> $(EXTENSION)--4.14--4.15.sql;
+	>> $(EXTENSION)--4.15--$(PGPROFILE_VERSION).sql;

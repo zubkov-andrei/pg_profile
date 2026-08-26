@@ -1,5 +1,8 @@
 # pg_profile changelog
 
+## 4.16
+- 
+
 ## 4.15
 - Fixed #164. Lost constraint with cascade deletion of subsamples data due to retention policy. Reported by @sgrinko
 - Fixed #165. Avoid sample failure on tablespaces with NULL value of pg_tablespace_size() function. Reported by @gael-efluid

@@ -31,7 +31,7 @@ RETURNS TABLE(
     relpagegrowth_bytes bigint,
     seqscan_bytes_relsize numeric,
     seqscan_bytes_relpages numeric
-) SET search_path=@extschema@ AS $$
+) STABLE SET search_path=@extschema@ AS $$
     SELECT
         st.datid,
         st.relid,
@@ -106,7 +106,7 @@ RETURNS TABLE(
     relpagegrowth_bytes bigint,
     seqscan_bytes_relsize numeric,
     seqscan_bytes_relpages numeric
-) SET search_path=@extschema@ AS $$
+) STABLE SET search_path=@extschema@ AS $$
     SELECT
         st.datid,
         st.relid,
@@ -148,6 +148,43 @@ RETURNS TABLE(
       AND NOT sample_db.datistemplate
       AND st.sample_id BETWEEN start_id + 1 AND end_id
     GROUP BY st.server_id,st.datid,st.relid,sample_db.datname,st.tablespacename,st.schemaname,st.relname
+$$ LANGUAGE sql;
+
+CREATE FUNCTION tbl_sizes(IN sserver_id integer, IN start_id integer, IN end_id integer)
+RETURNS TABLE(
+  datid           oid,
+  relid           oid,
+  growth_avail    boolean,
+  relsize         bigint,
+  relpages_bytes  bigint
+)
+STABLE SET search_path=@extschema@ AS $$
+  SELECT
+    rs.datid,
+    rs.relid,
+    rs.growth_avail,
+    sst.relsize,
+    sst.relpages_bytes
+  FROM
+    (SELECT
+      datid,
+      relid,
+      max(sample_id) = max(sample_id) FILTER (WHERE relsize IS NOT NULL) AND
+      min(sample_id) = min(sample_id) FILTER (WHERE relsize IS NOT NULL) AS growth_avail,
+      CASE WHEN max(sample_id) = max(sample_id) FILTER (WHERE relsize IS NOT NULL) THEN
+        max(sample_id) FILTER (WHERE relsize IS NOT NULL)
+      ELSE
+        max(sample_id) FILTER (WHERE relpages_bytes IS NOT NULL)
+      END AS sid
+    FROM
+      sample_stat_tables
+    WHERE
+      server_id = sserver_id AND
+      sample_id BETWEEN start_id + 1 AND end_id
+    GROUP BY server_id, datid, relid) AS rs
+    JOIN sample_stat_tables sst ON
+      (sst.server_id, sst.sample_id, sst.datid, sst.relid) =
+      (sserver_id, rs.sid, rs.datid, rs.relid)
 $$ LANGUAGE sql;
 
 CREATE FUNCTION top_tables_format(IN sserver_id integer, IN start_id integer, IN end_id integer)
@@ -216,35 +253,7 @@ RETURNS TABLE(
     ord_anl_cnt               integer,
     ord_anl_time              integer
   )
-SET search_path=@extschema@ AS $$
-  WITH rsa AS (
-      SELECT
-        rs.datid,
-        rs.relid,
-        rs.growth_avail,
-        sst.relsize,
-        sst.relpages_bytes
-      FROM
-        (SELECT
-          datid,
-          relid,
-          max(sample_id) = max(sample_id) FILTER (WHERE relsize IS NOT NULL) AND
-          min(sample_id) = min(sample_id) FILTER (WHERE relsize IS NOT NULL) AS growth_avail,
-          CASE WHEN max(sample_id) = max(sample_id) FILTER (WHERE relsize IS NOT NULL) THEN
-            max(sample_id) FILTER (WHERE relsize IS NOT NULL)
-          ELSE
-            max(sample_id) FILTER (WHERE relpages_bytes IS NOT NULL)
-          END AS sid
-        FROM
-          sample_stat_tables
-        WHERE
-          server_id = sserver_id AND
-          sample_id BETWEEN start_id + 1 AND end_id
-        GROUP BY server_id, datid, relid) AS rs
-        JOIN sample_stat_tables sst ON
-          (sst.server_id, sst.sample_id, sst.datid, sst.relid) =
-          (sserver_id, rs.sid, rs.datid, rs.relid)
-    )
+STABLE SET search_path=@extschema@ AS $$
   SELECT
     rel.datid,
     rel.relid,
@@ -436,11 +445,11 @@ SET search_path=@extschema@ AS $$
     ELSE NULL END AS ord_anl_time
   FROM (
       top_tables(sserver_id, start_id, end_id) AS rel
-      JOIN rsa AS relrs USING (datid, relid)
+      JOIN tbl_sizes(sserver_id, start_id, end_id) AS relrs USING (datid, relid)
     )
     LEFT OUTER JOIN (
       top_toasts(sserver_id, start_id, end_id) AS toast
-      JOIN rsa AS toastrs USING (datid, relid)
+      JOIN tbl_sizes(sserver_id, start_id, end_id) AS toastrs USING (datid, relid)
     ) ON (rel.datid, rel.reltoastrelid) = (toast.datid, toast.relid)
 $$ LANGUAGE sql;
 
@@ -557,63 +566,7 @@ RETURNS TABLE(
     ord_anl_cnt               integer,
     ord_anl_time              integer
   )
-SET search_path=@extschema@ AS $$
-  WITH rsa1 AS (
-      SELECT
-        rs.datid,
-        rs.relid,
-        rs.growth_avail,
-        sst.relsize,
-        sst.relpages_bytes
-      FROM
-        (SELECT
-          datid,
-          relid,
-          max(sample_id) = max(sample_id) FILTER (WHERE relsize IS NOT NULL) AND
-          min(sample_id) = min(sample_id) FILTER (WHERE relsize IS NOT NULL) AS growth_avail,
-          CASE WHEN max(sample_id) = max(sample_id) FILTER (WHERE relsize IS NOT NULL) THEN
-            max(sample_id) FILTER (WHERE relsize IS NOT NULL)
-          ELSE
-            max(sample_id) FILTER (WHERE relpages_bytes IS NOT NULL)
-          END AS sid
-        FROM
-          sample_stat_tables
-        WHERE
-          server_id = sserver_id AND
-          sample_id BETWEEN start1_id + 1 AND end1_id
-        GROUP BY server_id, datid, relid) AS rs
-        JOIN sample_stat_tables sst ON
-          (sst.server_id, sst.sample_id, sst.datid, sst.relid) =
-          (sserver_id, rs.sid, rs.datid, rs.relid)
-    ),
-    rsa2 AS (
-      SELECT
-        rs.datid,
-        rs.relid,
-        rs.growth_avail,
-        sst.relsize,
-        sst.relpages_bytes
-      FROM
-        (SELECT
-          datid,
-          relid,
-          max(sample_id) = max(sample_id) FILTER (WHERE relsize IS NOT NULL) AND
-          min(sample_id) = min(sample_id) FILTER (WHERE relsize IS NOT NULL) AS growth_avail,
-          CASE WHEN max(sample_id) = max(sample_id) FILTER (WHERE relsize IS NOT NULL) THEN
-            max(sample_id) FILTER (WHERE relsize IS NOT NULL)
-          ELSE
-            max(sample_id) FILTER (WHERE relpages_bytes IS NOT NULL)
-          END AS sid
-        FROM
-          sample_stat_tables
-        WHERE
-          server_id = sserver_id AND
-          sample_id BETWEEN start2_id + 1 AND end2_id
-        GROUP BY server_id, datid, relid) AS rs
-        JOIN sample_stat_tables sst ON
-          (sst.server_id, sst.sample_id, sst.datid, sst.relid) =
-          (sserver_id, rs.sid, rs.datid, rs.relid)
-    )
+STABLE SET search_path=@extschema@ AS $$
   SELECT
     COALESCE(rel1.datid, rel2.datid) AS datid,
     COALESCE(rel1.relid, rel2.relid) AS relid,
@@ -913,21 +866,21 @@ SET search_path=@extschema@ AS $$
     -- Interval 1
       (
         top_tables(sserver_id, start1_id, end1_id) AS rel1
-        JOIN rsa1 AS relrs1 USING (datid, relid)
+        JOIN tbl_sizes(sserver_id, start1_id, end1_id) AS relrs1 USING (datid, relid)
       )
       LEFT OUTER JOIN (
         top_toasts(sserver_id, start1_id, end1_id) AS toast1
-        JOIN rsa1 AS toastrs1 USING (datid, relid)
+        JOIN tbl_sizes(sserver_id, start1_id, end1_id) AS toastrs1 USING (datid, relid)
       ) ON (rel1.datid, rel1.reltoastrelid) = (toast1.datid, toast1.relid)
     ) FULL OUTER JOIN (
     -- Interval 2
       (
         top_tables(sserver_id, start2_id, end2_id) AS rel2
-        JOIN rsa2 AS relrs2 USING (datid, relid)
+        JOIN tbl_sizes(sserver_id, start2_id, end2_id) AS relrs2 USING (datid, relid)
       )
       LEFT OUTER JOIN (
         top_toasts(sserver_id, start2_id, end2_id) AS toast2
-        JOIN rsa2 AS toastrs2 USING (datid, relid)
+        JOIN tbl_sizes(sserver_id, start2_id, end2_id) AS toastrs2 USING (datid, relid)
       ) ON (rel2.datid, rel2.reltoastrelid) = (toast2.datid, toast2.relid)
     ) ON (rel1.datid, rel1.relid) = (rel2.datid, rel2.relid)
 $$ LANGUAGE sql;

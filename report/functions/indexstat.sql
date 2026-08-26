@@ -29,7 +29,7 @@ RETURNS TABLE(
     avg_indexrelpages_bytes bigint,
     avg_relpages_bytes  bigint
 )
-SET search_path=@extschema@ AS $$
+STABLE SET search_path=@extschema@ AS $$
     SELECT
         st.datid,
         st.relid,
@@ -40,17 +40,17 @@ SET search_path=@extschema@ AS $$
         COALESCE(mtl.schemaname,st.schemaname)::name AS schemaname,
         COALESCE(mtl.relname||'(TOAST)',st.relname)::text as relname,
         st.indexrelname::text,
-        sum(st.idx_scan)::bigint as idx_scan,
-        sum(st.relsize_diff)::bigint as growth,
-        sum(tbl.n_tup_ins)::bigint as tbl_n_tup_ins,
-        sum(tbl.n_tup_upd)::bigint as tbl_n_tup_upd,
-        sum(tbl.n_tup_del)::bigint as tbl_n_tup_del,
-        sum(tbl.n_tup_hot_upd)::bigint as tbl_n_tup_hot_upd,
-        sum(st.relpages_bytes_diff)::bigint as relpagegrowth_bytes,
-        sum(st.idx_blks_read)::bigint as idx_blks_read,
-        sum(st.idx_blks_hit)::bigint + sum(st.idx_blks_read)::bigint as idx_blks_fetch,
-        sum(tbl.vacuum_count)::bigint as vacuum_count,
-        sum(tbl.autovacuum_count)::bigint as autovacuum_count,
+        COALESCE(sum(st.idx_scan), 0)::bigint as idx_scan,
+        COALESCE(sum(st.relsize_diff), 0)::bigint as growth,
+        COALESCE(sum(tbl.n_tup_ins), 0)::bigint as tbl_n_tup_ins,
+        COALESCE(sum(tbl.n_tup_upd), 0)::bigint as tbl_n_tup_upd,
+        COALESCE(sum(tbl.n_tup_del), 0)::bigint as tbl_n_tup_del,
+        COALESCE(sum(tbl.n_tup_hot_upd), 0)::bigint as tbl_n_tup_hot_upd,
+        COALESCE(sum(st.relpages_bytes_diff), 0)::bigint as relpagegrowth_bytes,
+        COALESCE(sum(st.idx_blks_read), 0)::bigint as idx_blks_read,
+        COALESCE(sum(st.idx_blks_hit), 0)::bigint + sum(st.idx_blks_read)::bigint as idx_blks_fetch,
+        COALESCE(sum(tbl.vacuum_count), 0)::bigint as vacuum_count,
+        COALESCE(sum(tbl.autovacuum_count), 0)::bigint as autovacuum_count,
         
         CASE WHEN bool_and(
             COALESCE(tbl.vacuum_count, 0) + COALESCE(tbl.autovacuum_count, 0) = 0 OR
@@ -113,6 +113,43 @@ SET search_path=@extschema@ AS $$
       COALESCE(mtl.schemaname,st.schemaname),COALESCE(mtl.relname||'(TOAST)',st.relname), tablespaces_list.tablespacename,st.indexrelname
 $$ LANGUAGE sql;
 
+CREATE FUNCTION idx_sizes(IN sserver_id integer, IN start_id integer, IN end_id integer)
+RETURNS TABLE(
+  datid           oid,
+  indexrelid      oid,
+  growth_avail    boolean,
+  relsize         bigint,
+  relpages_bytes  bigint
+)
+STABLE SET search_path=@extschema@ AS $$
+    SELECT
+      rs.datid,
+      rs.indexrelid,
+      rs.growth_avail,
+      sst.relsize,
+      sst.relpages_bytes
+    FROM
+      (SELECT
+        datid,
+        indexrelid,
+        max(sample_id) = max(sample_id) FILTER (WHERE relsize IS NOT NULL) AND
+        min(sample_id) = min(sample_id) FILTER (WHERE relsize IS NOT NULL) AS growth_avail,
+        CASE WHEN max(sample_id) = max(sample_id) FILTER (WHERE relsize IS NOT NULL) THEN
+          max(sample_id) FILTER (WHERE relsize IS NOT NULL)
+        ELSE
+          max(sample_id) FILTER (WHERE relpages_bytes IS NOT NULL)
+        END AS sid
+      FROM
+        sample_stat_indexes
+      WHERE
+        server_id = sserver_id AND
+        sample_id BETWEEN start_id + 1 AND end_id
+      GROUP BY datid, indexrelid) AS rs
+      JOIN sample_stat_indexes sst ON
+        (sst.server_id, sst.sample_id, sst.datid, sst.indexrelid) =
+        (sserver_id, rs.sid, rs.datid, rs.indexrelid)
+$$ LANGUAGE sql;
+
 CREATE FUNCTION top_indexes_format(IN sserver_id integer, IN start_id integer, IN end_id integer)
 RETURNS TABLE(
     datid               oid,
@@ -144,35 +181,7 @@ RETURNS TABLE(
     ord_unused          integer,
     ord_vac             integer
   )
-SET search_path=@extschema@ AS $$
-    WITH rsa AS (
-        SELECT
-          rs.datid,
-          rs.indexrelid,
-          rs.growth_avail,
-          sst.relsize,
-          sst.relpages_bytes
-        FROM
-          (SELECT
-            datid,
-            indexrelid,
-            max(sample_id) = max(sample_id) FILTER (WHERE relsize IS NOT NULL) AND
-            min(sample_id) = min(sample_id) FILTER (WHERE relsize IS NOT NULL) AS growth_avail,
-            CASE WHEN max(sample_id) = max(sample_id) FILTER (WHERE relsize IS NOT NULL) THEN
-              max(sample_id) FILTER (WHERE relsize IS NOT NULL)
-            ELSE
-              max(sample_id) FILTER (WHERE relpages_bytes IS NOT NULL)
-            END AS sid
-          FROM
-            sample_stat_indexes
-          WHERE
-            server_id = sserver_id AND
-            sample_id BETWEEN start_id + 1 AND end_id
-          GROUP BY datid, indexrelid) AS rs
-          JOIN sample_stat_indexes sst ON
-            (sst.server_id, sst.sample_id, sst.datid, sst.indexrelid) =
-            (sserver_id, rs.sid, rs.datid, rs.indexrelid)
-      )
+STABLE SET search_path=@extschema@ AS $$
     SELECT
       ix.datid,
       ix.relid,
@@ -248,7 +257,8 @@ SET search_path=@extschema@ AS $$
       ELSE NULL END AS ord_vac
     FROM
       top_indexes(sserver_id, start_id, end_id) ix
-      JOIN rsa USING (datid, indexrelid)
+      JOIN idx_sizes(sserver_id, start_id, end_id) rsa
+        USING (datid, indexrelid)
 $$ LANGUAGE sql;
 
 CREATE FUNCTION top_indexes_format_diff(IN sserver_id integer,
@@ -299,63 +309,7 @@ RETURNS TABLE(
     ord_growth           integer,
     ord_vac              integer
   )
-SET search_path=@extschema@ AS $$
-    WITH rsa1 AS (
-        SELECT
-          rs.datid,
-          rs.indexrelid,
-          rs.growth_avail,
-          sst.relsize,
-          sst.relpages_bytes
-        FROM
-          (SELECT
-            datid,
-            indexrelid,
-            max(sample_id) = max(sample_id) FILTER (WHERE relsize IS NOT NULL) AND
-            min(sample_id) = min(sample_id) FILTER (WHERE relsize IS NOT NULL) AS growth_avail,
-            CASE WHEN max(sample_id) = max(sample_id) FILTER (WHERE relsize IS NOT NULL) THEN
-              max(sample_id) FILTER (WHERE relsize IS NOT NULL)
-            ELSE
-              max(sample_id) FILTER (WHERE relpages_bytes IS NOT NULL)
-            END AS sid
-          FROM
-            sample_stat_indexes
-          WHERE
-            server_id = sserver_id AND
-            sample_id BETWEEN start1_id + 1 AND end1_id
-          GROUP BY datid, indexrelid) AS rs
-          JOIN sample_stat_indexes sst ON
-            (sst.server_id, sst.sample_id, sst.datid, sst.indexrelid) =
-            (sserver_id, rs.sid, rs.datid, rs.indexrelid)
-      ),
-    rsa2 AS (
-        SELECT
-          rs.datid,
-          rs.indexrelid,
-          rs.growth_avail,
-          sst.relsize,
-          sst.relpages_bytes
-        FROM
-          (SELECT
-            datid,
-            indexrelid,
-            max(sample_id) = max(sample_id) FILTER (WHERE relsize IS NOT NULL) AND
-            min(sample_id) = min(sample_id) FILTER (WHERE relsize IS NOT NULL) AS growth_avail,
-            CASE WHEN max(sample_id) = max(sample_id) FILTER (WHERE relsize IS NOT NULL) THEN
-              max(sample_id) FILTER (WHERE relsize IS NOT NULL)
-            ELSE
-              max(sample_id) FILTER (WHERE relpages_bytes IS NOT NULL)
-            END AS sid
-          FROM
-            sample_stat_indexes
-          WHERE
-            server_id = sserver_id AND
-            sample_id BETWEEN start2_id + 1 AND end2_id
-          GROUP BY datid, indexrelid) AS rs
-          JOIN sample_stat_indexes sst ON
-            (sst.server_id, sst.sample_id, sst.datid, sst.indexrelid) =
-            (sserver_id, rs.sid, rs.datid, rs.indexrelid)
-      )
+STABLE SET search_path=@extschema@ AS $$
     SELECT
       COALESCE(ix1.datid, ix2.datid),
       COALESCE(ix1.relid, ix2.relid),
@@ -463,9 +417,11 @@ SET search_path=@extschema@ AS $$
       ELSE NULL END AS ord_vac
     FROM
         (top_indexes(sserver_id, start1_id, end1_id) ix1
-        JOIN rsa1 USING (datid, indexrelid))
+        JOIN idx_sizes(sserver_id, start1_id, end1_id) rsa1
+          USING (datid, indexrelid))
       FULL OUTER JOIN
         (top_indexes(sserver_id, start2_id, end2_id) ix2
-        JOIN rsa2 USING (datid, indexrelid))
+        JOIN idx_sizes(sserver_id, start2_id, end2_id) rsa2
+          USING (datid, indexrelid))
       USING (datid, indexrelid)
 $$ LANGUAGE sql;
