@@ -40,13 +40,13 @@ begin
         ssample_id,
         locktype,
         waits,
-        wait_time,
+        round(wait_time)::bigint,
         fastpath_exceeded,
         stats_reset
       FROM dblink('server_connection',server_query) AS rs (
         locktype            text,
         waits               bigint,
-        wait_time           bigint,
+        wait_time           double precision,
         fastpath_exceeded   bigint,
         stats_reset         timestamp with time zone
       );

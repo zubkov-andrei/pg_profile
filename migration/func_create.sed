@@ -34,3 +34,4 @@
 /^CREATE FUNCTION total_statements(.*$/,/\$[[:space:]]*LANGUAGE[[:space:]]\+\(plpg\)\?sql[[:space:]]*;[[:space:]]*$/p
 /^CREATE FUNCTION total_kcache_statements(.*$/,/\$[[:space:]]*LANGUAGE[[:space:]]\+\(plpg\)\?sql[[:space:]]*;[[:space:]]*$/p
 /^CREATE FUNCTION total_dbstats(.*$/,/\$[[:space:]]*LANGUAGE[[:space:]]\+\(plpg\)\?sql[[:space:]]*;[[:space:]]*$/p
+/^CREATE FUNCTION query_pg_stat_lock(.*$/,/\$[[:space:]]*LANGUAGE[[:space:]]\+\(plpg\)\?sql[[:space:]]*;[[:space:]]*$/p

@@ -27,3 +27,4 @@ DROP FUNCTION top_io_tables_format_diff;
 DROP FUNCTION top_io_indexes;
 DROP FUNCTION top_io_indexes_format;
 DROP FUNCTION top_io_indexes_format_diff;
+DROP FUNCTION query_pg_stat_lock;
